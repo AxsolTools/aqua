@@ -23,6 +23,7 @@ import {
   SystemProgram,
 } from '@solana/web3.js';
 import { solToLamports, lamportsToSol } from '@/lib/precision';
+import FormDataLib from 'form-data';
 
 // ============================================================================
 // CONFIGURATION
@@ -98,22 +99,26 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
   error?: string;
 }> {
   try {
-    // Create form data
-    const formData = new FormData();
+    // Create form data using Node.js form-data package
+    const form = new FormDataLib();
     
     // Handle image - support File, URL, or base64 data URI
+    let imageBuffer: Buffer | null = null;
+    
     if (metadata.image instanceof File) {
-      formData.append('file', metadata.image);
+      // Convert File to Buffer (Node.js environment)
+      const arrayBuffer = await metadata.image.arrayBuffer();
+      imageBuffer = Buffer.from(arrayBuffer);
     } else if (typeof metadata.image === 'string') {
       if (metadata.image.startsWith('http')) {
-        // Fetch and convert URL to blob
+        // Fetch and convert URL to buffer
         try {
           const response = await fetch(metadata.image);
           if (!response.ok) {
             throw new Error(`Failed to fetch image: ${response.status}`);
           }
-          const blob = await response.blob();
-          formData.append('file', blob, 'image.png');
+          const arrayBuffer = await response.arrayBuffer();
+          imageBuffer = Buffer.from(arrayBuffer);
         } catch (e) {
           console.warn('[IPFS] Failed to fetch image from URL, skipping image upload');
         }
@@ -121,30 +126,30 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
         // Handle base64 data URI
         try {
           const base64Data = metadata.image.split(',')[1];
-          const mimeType = metadata.image.match(/data:([^;]+);/)?.[1] || 'image/png';
-          const byteCharacters = atob(base64Data);
-          const byteNumbers = new Array(byteCharacters.length);
-          for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-          }
-          const byteArray = new Uint8Array(byteNumbers);
-          const blob = new Blob([byteArray], { type: mimeType });
-          const extension = mimeType.split('/')[1] || 'png';
-          formData.append('file', blob, `image.${extension}`);
+          imageBuffer = Buffer.from(base64Data, 'base64');
         } catch (e) {
           console.warn('[IPFS] Failed to process base64 image, skipping image upload');
         }
       }
     }
     
-    formData.append('name', metadata.name);
-    formData.append('symbol', metadata.symbol);
-    formData.append('description', metadata.description);
+    // Add image file if available (OFFICIAL format matching your working code)
+    if (imageBuffer) {
+      form.append('file', imageBuffer, {
+        filename: 'image.png',
+        contentType: 'image/png'
+      });
+    }
     
-    if (metadata.twitter) formData.append('twitter', metadata.twitter);
-    if (metadata.telegram) formData.append('telegram', metadata.telegram);
-    if (metadata.website) formData.append('website', metadata.website);
-    formData.append('showName', String(metadata.showName ?? true));
+    // Add metadata fields (OFFICIAL format)
+    form.append('name', metadata.name);
+    form.append('symbol', metadata.symbol);
+    form.append('description', metadata.description || '');
+    form.append('showName', 'true'); // FIXED: Missing from original code
+    
+    if (metadata.twitter) form.append('twitter', metadata.twitter);
+    if (metadata.telegram) form.append('telegram', metadata.telegram);
+    if (metadata.website) form.append('website', metadata.website);
 
     // Try official Pump.fun endpoint first
     let lastError: Error | null = null;
@@ -152,7 +157,8 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
       console.log('[IPFS] Attempting upload to pump.fun endpoint...');
       const response = await fetch(PUMP_IPFS_API, {
         method: 'POST',
-        body: formData,
+        body: form as any,
+        headers: form.getHeaders(),
       });
 
       if (response.ok) {
@@ -175,9 +181,10 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
     // Fallback to PumpPortal IPFS
     try {
       console.log('[IPFS] Attempting upload to PumpPortal endpoint...');
-      const fallbackResponse = await fetch(PUMP_PORTAL_IPFS, {
+      const fallbackResponse = await fetch(`${PUMP_PORTAL_API}/ipfs`, {
         method: 'POST',
-        body: formData,
+        body: form as any,
+        headers: form.getHeaders(),
       });
 
       if (fallbackResponse.ok) {
