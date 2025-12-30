@@ -42,7 +42,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
       title: "Tokenomics",
       items: [
         { label: "Total Supply", value: Number(formData.totalSupply).toLocaleString() },
-        { label: "Decimals", value: formData.decimals },
+        { label: "Decimals", value: "6 (pump.fun standard)" },
         { label: "Creator Allocation", value: `${Number(formData.creatorAllocation).toLocaleString()} tokens` },
       ],
     },
@@ -51,8 +51,6 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
       items: [
         { label: "Pour Rate", value: `${formData.pourRate}% per hour` },
         { label: "Evaporation Rate", value: `${formData.evaporationRate}%` },
-        { label: "Migration Threshold", value: `${formData.migrationThreshold} SOL` },
-        { label: "Bonding Curve", value: formData.bondingCurveType },
       ],
     },
   ]

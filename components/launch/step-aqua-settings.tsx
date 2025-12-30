@@ -1,7 +1,6 @@
 "use client"
 
 import type { TokenFormData } from "./launch-wizard"
-import { cn } from "@/lib/utils"
 import { GlassButton } from "@/components/ui/glass-panel"
 import { Droplets, Flame, Waves } from "lucide-react"
 
@@ -11,12 +10,6 @@ interface StepAquaSettingsProps {
   onNext: () => void
   onBack: () => void
 }
-
-const bondingCurveTypes = [
-  { value: "linear" as const, label: "Linear", description: "Steady, predictable growth" },
-  { value: "exponential" as const, label: "Exponential", description: "Accelerating moon potential" },
-  { value: "sigmoid" as const, label: "Sigmoid", description: "S-curve, balanced growth" },
-]
 
 export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: StepAquaSettingsProps) {
   return (
@@ -108,45 +101,6 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
           <div className="flex justify-between text-xs text-white/40 mt-2">
             <span>0% (No burn)</span>
             <span>3% (High burn)</span>
-          </div>
-        </div>
-
-        {/* Migration Threshold */}
-        <div>
-          <label className="block text-sm font-medium text-white/80 mb-2">Migration Threshold (SOL)</label>
-          <input
-            type="text"
-            value={formData.migrationThreshold}
-            onChange={(e) => {
-              if (/^\d*\.?\d*$/.test(e.target.value)) {
-                updateFormData({ migrationThreshold: e.target.value })
-              }
-            }}
-            className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-mono focus:outline-none focus:border-cyan-500/50 transition-all"
-          />
-          <p className="text-xs text-white/40 mt-2">When this is reached, your token graduates to DEX</p>
-        </div>
-
-        {/* Bonding Curve Type */}
-        <div>
-          <label className="block text-sm font-medium text-white/80 mb-3">Bonding Curve</label>
-          <div className="grid grid-cols-3 gap-3">
-            {bondingCurveTypes.map((curve) => (
-              <button
-                key={curve.value}
-                type="button"
-                onClick={() => updateFormData({ bondingCurveType: curve.value })}
-                className={cn(
-                  "p-4 rounded-xl text-center transition-all border",
-                  formData.bondingCurveType === curve.value
-                    ? "border-cyan-500 bg-cyan-500/10 text-white"
-                    : "border-white/10 bg-white/5 text-white/60 hover:border-cyan-500/30 hover:bg-white/10",
-                )}
-              >
-                <div className="text-sm font-medium">{curve.label}</div>
-                <div className="text-xs mt-1 text-white/40">{curve.description}</div>
-              </button>
-            ))}
           </div>
         </div>
 

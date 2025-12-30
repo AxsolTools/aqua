@@ -20,8 +20,104 @@ export default function ProfilePage() {
   const [createdTokens, setCreatedTokens] = useState<Token[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [dataLoading, setDataLoading] = useState(true)
+  
+  // Settings state
+  const [slippage, setSlippage] = useState<number>(1)
+  const [customSlippage, setCustomSlippage] = useState<string>("")
+  const [isCustomSlippage, setIsCustomSlippage] = useState(false)
+  const [priorityFee, setPriorityFee] = useState<string>("medium")
+  const [customPriorityFee, setCustomPriorityFee] = useState<string>("")
+  const [isCustomPriorityFee, setIsCustomPriorityFee] = useState(false)
 
   const supabase = createClient()
+  
+  // Load settings from localStorage on mount
+  useEffect(() => {
+    const savedSlippage = localStorage.getItem("aqua_slippage")
+    const savedPriorityFee = localStorage.getItem("aqua_priority_fee")
+    const savedCustomSlippage = localStorage.getItem("aqua_custom_slippage")
+    const savedCustomPriorityFee = localStorage.getItem("aqua_custom_priority_fee")
+    
+    if (savedSlippage) {
+      const slippageValue = parseFloat(savedSlippage)
+      if ([0.5, 1, 2, 5].includes(slippageValue)) {
+        setSlippage(slippageValue)
+        setIsCustomSlippage(false)
+      } else {
+        setSlippage(slippageValue)
+        setCustomSlippage(savedSlippage)
+        setIsCustomSlippage(true)
+      }
+    }
+    
+    if (savedPriorityFee) {
+      if (["low", "medium", "high"].includes(savedPriorityFee)) {
+        setPriorityFee(savedPriorityFee)
+        setIsCustomPriorityFee(false)
+        setCustomPriorityFee("")
+      } else {
+        setPriorityFee("custom")
+        setCustomPriorityFee(savedPriorityFee)
+        setIsCustomPriorityFee(true)
+      }
+    }
+    
+    if (savedCustomPriorityFee) {
+      setCustomPriorityFee(savedCustomPriorityFee)
+      setIsCustomPriorityFee(true)
+      setPriorityFee("custom")
+    }
+  }, [])
+  
+  // Save slippage to localStorage
+  const handleSlippageChange = (value: number) => {
+    setSlippage(value)
+    setIsCustomSlippage(false)
+    setCustomSlippage("")
+    localStorage.setItem("aqua_slippage", value.toString())
+    localStorage.removeItem("aqua_custom_slippage")
+  }
+  
+  // Save custom slippage to localStorage
+  const handleCustomSlippageChange = (value: string) => {
+    setCustomSlippage(value)
+    if (value && !isNaN(parseFloat(value)) && parseFloat(value) > 0) {
+      const numValue = parseFloat(value)
+      setSlippage(numValue)
+      setIsCustomSlippage(true)
+      localStorage.setItem("aqua_slippage", numValue.toString())
+      localStorage.setItem("aqua_custom_slippage", value)
+    }
+  }
+  
+  // Save priority fee to localStorage
+  const handlePriorityFeeChange = (value: string) => {
+    if (value === "custom") {
+      setPriorityFee("custom")
+      setIsCustomPriorityFee(true)
+      // Keep existing custom value if available
+      if (!customPriorityFee) {
+        setCustomPriorityFee("")
+      }
+    } else {
+      setPriorityFee(value)
+      setIsCustomPriorityFee(false)
+      setCustomPriorityFee("")
+      localStorage.setItem("aqua_priority_fee", value)
+      localStorage.removeItem("aqua_custom_priority_fee")
+    }
+  }
+  
+  // Save custom priority fee to localStorage
+  const handleCustomPriorityFeeChange = (value: string) => {
+    setCustomPriorityFee(value)
+    if (value && !isNaN(parseFloat(value)) && parseFloat(value) >= 0) {
+      setIsCustomPriorityFee(true)
+      setPriorityFee("custom")
+      localStorage.setItem("aqua_priority_fee", value)
+      localStorage.setItem("aqua_custom_priority_fee", value)
+    }
+  }
 
   useEffect(() => {
     if (isAuthenticated && activeWallet) {
@@ -352,27 +448,72 @@ export default function ProfilePage() {
                           <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                             Default Slippage
                           </label>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 mb-3">
                             {[0.5, 1, 2, 5].map((value) => (
                               <button
                                 key={value}
-                                className="px-4 py-2 rounded-lg border border-[var(--glass-border)] text-sm text-[var(--text-primary)] hover:border-[var(--aqua-primary)]/50 transition-colors"
+                                onClick={() => handleSlippageChange(value)}
+                                className={cn(
+                                  "px-4 py-2 rounded-lg border text-sm transition-colors",
+                                  !isCustomSlippage && slippage === value
+                                    ? "border-[var(--aqua-primary)] bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]"
+                                    : "border-[var(--glass-border)] text-[var(--text-primary)] hover:border-[var(--aqua-primary)]/50"
+                                )}
                               >
                                 {value}%
                               </button>
                             ))}
                           </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.1"
+                              value={isCustomSlippage ? customSlippage : ""}
+                              onChange={(e) => handleCustomSlippageChange(e.target.value)}
+                              onFocus={() => setIsCustomSlippage(true)}
+                              placeholder="Custom %"
+                              className="flex-1 px-4 py-2 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+                            />
+                            <span className="text-sm text-[var(--text-secondary)]">%</span>
+                          </div>
+                          {isCustomSlippage && customSlippage && (
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
+                              Current: {parseFloat(customSlippage) || slippage}%
+                            </p>
+                          )}
                         </div>
 
                         <div>
                           <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
                             Priority Fee
                           </label>
-                          <select className="w-full px-4 py-3 rounded-xl bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]">
+                          <select
+                            value={priorityFee}
+                            onChange={(e) => handlePriorityFeeChange(e.target.value)}
+                            className="w-full px-4 py-3 rounded-xl bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)] mb-3"
+                          >
                             <option value="low">Low (0.0001 SOL)</option>
                             <option value="medium">Medium (0.0005 SOL)</option>
                             <option value="high">High (0.001 SOL)</option>
+                            <option value="custom">Custom</option>
                           </select>
+                          {priorityFee === "custom" && (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.0001"
+                                value={isCustomPriorityFee ? customPriorityFee : ""}
+                                onChange={(e) => handleCustomPriorityFeeChange(e.target.value)}
+                                onFocus={() => setIsCustomPriorityFee(true)}
+                                placeholder="0.0001"
+                                className="flex-1 px-4 py-2 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+                              />
+                              <span className="text-sm text-[var(--text-secondary)]">SOL</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </GlassPanel>

@@ -62,20 +62,6 @@ export function StepTokenomics({ formData, updateFormData, onNext, onBack }: Ste
           </div>
         </div>
 
-        {/* Decimals */}
-        <div>
-          <label className="block text-sm font-medium text-white/80 mb-2">Decimals</label>
-          <select
-            value={formData.decimals}
-            onChange={(e) => updateFormData({ decimals: e.target.value })}
-            className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer"
-          >
-            <option value="6">6 (like USDC)</option>
-            <option value="9">9 (standard)</option>
-          </select>
-          <p className="text-xs text-white/40 mt-2">9 decimals is standard for Solana tokens</p>
-        </div>
-
         {/* Creator Allocation */}
         <div>
           <label className="block text-sm font-medium text-white/80 mb-2">Creator Allocation</label>
