@@ -26,6 +26,7 @@ const migrations = [
   '008-create-helper-functions.sql',
   '013-create-missing-tables.sql',
   '014-setup-platform-config.sql',
+  '015-add-metrics-indices.sql',
 ];
 
 async function runMigration(client, filename) {

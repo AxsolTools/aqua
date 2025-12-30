@@ -19,9 +19,9 @@ WHERE source = 'pour';
 CREATE INDEX IF NOT EXISTS idx_trades_token_recent 
 ON trades(token_id, created_at DESC);
 
--- Index for pour rate logs by token
+-- Index for pour rate logs by token (uses executed_at)
 CREATE INDEX IF NOT EXISTS idx_pour_rate_logs_token 
-ON pour_rate_logs(token_id, created_at DESC);
+ON pour_rate_logs(token_id, executed_at DESC);
 
 -- Index for tide harvests by token
 CREATE INDEX IF NOT EXISTS idx_tide_harvests_token 
@@ -56,10 +56,9 @@ WHERE is_primary = true;
 CREATE INDEX IF NOT EXISTS idx_tokens_creator 
 ON tokens(creator_wallet);
 
--- Index for referral earnings (claim queries)
-CREATE INDEX IF NOT EXISTS idx_referral_earnings_unclaimed 
-ON referral_earnings(referrer_user_id, claimed) 
-WHERE claimed = false;
+-- Index for referral earnings (by referrer for claim queries)
+CREATE INDEX IF NOT EXISTS idx_referral_earnings_referrer_recent 
+ON referral_earnings(referrer_id, created_at DESC);
 
 -- Analyze tables to update query planner statistics
 ANALYZE tokens;
