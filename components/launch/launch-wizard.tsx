@@ -9,6 +9,8 @@ import { StepTokenomics } from "@/components/launch/step-tokenomics"
 import { StepAquaSettings } from "@/components/launch/step-aqua-settings"
 import { StepReview } from "@/components/launch/step-review"
 import { TokenPreview } from "@/components/launch/token-preview"
+import { useAuth } from "@/components/providers/auth-provider"
+import { getAuthHeaders } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 export interface TokenFormData {
@@ -62,6 +64,7 @@ interface LaunchWizardProps {
 
 export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   const router = useRouter()
+  const { userId, sessionId } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<TokenFormData>(initialFormData)
   const [isDeploying, setIsDeploying] = useState(false)
@@ -83,24 +86,47 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
     setIsDeploying(true)
     setDeployError(null)
 
+    console.log('[LAUNCH] Deploying token...', { 
+      sessionId: sessionId?.slice(0, 8), 
+      wallet: creatorWallet?.slice(0, 8) 
+    })
+
     try {
+      // CRITICAL: Include auth headers for API authentication
       const response = await fetch("/api/token/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({
+          sessionId: sessionId || userId,
+          walletAddress: creatorWallet,
+        }),
         body: JSON.stringify({
-          ...formData,
-          creatorWallet,
+          name: formData.name,
+          symbol: formData.symbol,
+          description: formData.description,
+          image: formData.imagePreview,
+          website: formData.website,
+          twitter: formData.twitter,
+          telegram: formData.telegram,
+          discord: formData.discord,
+          totalSupply: parseInt(formData.totalSupply),
+          decimals: parseInt(formData.decimals),
+          pourRate: formData.pourRate,
+          evaporationRate: formData.evaporationRate,
+          migrationThreshold: parseInt(formData.migrationThreshold),
         }),
       })
 
+      const data = await response.json()
+      console.log('[LAUNCH] Response:', data)
+
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "Failed to create token")
+        throw new Error(data.error?.message || data.error || "Failed to create token")
       }
 
-      const { mintAddress } = await response.json()
+      const mintAddress = data.data?.mintAddress || data.mintAddress
       router.push(`/token/${mintAddress}`)
     } catch (err) {
+      console.error('[LAUNCH] Error:', err)
       setDeployError(err instanceof Error ? err.message : "Deployment failed")
       setIsDeploying(false)
     }

@@ -34,7 +34,7 @@ import {
 } from "lucide-react"
 
 export default function DashboardPage() {
-  const { isAuthenticated, isLoading, mainWallet, setIsOnboarding } = useAuth()
+  const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding } = useAuth()
   const [createdTokens, setCreatedTokens] = useState<(Token & { harvest?: TideHarvest })[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [totalRewards, setTotalRewards] = useState(0)
@@ -42,21 +42,37 @@ export default function DashboardPage() {
   const supabase = createClient()
 
   useEffect(() => {
+    console.log('[DASHBOARD] Auth state:', { 
+      isAuthenticated, 
+      hasMainWallet: !!mainWallet,
+      sessionId: sessionId?.slice(0, 8)
+    })
+    
     if (isAuthenticated && mainWallet) {
       fetchCreatorData()
+    } else if (!isLoading) {
+      setDataLoading(false)
     }
-  }, [isAuthenticated, mainWallet])
+  }, [isAuthenticated, mainWallet, sessionId, isLoading])
 
   const fetchCreatorData = async () => {
     if (!mainWallet) return
     setDataLoading(true)
 
+    console.log('[DASHBOARD] Fetching tokens for wallet:', mainWallet.public_key?.slice(0, 8))
+
     try {
-      const { data: tokens } = await supabase
+      const { data: tokens, error } = await supabase
         .from("tokens")
         .select("*")
         .eq("creator_wallet", mainWallet.public_key)
         .order("created_at", { ascending: false })
+      
+      if (error) {
+        console.error('[DASHBOARD] Token query error:', error)
+      }
+      
+      console.log('[DASHBOARD] Tokens found:', tokens?.length || 0)
 
       if (tokens) {
         let rewards = 0

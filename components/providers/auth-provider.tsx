@@ -13,6 +13,7 @@ interface WalletAuthContextType {
   isLoading: boolean
   isOnboarding: boolean
   userId: string | null
+  sessionId: string | null // Alias for userId (they are the same)
   setIsOnboarding: (value: boolean) => void
   refreshWallets: () => Promise<void>
   setActiveWallet: (wallet: Wallet) => Promise<void>
@@ -44,24 +45,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const setUserId = (id: string) => {
+    console.log('[AUTH] Setting userId/sessionId:', id)
     localStorage.setItem("aqua_user_id", id)
     setUserIdState(id)
   }
 
   const refreshWallets = useCallback(async () => {
     if (!userId) {
+      console.log('[AUTH] No userId, skipping wallet refresh')
       setIsLoading(false)
       return
     }
 
+    console.log('[AUTH] Refreshing wallets for session:', userId)
+
     try {
+      // CRITICAL: Query by session_id, not user_id
+      // The API stores wallets with session_id column
       const { data, error } = await supabase
         .from("wallets")
         .select("*")
-        .eq("user_id", userId)
+        .eq("session_id", userId)
         .order("is_primary", { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error('[AUTH] Wallet query error:', error)
+        throw error
+      }
+
+      console.log('[AUTH] Wallets found:', data?.length || 0)
 
       if (data && data.length > 0) {
         setWallets(data)
@@ -70,13 +82,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!activeWallet) {
           setActiveWalletState(primary)
         }
+        console.log('[AUTH] Main wallet set:', primary.public_key?.slice(0, 8))
       } else {
+        console.log('[AUTH] No wallets found for session')
         setWallets([])
         setMainWalletState(null)
         setActiveWalletState(null)
       }
     } catch (err) {
-      console.error("Failed to fetch wallets:", err)
+      console.error("[AUTH] Failed to fetch wallets:", err)
     } finally {
       setIsLoading(false)
     }
@@ -117,6 +131,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const isAuthenticated = wallets.length > 0 && mainWallet !== null
+  
+  // Debug log auth state
+  useEffect(() => {
+    console.log('[AUTH] State:', { 
+      isAuthenticated, 
+      walletsCount: wallets.length, 
+      hasMainWallet: !!mainWallet,
+      userId: userId?.slice(0, 8),
+      isLoading 
+    })
+  }, [isAuthenticated, wallets.length, mainWallet, userId, isLoading])
 
   return (
     <WalletAuthContext.Provider
@@ -128,6 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isOnboarding,
         userId,
+        sessionId: userId, // Alias - sessionId and userId are the same
         setIsOnboarding,
         refreshWallets,
         setActiveWallet,

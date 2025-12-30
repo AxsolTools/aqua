@@ -56,10 +56,13 @@ export function WalletOnboarding() {
       })
 
       const data = await response.json()
+      
+      console.log('[GENERATE] Response:', data)
 
       if (!response.ok) throw new Error(data.error?.message || data.error || "Failed to generate wallet")
 
       if (data.data?.sessionId) {
+        console.log('[GENERATE] Setting sessionId:', data.data.sessionId)
         setUserId(data.data.sessionId)
       }
 
@@ -87,16 +90,20 @@ export function WalletOnboarding() {
         body: JSON.stringify({
           secretKey: importData.trim(),
           label: walletLabel || "Imported Wallet",
-          userId: userId,
+          sessionId: userId, // Pass sessionId for consistency
         }),
       })
 
       const data = await response.json()
+      
+      console.log('[IMPORT] Response:', data)
 
       if (!response.ok) throw new Error(data.error?.message || data.error || "Failed to import wallet")
 
-      if (data.userId) {
-        setUserId(data.userId)
+      // CRITICAL FIX: The API returns sessionId in data.data.sessionId, not data.userId
+      if (data.data?.sessionId) {
+        console.log('[IMPORT] Setting sessionId:', data.data.sessionId)
+        setUserId(data.data.sessionId)
       }
 
       await refreshWallets()

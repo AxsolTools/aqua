@@ -3,6 +3,7 @@
 import { useState } from "react"
 import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
+import { getAuthHeaders } from "@/lib/api"
 import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
@@ -10,11 +11,13 @@ interface TradePanelProps {
 }
 
 export function TradePanel({ token }: TradePanelProps) {
-  const { isAuthenticated, activeWallet, setIsOnboarding } = useAuth()
+  const { isAuthenticated, activeWallet, sessionId, userId, setIsOnboarding } = useAuth()
   const [mode, setMode] = useState<"buy" | "sell">("buy")
   const [amount, setAmount] = useState("")
   const [slippage, setSlippage] = useState("1")
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   const estimatedTokens = amount ? Number(amount) / (token.price_sol || 0.0001) : 0
   const estimatedSol = amount ? Number(amount) * (token.price_sol || 0.0001) : 0
@@ -23,10 +26,46 @@ export function TradePanel({ token }: TradePanelProps) {
     if (!isAuthenticated || !activeWallet || !amount) return
 
     setIsLoading(true)
-    setTimeout(() => {
-      setIsLoading(false)
+    setError(null)
+    setSuccess(null)
+
+    console.log('[TRADE] Executing trade:', {
+      action: mode,
+      token: token.mint_address?.slice(0, 8),
+      amount,
+      slippage,
+    })
+
+    try {
+      const response = await fetch("/api/trade", {
+        method: "POST",
+        headers: getAuthHeaders({
+          sessionId: sessionId || userId,
+          walletAddress: activeWallet.public_key,
+        }),
+        body: JSON.stringify({
+          action: mode,
+          tokenMint: token.mint_address,
+          amount: parseFloat(amount),
+          slippageBps: parseFloat(slippage) * 100, // Convert percentage to basis points
+        }),
+      })
+
+      const data = await response.json()
+      console.log('[TRADE] Response:', data)
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || data.error || "Trade failed")
+      }
+
+      setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}!`)
       setAmount("")
-    }, 2000)
+    } catch (err) {
+      console.error('[TRADE] Error:', err)
+      setError(err instanceof Error ? err.message : "Trade failed")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const quickAmounts = mode === "buy" ? ["0.1", "0.5", "1", "2"] : ["25", "50", "75", "100"]
@@ -135,6 +174,18 @@ export function TradePanel({ token }: TradePanelProps) {
           ))}
         </div>
       </div>
+
+      {/* Error/Success messages */}
+      {error && (
+        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
+          {success}
+        </div>
+      )}
 
       {/* Trade button */}
       {!isAuthenticated ? (
