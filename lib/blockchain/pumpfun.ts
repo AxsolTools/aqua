@@ -24,6 +24,7 @@ import {
 } from '@solana/web3.js';
 import { solToLamports, lamportsToSol } from '@/lib/precision';
 import FormDataLib from 'form-data';
+import axios from 'axios';
 
 // ============================================================================
 // CONFIGURATION
@@ -151,57 +152,53 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
     if (metadata.telegram) form.append('telegram', metadata.telegram);
     if (metadata.website) form.append('website', metadata.website);
 
-    // Try official Pump.fun endpoint first
+    // Try official Pump.fun endpoint first (using axios like your working code)
     let lastError: Error | null = null;
     try {
       console.log('[IPFS] Attempting upload to pump.fun endpoint...');
-      const response = await fetch(PUMP_IPFS_API, {
-        method: 'POST',
-        body: form as any,
-        headers: form.getHeaders(),
+      const officialResponse = await axios.post(PUMP_IPFS_API, form, {
+        headers: {
+          ...form.getHeaders()
+        },
+        timeout: 30000
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('[IPFS] Upload successful to pump.fun:', data.metadataUri);
+      
+      if (officialResponse.data && officialResponse.data.metadataUri) {
+        console.log(`✅ Uploaded to OFFICIAL pump.fun: ${officialResponse.data.metadataUri}`);
         return {
           success: true,
-          metadataUri: data.metadataUri || data.uri || data.url,
+          metadataUri: officialResponse.data.metadataUri,
         };
-      } else {
-        const errorText = await response.text();
-        console.warn(`[IPFS] pump.fun endpoint returned ${response.status}:`, errorText);
-        lastError = new Error(`pump.fun endpoint returned ${response.status}: ${errorText}`);
       }
-    } catch (e) {
-      console.warn('[IPFS] pump.fun endpoint failed:', e);
-      lastError = e instanceof Error ? e : new Error('Unknown error');
+    } catch (officialError: any) {
+      console.warn('[IPFS] Official API failed, trying PumpPortal...', officialError?.response?.status || officialError?.message);
+      lastError = officialError instanceof Error ? officialError : new Error('Official API failed');
     }
 
     // Fallback to PumpPortal IPFS
     try {
       console.log('[IPFS] Attempting upload to PumpPortal endpoint...');
-      const fallbackResponse = await fetch(`${PUMP_PORTAL_API}/ipfs`, {
-        method: 'POST',
-        body: form as any,
-        headers: form.getHeaders(),
+      const pumpPortalResponse = await axios.post(`${PUMP_PORTAL_API}/ipfs`, form, {
+        headers: {
+          ...form.getHeaders()
+        },
+        timeout: 30000
       });
-
-      if (fallbackResponse.ok) {
-        const fallbackData = await fallbackResponse.json();
-        console.log('[IPFS] Upload successful to PumpPortal:', fallbackData.metadataUri);
-        return {
-          success: true,
-          metadataUri: fallbackData.metadataUri || fallbackData.uri || fallbackData.url,
-        };
-      } else {
-        const errorText = await fallbackResponse.text();
-        console.error(`[IPFS] PumpPortal endpoint returned ${fallbackResponse.status}:`, errorText);
-        throw new Error(`PumpPortal IPFS upload failed: ${fallbackResponse.status} - ${errorText}`);
+      
+      if (!pumpPortalResponse.data || !pumpPortalResponse.data.metadataUri) {
+        throw new Error('Failed to upload metadata');
       }
-    } catch (e) {
-      console.error('[IPFS] PumpPortal endpoint failed:', e);
-      throw lastError || (e instanceof Error ? e : new Error('Both IPFS endpoints failed'));
+      
+      console.log(`✅ Metadata uploaded via PumpPortal: ${pumpPortalResponse.data.metadataUri}`);
+      
+      return {
+        success: true,
+        metadataUri: pumpPortalResponse.data.metadataUri,
+      };
+    } catch (e: any) {
+      console.error('[IPFS] PumpPortal endpoint failed:', e?.response?.status || e?.message);
+      const errorDetail = e?.response?.data || e?.message || 'Unknown error';
+      throw lastError || new Error(`PumpPortal IPFS upload failed: ${errorDetail}`);
     }
 
   } catch (error) {
