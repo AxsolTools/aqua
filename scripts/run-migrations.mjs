@@ -15,6 +15,7 @@ const DATABASE_URL = 'postgresql://postgres:zu6j.DiaT$Q8ryw@db.rbmzrqsnsvzgoxzpy
 
 // Migration files in order
 const migrations = [
+  '012-fix-column-names.sql',
   '011-fix-schema.sql',
   '002-create-users-table.sql',
   '003-create-referrals-table.sql',
