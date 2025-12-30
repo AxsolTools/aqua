@@ -8,9 +8,24 @@ function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
       type={type}
       data-slot="input"
       className={cn(
-        'file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
-        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
-        'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+        // Base styles with visible border
+        'h-10 w-full min-w-0 rounded-md px-3 py-2 text-base md:text-sm',
+        // Background and border - VISIBLE border color
+        'bg-[var(--bg-input)] border border-[rgba(255,255,255,0.15)]',
+        // Text and placeholder
+        'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
+        // Focus states with aqua glow
+        'focus:outline-none focus:border-[var(--aqua-primary)] focus:ring-2 focus:ring-[var(--aqua-primary)]/20',
+        // Transitions
+        'transition-all duration-150',
+        // File input styles
+        'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-[var(--text-primary)]',
+        // Disabled state
+        'disabled:cursor-not-allowed disabled:opacity-50',
+        // Invalid state
+        'aria-invalid:border-[var(--red)] aria-invalid:ring-[var(--red)]/20',
+        // Selection
+        'selection:bg-[var(--aqua-primary)] selection:text-white',
         className,
       )}
       {...props}
