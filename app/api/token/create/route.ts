@@ -83,6 +83,10 @@ export async function POST(request: NextRequest) {
       // Launch options
       initialBuySol = 0,
       slippageBps = 500,
+      
+      // Pre-generated mint keypair from frontend
+      mintSecretKey,
+      mintAddress: preGeneratedMintAddress,
     } = body;
 
     // Validate required fields
@@ -153,6 +157,23 @@ export async function POST(request: NextRequest) {
     // ========== CREATE TOKEN ON CHAIN ==========
     console.log(`[TOKEN] Creating token: ${name} (${symbol})`);
 
+    // Decode pre-generated mint keypair from frontend if provided
+    let mintKeypair: Keypair | undefined;
+    if (mintSecretKey) {
+      try {
+        mintKeypair = Keypair.fromSecretKey(bs58.decode(mintSecretKey));
+        console.log(`[TOKEN] Using pre-generated mint: ${mintKeypair.publicKey.toBase58()}`);
+        
+        // Verify it matches the claimed address
+        if (preGeneratedMintAddress && mintKeypair.publicKey.toBase58() !== preGeneratedMintAddress) {
+          console.warn(`[TOKEN] Mint address mismatch! Frontend: ${preGeneratedMintAddress}, Decoded: ${mintKeypair.publicKey.toBase58()}`);
+        }
+      } catch (decodeError) {
+        console.warn('[TOKEN] Failed to decode mint keypair, will generate new one');
+        mintKeypair = undefined;
+      }
+    }
+
     // Prepare metadata
     const metadata: TokenMetadata = {
       name,
@@ -172,6 +193,7 @@ export async function POST(request: NextRequest) {
       initialBuySol,
       slippageBps,
       priorityFee: 0.001,
+      mintKeypair, // Pass pre-generated mint keypair if available
     });
 
     if (!createResult.success || !createResult.mintAddress) {

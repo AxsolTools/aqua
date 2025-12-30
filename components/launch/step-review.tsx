@@ -9,10 +9,19 @@ interface StepReviewProps {
   onDeploy: () => void
   isDeploying: boolean
   error: string | null
+  mintAddress: string | null
+  onRegenerateMint: () => void
 }
 
-export function StepReview({ formData, onBack, onDeploy, isDeploying, error }: StepReviewProps) {
+export function StepReview({ formData, onBack, onDeploy, isDeploying, error, mintAddress, onRegenerateMint }: StepReviewProps) {
   const { activeWallet } = useAuth()
+
+  // Copy mint address to clipboard
+  const copyMintAddress = async () => {
+    if (mintAddress) {
+      await navigator.clipboard.writeText(mintAddress)
+    }
+  }
 
   const sections = [
     {
@@ -79,6 +88,41 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error }: S
           </div>
         ))}
       </div>
+
+      {/* Pre-generated Mint Address */}
+      {mintAddress && (
+        <div className="mt-6 p-4 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--coral-pink)]/10 border border-[var(--aqua-primary)]/50">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[var(--aqua-primary)] animate-pulse" />
+              <p className="text-sm font-medium text-[var(--aqua-primary)]">Your Token&apos;s Mint Address</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={copyMintAddress}
+                className="text-xs px-2 py-1 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] hover:bg-[var(--aqua-primary)]/30 transition-colors"
+                title="Copy to clipboard"
+              >
+                Copy
+              </button>
+              <button
+                onClick={onRegenerateMint}
+                disabled={isDeploying}
+                className="text-xs px-2 py-1 rounded bg-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]/70 transition-colors disabled:opacity-50"
+                title="Generate new address"
+              >
+                Regenerate
+              </button>
+            </div>
+          </div>
+          <p className="font-mono text-sm text-[var(--text-primary)] bg-black/30 px-3 py-2 rounded break-all select-all">
+            {mintAddress}
+          </p>
+          <p className="text-xs text-[var(--text-muted)] mt-2">
+            This address is pre-generated and will be your token&apos;s permanent address on Solana.
+          </p>
+        </div>
+      )}
 
       {/* Deploying Wallet */}
       <div className="mt-6 p-4 rounded-lg bg-[var(--aqua-subtle)] border border-[var(--aqua-primary)]/30">

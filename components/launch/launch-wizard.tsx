@@ -1,8 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
+import { Keypair } from "@solana/web3.js"
+import bs58 from "bs58"
 import { TerminalPanel } from "@/components/ui/terminal-panel"
 import { StepBasics } from "@/components/launch/step-basics"
 import { StepTokenomics } from "@/components/launch/step-tokenomics"
@@ -69,13 +71,37 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   const [formData, setFormData] = useState<TokenFormData>(initialFormData)
   const [isDeploying, setIsDeploying] = useState(false)
   const [deployError, setDeployError] = useState<string | null>(null)
+  
+  // Pre-generated mint keypair for showing address before confirmation
+  const [mintKeypair, setMintKeypair] = useState<Keypair | null>(null)
+  const [mintAddress, setMintAddress] = useState<string | null>(null)
+
+  // Generate mint keypair when entering step 4 (Review)
+  const generateMintKeypair = useCallback(() => {
+    const keypair = Keypair.generate()
+    setMintKeypair(keypair)
+    setMintAddress(keypair.publicKey.toBase58())
+    console.log('[LAUNCH] Pre-generated mint address:', keypair.publicKey.toBase58())
+  }, [])
+
+  // Regenerate mint address if user goes back and comes to step 4 again
+  const regenerateMint = useCallback(() => {
+    generateMintKeypair()
+  }, [generateMintKeypair])
 
   const updateFormData = (updates: Partial<TokenFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }))
   }
 
   const nextStep = () => {
-    if (currentStep < 4) setCurrentStep(currentStep + 1)
+    if (currentStep < 4) {
+      const newStep = currentStep + 1
+      setCurrentStep(newStep)
+      // Generate mint keypair when entering review step
+      if (newStep === 4 && !mintKeypair) {
+        generateMintKeypair()
+      }
+    }
   }
 
   const prevStep = () => {
@@ -88,10 +114,22 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
 
     console.log('[LAUNCH] Deploying token...', { 
       sessionId: sessionId?.slice(0, 8), 
-      wallet: creatorWallet?.slice(0, 8) 
+      wallet: creatorWallet?.slice(0, 8),
+      mintAddress: mintAddress?.slice(0, 8)
     })
 
     try {
+      // Ensure we have a mint keypair
+      let currentMintKeypair = mintKeypair
+      if (!currentMintKeypair) {
+        currentMintKeypair = Keypair.generate()
+        setMintKeypair(currentMintKeypair)
+        setMintAddress(currentMintKeypair.publicKey.toBase58())
+      }
+
+      // Encode the mint secret key to send to backend
+      const mintSecretKey = bs58.encode(currentMintKeypair.secretKey)
+
       // CRITICAL: Include auth headers for API authentication
       const response = await fetch("/api/token/create", {
         method: "POST",
@@ -113,6 +151,9 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           pourRate: formData.pourRate,
           evaporationRate: formData.evaporationRate,
           migrationThreshold: parseInt(formData.migrationThreshold),
+          // Send pre-generated mint keypair so backend uses the same address
+          mintSecretKey: mintSecretKey,
+          mintAddress: currentMintKeypair.publicKey.toBase58(),
         }),
       })
 
@@ -123,8 +164,9 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
         throw new Error(data.error?.message || data.error || "Failed to create token")
       }
 
-      const mintAddress = data.data?.mintAddress || data.mintAddress
-      router.push(`/token/${mintAddress}`)
+      // Use the pre-generated mint address (or fallback to response)
+      const finalMintAddress = data.data?.mintAddress || data.mintAddress || currentMintKeypair.publicKey.toBase58()
+      router.push(`/token/${finalMintAddress}`)
     } catch (err) {
       console.error('[LAUNCH] Error:', err)
       setDeployError(err instanceof Error ? err.message : "Deployment failed")
@@ -217,6 +259,8 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                   onDeploy={handleDeploy}
                   isDeploying={isDeploying}
                   error={deployError}
+                  mintAddress={mintAddress}
+                  onRegenerateMint={regenerateMint}
                 />
               )}
             </motion.div>

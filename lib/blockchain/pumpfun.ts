@@ -57,6 +57,7 @@ export interface CreateTokenParams {
   initialBuySol?: number;
   slippageBps?: number;
   priorityFee?: number;
+  mintKeypair?: Keypair; // Optional pre-generated mint keypair from frontend
 }
 
 export interface CreateTokenResult {
@@ -174,7 +175,7 @@ export async function createToken(
   params: CreateTokenParams
 ): Promise<CreateTokenResult> {
   try {
-    const { metadata, creatorKeypair, initialBuySol = 0, slippageBps = 500, priorityFee = 0.001 } = params;
+    const { metadata, creatorKeypair, initialBuySol = 0, slippageBps = 500, priorityFee = 0.001, mintKeypair: providedMintKeypair } = params;
 
     // Step 1: Upload metadata to IPFS
     console.log('[PUMP] Uploading metadata to IPFS...');
@@ -187,9 +188,10 @@ export async function createToken(
       };
     }
 
-    // Step 2: Generate mint keypair
-    const mintKeypair = Keypair.generate();
-    console.log(`[PUMP] Mint address: ${mintKeypair.publicKey.toBase58()}`);
+    // Step 2: Use provided mint keypair or generate new one
+    const mintKeypair = providedMintKeypair || Keypair.generate();
+    const mintSource = providedMintKeypair ? 'pre-generated (frontend)' : 'generated (backend)';
+    console.log(`[PUMP] Mint address: ${mintKeypair.publicKey.toBase58()} (${mintSource})`);
 
     // Step 3: Request create transaction from PumpPortal
     console.log('[PUMP] Requesting create transaction...');
