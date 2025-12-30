@@ -29,11 +29,11 @@ export function HeroSection() {
             <div className="relative">
               <div className="absolute inset-0 rounded-full bg-[var(--aqua-primary)] opacity-20 blur-3xl animate-pulse" />
               <Image
-                src="/aquarius-logo.svg"
+                src="/logo.png"
                 alt="Aquarius"
-                width={100}
-                height={100}
-                className="relative w-24 h-24 sm:w-28 sm:h-28"
+                width={120}
+                height={120}
+                className="relative w-28 h-28 sm:w-32 sm:h-32"
                 priority
               />
             </div>

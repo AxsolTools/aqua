@@ -30,7 +30,7 @@ export function Header() {
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/aquarius-logo.svg" alt="Aquarius" width={28} height={28} className="w-7 h-7" priority />
+              <Image src="/logo.png" alt="Aquarius" width={32} height={32} className="w-8 h-8" priority />
               <span className="text-base font-semibold text-[var(--text-primary)]">aquarius</span>
             </Link>
 

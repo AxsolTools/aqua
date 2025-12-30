@@ -1,6 +1,8 @@
 "use client"
 
 import type { TokenFormData } from "./launch-wizard"
+import { GlassButton } from "@/components/ui/glass-panel"
+import { cn } from "@/lib/utils"
 
 interface StepTokenomicsProps {
   formData: TokenFormData
@@ -20,14 +22,16 @@ export function StepTokenomics({ formData, updateFormData, onNext, onBack }: Ste
   const creatorAllocationPercent = (Number(formData.creatorAllocation) / Number(formData.totalSupply)) * 100 || 0
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold text-[var(--text-primary)] mb-2">Tokenomics</h2>
-      <p className="text-sm text-[var(--text-secondary)] mb-8">Configure your token's supply and distribution</p>
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <p className="text-white/60 text-sm">Set your token's supply. Most successful tokens use 1B supply.</p>
+      </div>
 
       <div className="space-y-6">
         {/* Total Supply */}
         <div>
-          <label className="block text-sm text-[var(--text-secondary)] mb-2">Total Supply</label>
+          <label className="block text-sm font-medium text-white/80 mb-2">Total Supply</label>
           <input
             type="text"
             value={Number(formData.totalSupply).toLocaleString()}
@@ -37,19 +41,20 @@ export function StepTokenomics({ formData, updateFormData, onNext, onBack }: Ste
                 updateFormData({ totalSupply: value })
               }
             }}
-            className="w-full px-4 py-3 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--aqua-primary)] transition-colors"
+            className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-mono focus:outline-none focus:border-cyan-500/50 focus:bg-white/10 transition-all"
           />
-          <div className="flex gap-2 mt-2">
+          <div className="flex gap-2 mt-3">
             {supplyPresets.map((preset) => (
               <button
                 key={preset.value}
                 type="button"
                 onClick={() => updateFormData({ totalSupply: preset.value })}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                className={cn(
+                  "px-4 py-2 rounded-lg text-sm font-medium transition-all",
                   formData.totalSupply === preset.value
-                    ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
-                    : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50"
-                }`}
+                    ? "bg-cyan-500 text-black"
+                    : "bg-white/5 text-white/70 border border-white/10 hover:border-cyan-500/30 hover:bg-white/10"
+                )}
               >
                 {preset.label}
               </button>
@@ -59,21 +64,21 @@ export function StepTokenomics({ formData, updateFormData, onNext, onBack }: Ste
 
         {/* Decimals */}
         <div>
-          <label className="block text-sm text-[var(--text-secondary)] mb-2">Decimals</label>
+          <label className="block text-sm font-medium text-white/80 mb-2">Decimals</label>
           <select
             value={formData.decimals}
             onChange={(e) => updateFormData({ decimals: e.target.value })}
-            className="w-full px-4 py-3 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)] cursor-pointer"
+            className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white focus:outline-none focus:border-cyan-500/50 cursor-pointer"
           >
             <option value="6">6 (like USDC)</option>
             <option value="9">9 (standard)</option>
           </select>
-          <p className="text-xs text-[var(--text-muted)] mt-1">9 decimals is standard for Solana tokens</p>
+          <p className="text-xs text-white/40 mt-2">9 decimals is standard for Solana tokens</p>
         </div>
 
         {/* Creator Allocation */}
         <div>
-          <label className="block text-sm text-[var(--text-secondary)] mb-2">Creator Allocation</label>
+          <label className="block text-sm font-medium text-white/80 mb-2">Creator Allocation</label>
           <div className="relative">
             <input
               type="text"
@@ -86,60 +91,61 @@ export function StepTokenomics({ formData, updateFormData, onNext, onBack }: Ste
                   updateFormData({ creatorAllocation: newValue.toString() })
                 }
               }}
-              className="w-full px-4 py-3 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] font-mono focus:outline-none focus:border-[var(--aqua-primary)] transition-colors pr-16"
+              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white font-mono focus:outline-none focus:border-cyan-500/50 transition-all pr-20"
             />
-            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-[var(--text-muted)]">
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-cyan-400 font-medium">
               {creatorAllocationPercent.toFixed(1)}%
             </span>
           </div>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Maximum 10% of total supply</p>
+          <p className="text-xs text-white/40 mt-2">Maximum 10% of total supply. Keep it low - traders trust that.</p>
         </div>
 
         {/* Supply Breakdown */}
-        <div className="p-4 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)]">
-          <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Supply Breakdown</h3>
-          <div className="space-y-2">
+        <div className="p-5 rounded-xl bg-white/5 border border-white/10">
+          <h3 className="text-sm font-medium text-white mb-4">Supply Breakdown</h3>
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-[var(--text-muted)]">Bonding Curve</span>
-              <span className="text-sm font-mono text-[var(--text-primary)]">
-                {(Number(formData.totalSupply) - Number(formData.creatorAllocation)).toLocaleString()} (
-                {(100 - creatorAllocationPercent).toFixed(1)}%)
+              <span className="text-sm text-white/60">Bonding Curve (Public Sale)</span>
+              <span className="text-sm font-mono text-white">
+                {(Number(formData.totalSupply) - Number(formData.creatorAllocation)).toLocaleString()} 
+                <span className="text-cyan-400 ml-2">({(100 - creatorAllocationPercent).toFixed(1)}%)</span>
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-[var(--text-muted)]">Creator</span>
-              <span className="text-sm font-mono text-[var(--text-primary)]">
-                {Number(formData.creatorAllocation).toLocaleString()} ({creatorAllocationPercent.toFixed(1)}%)
+              <span className="text-sm text-white/60">Creator</span>
+              <span className="text-sm font-mono text-white">
+                {Number(formData.creatorAllocation).toLocaleString()} 
+                <span className="text-orange-400 ml-2">({creatorAllocationPercent.toFixed(1)}%)</span>
               </span>
             </div>
           </div>
 
           {/* Visual bar */}
-          <div className="mt-3 h-3 rounded-full bg-[var(--ocean-deep)] overflow-hidden flex">
-            <div className="bg-[var(--aqua-primary)]" style={{ width: `${100 - creatorAllocationPercent}%` }} />
-            <div className="bg-[var(--warm-orange)]" style={{ width: `${creatorAllocationPercent}%` }} />
+          <div className="mt-4 h-3 rounded-full bg-black/30 overflow-hidden flex">
+            <div 
+              className="bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-300" 
+              style={{ width: `${100 - creatorAllocationPercent}%` }} 
+            />
+            <div 
+              className="bg-gradient-to-r from-orange-500 to-amber-500 transition-all duration-300" 
+              style={{ width: `${creatorAllocationPercent}%` }} 
+            />
           </div>
-          <div className="flex justify-between mt-1">
-            <span className="text-xs text-[var(--aqua-primary)]">Bonding Curve</span>
-            <span className="text-xs text-[var(--warm-orange)]">Creator</span>
+          <div className="flex justify-between mt-2">
+            <span className="text-xs text-cyan-400">Bonding Curve</span>
+            <span className="text-xs text-orange-400">Creator</span>
           </div>
         </div>
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={onBack}
-          className="px-6 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:border-[var(--aqua-primary)]/50 transition-colors"
-        >
-          Back
-        </button>
-        <button
-          onClick={onNext}
-          className="px-8 py-3 rounded-lg bg-[var(--aqua-primary)] text-[var(--ocean-deep)] font-medium hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] transition-all"
-        >
-          Continue
-        </button>
+      <div className="flex justify-between pt-4">
+        <GlassButton onClick={onBack} variant="outline">
+          ← Back
+        </GlassButton>
+        <GlassButton onClick={onNext} variant="primary">
+          Continue →
+        </GlassButton>
       </div>
     </div>
   )

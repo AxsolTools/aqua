@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { Keypair } from "@solana/web3.js"
 import bs58 from "bs58"
-import { TerminalPanel } from "@/components/ui/terminal-panel"
+import { GlassPanel, StepIndicator } from "@/components/ui/glass-panel"
 import { StepBasics } from "@/components/launch/step-basics"
 import { StepTokenomics } from "@/components/launch/step-tokenomics"
 import { StepAquaSettings } from "@/components/launch/step-aqua-settings"
@@ -54,10 +54,10 @@ const initialFormData: TokenFormData = {
 }
 
 const steps = [
-  { id: 1, name: "BASICS", command: "init" },
-  { id: 2, name: "SUPPLY", command: "config" },
-  { id: 3, name: "AQUA", command: "liquidity" },
-  { id: 4, name: "DEPLOY", command: "execute" },
+  { id: 1, name: "Basics", description: "Token identity" },
+  { id: 2, name: "Supply", description: "Tokenomics" },
+  { id: 3, name: "Liquidity", description: "AQUA settings" },
+  { id: 4, name: "Launch", description: "Review & deploy" },
 ]
 
 interface LaunchWizardProps {
@@ -177,54 +177,18 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Main Form */}
-      <div className="lg:col-span-2">
-        {/* Progress Steps - Terminal Style */}
-        <TerminalPanel title="DEPLOYMENT_PROGRESS" className="rounded-lg mb-6">
-          <div className="flex items-center justify-between">
-            {steps.map((step, index) => (
-              <div key={step.id} className="flex items-center">
-                <div className="flex flex-col items-center">
-                  <div
-                    className={cn(
-                      "w-10 h-10 rounded border flex items-center justify-center font-mono text-sm transition-all",
-                      currentStep >= step.id
-                        ? "border-[var(--aqua-primary)] bg-[var(--aqua-subtle)] text-[var(--aqua-primary)]"
-                        : "border-[var(--terminal-border)] bg-black/30 text-[var(--text-muted)]",
-                      currentStep === step.id && "terminal-glow-aqua",
-                    )}
-                  >
-                    {currentStep > step.id ? "✓" : step.id}
-                  </div>
-                  <div className="mt-2 text-center hidden md:block">
-                    <p
-                      className={cn(
-                        "font-mono text-xs",
-                        currentStep >= step.id ? "text-[var(--aqua-primary)]" : "text-[var(--text-muted)]",
-                      )}
-                    >
-                      ${step.command}
-                    </p>
-                    <p className="font-mono text-[10px] text-[var(--text-muted)]">{step.name}</p>
-                  </div>
-                </div>
-
-                {index < steps.length - 1 && (
-                  <div className="w-8 md:w-16 h-px mx-2 overflow-hidden bg-[var(--terminal-border)]">
-                    <motion.div
-                      initial={false}
-                      animate={{ width: currentStep > step.id ? "100%" : "0%" }}
-                      transition={{ duration: 0.3 }}
-                      className="h-full bg-[var(--aqua-primary)]"
-                    />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </TerminalPanel>
+      <div className="lg:col-span-2 space-y-6">
+        {/* Progress Steps - Glass Style */}
+        <GlassPanel className="rounded-2xl">
+          <StepIndicator steps={steps} currentStep={currentStep} />
+        </GlassPanel>
 
         {/* Step Content */}
-        <TerminalPanel title={`STEP_${currentStep}_${steps[currentStep - 1].name}`} className="rounded-lg">
+        <GlassPanel 
+          title={`Step ${currentStep}: ${steps[currentStep - 1].name}`}
+          subtitle={steps[currentStep - 1].description}
+          className="rounded-2xl"
+        >
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStep}
@@ -265,7 +229,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
               )}
             </motion.div>
           </AnimatePresence>
-        </TerminalPanel>
+        </GlassPanel>
       </div>
 
       {/* Live Preview */}

@@ -2,6 +2,9 @@
 
 import type { TokenFormData } from "./launch-wizard"
 import { useAuth } from "@/components/providers/auth-provider"
+import { GlassButton } from "@/components/ui/glass-panel"
+import { Copy, RefreshCw, AlertTriangle, Rocket, Check } from "lucide-react"
+import { useState } from "react"
 
 interface StepReviewProps {
   formData: TokenFormData
@@ -15,11 +18,14 @@ interface StepReviewProps {
 
 export function StepReview({ formData, onBack, onDeploy, isDeploying, error, mintAddress, onRegenerateMint }: StepReviewProps) {
   const { activeWallet } = useAuth()
+  const [copied, setCopied] = useState(false)
 
   // Copy mint address to clipboard
   const copyMintAddress = async () => {
     if (mintAddress) {
       await navigator.clipboard.writeText(mintAddress)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
     }
   }
 
@@ -49,37 +55,28 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
         { label: "Bonding Curve", value: formData.bondingCurveType },
       ],
     },
-    {
-      title: "Social Links",
-      items: [
-        { label: "Website", value: formData.website || "—" },
-        { label: "Twitter", value: formData.twitter || "—" },
-        { label: "Telegram", value: formData.telegram || "—" },
-        { label: "Discord", value: formData.discord || "—" },
-      ],
-    },
   ]
 
   return (
-    <div>
-      <h2 className="text-2xl font-semibold text-[var(--text-primary)] mb-2">Review & Deploy</h2>
-      <p className="text-sm text-[var(--text-secondary)] mb-8">
-        Confirm your token settings before deploying to the blockchain
-      </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <p className="text-white/60 text-sm">Double check everything. Once deployed, these settings are permanent.</p>
+      </div>
 
       {/* Review Sections */}
-      <div className="space-y-6">
+      <div className="space-y-4">
         {sections.map((section) => (
           <div
             key={section.title}
-            className="p-4 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)]"
+            className="p-5 rounded-xl bg-white/5 border border-white/10"
           >
-            <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">{section.title}</h3>
-            <div className="space-y-2">
+            <h3 className="text-sm font-medium text-white mb-4">{section.title}</h3>
+            <div className="space-y-3">
               {section.items.map((item) => (
                 <div key={item.label} className="flex items-center justify-between">
-                  <span className="text-sm text-[var(--text-muted)]">{item.label}</span>
-                  <span className="text-sm font-medium text-[var(--text-primary)] text-right max-w-[60%] truncate">
+                  <span className="text-sm text-white/50">{item.label}</span>
+                  <span className="text-sm font-medium text-white text-right max-w-[60%] truncate">
                     {item.value}
                   </span>
                 </div>
@@ -89,94 +86,121 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
         ))}
       </div>
 
+      {/* Social Links - Compact */}
+      {(formData.website || formData.twitter || formData.telegram || formData.discord) && (
+        <div className="p-5 rounded-xl bg-white/5 border border-white/10">
+          <h3 className="text-sm font-medium text-white mb-3">Social Links</h3>
+          <div className="flex flex-wrap gap-2">
+            {formData.website && (
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70">🌐 Website</span>
+            )}
+            {formData.twitter && (
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70">𝕏 Twitter</span>
+            )}
+            {formData.telegram && (
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70">✈️ Telegram</span>
+            )}
+            {formData.discord && (
+              <span className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70">💬 Discord</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Pre-generated Mint Address */}
       {mintAddress && (
-        <div className="mt-6 p-4 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--coral-pink)]/10 border border-[var(--aqua-primary)]/50">
-          <div className="flex items-center justify-between mb-2">
+        <div className="p-5 rounded-xl bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/30">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--aqua-primary)] animate-pulse" />
-              <p className="text-sm font-medium text-[var(--aqua-primary)]">Your Token&apos;s Mint Address</p>
+              <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              <p className="text-sm font-medium text-cyan-400">Your Token Address (Pre-generated)</p>
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={copyMintAddress}
-                className="text-xs px-2 py-1 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] hover:bg-[var(--aqua-primary)]/30 transition-colors"
+                className="text-xs px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-1.5"
                 title="Copy to clipboard"
               >
-                Copy
+                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? "Copied!" : "Copy"}
               </button>
               <button
                 onClick={onRegenerateMint}
                 disabled={isDeploying}
-                className="text-xs px-2 py-1 rounded bg-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]/70 transition-colors disabled:opacity-50"
+                className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                 title="Generate new address"
               >
-                Regenerate
+                <RefreshCw className="w-3 h-3" />
+                New
               </button>
             </div>
           </div>
-          <p className="font-mono text-sm text-[var(--text-primary)] bg-black/30 px-3 py-2 rounded break-all select-all">
+          <p className="font-mono text-sm text-white bg-black/30 px-4 py-3 rounded-lg break-all select-all">
             {mintAddress}
           </p>
-          <p className="text-xs text-[var(--text-muted)] mt-2">
-            This address is pre-generated and will be your token&apos;s permanent address on Solana.
+          <p className="text-xs text-white/40 mt-3">
+            Save this address! It&apos;s your token&apos;s permanent home on Solana.
           </p>
         </div>
       )}
 
       {/* Deploying Wallet */}
-      <div className="mt-6 p-4 rounded-lg bg-[var(--aqua-subtle)] border border-[var(--aqua-primary)]/30">
+      <div className="p-5 rounded-xl bg-white/5 border border-white/10">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-[var(--text-secondary)]">Deploying from wallet</p>
-            <p className="text-sm font-mono text-[var(--aqua-primary)]">
+            <p className="text-xs text-white/40 mb-1">Deploying from</p>
+            <p className="text-sm font-mono text-white">
               {activeWallet
                 ? `${activeWallet.public_key.slice(0, 8)}...${activeWallet.public_key.slice(-8)}`
                 : "No wallet connected"}
             </p>
           </div>
           <div className="text-right">
-            <p className="text-sm text-[var(--text-secondary)]">Estimated fee</p>
-            <p className="text-sm font-mono text-[var(--text-primary)]">~0.02 SOL</p>
+            <p className="text-xs text-white/40 mb-1">Network fee</p>
+            <p className="text-sm font-medium text-white">~0.02 SOL</p>
           </div>
         </div>
       </div>
 
       {/* Error */}
       {error && (
-        <div className="mt-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">{error}</div>
+        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-red-400">Deployment failed</p>
+            <p className="text-sm text-red-400/70 mt-1">{error}</p>
+          </div>
+        </div>
       )}
 
       {/* Warning */}
-      <div className="mt-4 p-3 rounded-lg bg-[var(--warm-orange)]/10 border border-[var(--warm-orange)]/30">
-        <p className="text-sm text-[var(--warm-orange)]">
-          Token deployment is permanent and cannot be undone. Make sure all settings are correct before proceeding.
+      <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
+        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <p className="text-sm text-amber-400/90">
+          Token deployment is permanent. Once live, settings cannot be changed. Make sure everything is correct!
         </p>
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={onBack}
-          disabled={isDeploying}
-          className="px-6 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:border-[var(--aqua-primary)]/50 transition-colors disabled:opacity-50"
-        >
-          Back
-        </button>
-        <button
+      <div className="flex justify-between pt-4">
+        <GlassButton onClick={onBack} disabled={isDeploying} variant="outline">
+          ← Back
+        </GlassButton>
+        <GlassButton
           onClick={onDeploy}
           disabled={isDeploying || !activeWallet}
-          className="px-8 py-3 rounded-lg bg-[var(--aqua-primary)] text-[var(--ocean-deep)] font-medium hover:shadow-[0_0_20px_rgba(0,242,255,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          variant="primary"
+          isLoading={isDeploying}
         >
           {isDeploying ? (
-            <>
-              <div className="w-4 h-4 border-2 border-[var(--ocean-deep)] border-t-transparent rounded-full animate-spin" />
-              Deploying...
-            </>
+            "Deploying..."
           ) : (
-            "Deploy Token"
+            <span className="flex items-center gap-2">
+              <Rocket className="w-4 h-4" />
+              Launch Token
+            </span>
           )}
-        </button>
+        </GlassButton>
       </div>
     </div>
   )
