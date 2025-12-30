@@ -298,7 +298,7 @@ export default function ProfilePage() {
                                 <div
                                   className={cn(
                                     "w-8 h-8 rounded-lg flex items-center justify-center",
-                                    trade.type === "buy" ? "bg-[var(--success)]/20" : "bg-[var(--error)]/20",
+                                    trade.trade_type === "buy" ? "bg-[var(--success)]/20" : "bg-[var(--error)]/20",
                                   )}
                                 >
                                   <svg
@@ -306,11 +306,11 @@ export default function ProfilePage() {
                                     height="14"
                                     viewBox="0 0 14 14"
                                     fill="none"
-                                    stroke={trade.type === "buy" ? "var(--success)" : "var(--error)"}
+                                    stroke={trade.trade_type === "buy" ? "var(--success)" : "var(--error)"}
                                     strokeWidth="2"
                                   >
                                     <path
-                                      d={trade.type === "buy" ? "M7 11V3M3 7l4-4 4 4" : "M7 3v8M3 7l4 4 4-4"}
+                                      d={trade.trade_type === "buy" ? "M7 11V3M3 7l4-4 4 4" : "M7 3v8M3 7l4 4 4-4"}
                                       strokeLinecap="round"
                                       strokeLinejoin="round"
                                     />
@@ -318,7 +318,7 @@ export default function ProfilePage() {
                                 </div>
                                 <div>
                                   <p className="text-sm font-medium text-[var(--text-primary)]">
-                                    {trade.type === "buy" ? "Bought" : "Sold"}
+                                    {trade.trade_type === "buy" ? "Bought" : "Sold"}
                                   </p>
                                   <p className="text-xs text-[var(--text-muted)]">
                                     {new Date(trade.created_at).toLocaleDateString()}

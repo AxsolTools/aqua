@@ -12,15 +12,18 @@ import { useAuth } from "@/components/providers/auth-provider"
 
 interface TokenParameters {
   id: string
-  token_address: string
-  pour_rate: number
-  pour_rate_enabled: boolean
-  evaporation_rate: number
+  token_id: string
+  pour_rate_percent: number
+  pour_enabled: boolean
+  pour_interval_seconds: number
+  pour_max_per_interval_sol: number
+  pour_min_trigger_sol: number
+  evaporation_rate_percent: number
   evaporation_enabled: boolean
-  liquidity_fee_percent: number
-  auto_add_liquidity: boolean
-  min_liquidity_threshold: number
-  max_pour_amount: number
+  fee_to_liquidity_percent: number
+  fee_to_creator_percent: number
+  auto_claim_enabled: boolean
+  claim_threshold_sol: number
   created_at: string
   updated_at: string
 }
@@ -49,15 +52,16 @@ export function TokenParametersPanel({ tokenAddress }: TokenParametersPanelProps
       try {
         const response = await fetch(`/api/token/${tokenAddress}/parameters`, {
           headers: {
-            Authorization: `Bearer ${activeWallet.session_id}`,
+            "x-wallet-address": activeWallet.public_key,
+            "x-session-id": activeWallet.session_id || "",
           },
         })
         const data = await response.json()
 
-        if (data.success) {
-          setParameters(data.data)
+        if (data.success && data.data.parameters) {
+          setParameters(data.data.parameters)
         } else {
-          setError(data.error || "Failed to load parameters")
+          setError(data.error?.message || "Failed to load parameters")
         }
       } catch (error) {
         console.error("[PARAMETERS] Failed to load:", error)
@@ -95,28 +99,29 @@ export function TokenParametersPanel({ tokenAddress }: TokenParametersPanelProps
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${activeWallet.session_id}`,
+          "x-wallet-address": activeWallet.public_key,
+          "x-session-id": activeWallet.session_id || "",
         },
         body: JSON.stringify({
-          pour_rate: parameters.pour_rate,
-          pour_rate_enabled: parameters.pour_rate_enabled,
-          evaporation_rate: parameters.evaporation_rate,
+          pour_rate_percent: parameters.pour_rate_percent,
+          pour_enabled: parameters.pour_enabled,
+          pour_max_per_interval_sol: parameters.pour_max_per_interval_sol,
+          pour_min_trigger_sol: parameters.pour_min_trigger_sol,
+          evaporation_rate_percent: parameters.evaporation_rate_percent,
           evaporation_enabled: parameters.evaporation_enabled,
-          liquidity_fee_percent: parameters.liquidity_fee_percent,
-          auto_add_liquidity: parameters.auto_add_liquidity,
-          min_liquidity_threshold: parameters.min_liquidity_threshold,
-          max_pour_amount: parameters.max_pour_amount,
+          fee_to_liquidity_percent: parameters.fee_to_liquidity_percent,
+          fee_to_creator_percent: parameters.fee_to_creator_percent,
         }),
       })
 
       const data = await response.json()
 
-      if (data.success) {
-        setParameters(data.data)
+      if (data.success && data.data.parameters) {
+        setParameters(data.data.parameters)
         setHasChanges(false)
         setSuccess("Parameters saved successfully!")
       } else {
-        setError(data.error || "Failed to save parameters")
+        setError(data.error?.message || "Failed to save parameters")
       }
     } catch (error) {
       console.error("[PARAMETERS] Failed to save:", error)
@@ -206,39 +211,51 @@ export function TokenParametersPanel({ tokenAddress }: TokenParametersPanelProps
               <Label className="text-white font-medium">Pour Rate (Liquidity Addition)</Label>
             </div>
             <Switch
-              checked={parameters.pour_rate_enabled}
-              onCheckedChange={(checked) => updateParameter("pour_rate_enabled", checked)}
+              checked={parameters.pour_enabled}
+              onCheckedChange={(checked) => updateParameter("pour_enabled", checked)}
             />
           </div>
           <p className="text-sm text-white/50">
             Automatically add liquidity back to the bonding curve at a steady rate
           </p>
 
-          {parameters.pour_rate_enabled && (
+          {parameters.pour_enabled && (
             <div className="pl-7 space-y-4">
               <div>
                 <div className="flex justify-between mb-2">
-                  <Label className="text-white/70 text-sm">Rate (SOL/hour)</Label>
-                  <span className="text-cyan-400 font-mono">{parameters.pour_rate.toFixed(4)}</span>
+                  <Label className="text-white/70 text-sm">Rate (%/interval)</Label>
+                  <span className="text-cyan-400 font-mono">{parameters.pour_rate_percent?.toFixed(2) || "0.00"}%</span>
                 </div>
                 <Slider
-                  value={[parameters.pour_rate]}
-                  onValueChange={([value]) => updateParameter("pour_rate", value)}
-                  min={0.001}
-                  max={1}
-                  step={0.001}
+                  value={[parameters.pour_rate_percent || 0]}
+                  onValueChange={([value]) => updateParameter("pour_rate_percent", value)}
+                  min={0}
+                  max={10}
+                  step={0.1}
                   className="w-full"
                 />
               </div>
 
               <div>
-                <Label className="text-white/70 text-sm mb-2 block">Max Pour Amount (SOL)</Label>
+                <Label className="text-white/70 text-sm mb-2 block">Max Pour Per Interval (SOL)</Label>
                 <Input
                   type="number"
-                  value={parameters.max_pour_amount}
-                  onChange={(e) => updateParameter("max_pour_amount", parseFloat(e.target.value) || 0)}
+                  value={parameters.pour_max_per_interval_sol || 0}
+                  onChange={(e) => updateParameter("pour_max_per_interval_sol", parseFloat(e.target.value) || 0)}
                   min={0}
                   step={0.01}
+                  className="bg-white/5 border-white/10 text-white"
+                />
+              </div>
+
+              <div>
+                <Label className="text-white/70 text-sm mb-2 block">Min Trigger Threshold (SOL)</Label>
+                <Input
+                  type="number"
+                  value={parameters.pour_min_trigger_sol || 0}
+                  onChange={(e) => updateParameter("pour_min_trigger_sol", parseFloat(e.target.value) || 0)}
+                  min={0}
+                  step={0.001}
                   className="bg-white/5 border-white/10 text-white"
                 />
               </div>
@@ -266,13 +283,13 @@ export function TokenParametersPanel({ tokenAddress }: TokenParametersPanelProps
             <div className="pl-7">
               <div className="flex justify-between mb-2">
                 <Label className="text-white/70 text-sm">Burn Rate (%)</Label>
-                <span className="text-orange-400 font-mono">{parameters.evaporation_rate.toFixed(2)}%</span>
+                <span className="text-orange-400 font-mono">{parameters.evaporation_rate_percent?.toFixed(2) || "0.00"}%</span>
               </div>
               <Slider
-                value={[parameters.evaporation_rate]}
-                onValueChange={([value]) => updateParameter("evaporation_rate", value)}
+                value={[parameters.evaporation_rate_percent || 0]}
+                onValueChange={([value]) => updateParameter("evaporation_rate_percent", value)}
                 min={0}
-                max={10}
+                max={5}
                 step={0.1}
                 className="w-full"
               />
@@ -280,55 +297,45 @@ export function TokenParametersPanel({ tokenAddress }: TokenParametersPanelProps
           )}
         </div>
 
-        {/* Liquidity Fee Section */}
+        {/* Fee Distribution Section */}
         <div className="space-y-4 pt-4 border-t border-white/10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-green-400" />
-              <Label className="text-white font-medium">Auto Liquidity</Label>
-            </div>
-            <Switch
-              checked={parameters.auto_add_liquidity}
-              onCheckedChange={(checked) => updateParameter("auto_add_liquidity", checked)}
-            />
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-green-400" />
+            <Label className="text-white font-medium">Fee Distribution</Label>
           </div>
           <p className="text-sm text-white/50">
-            Automatically allocate a percentage of fees to liquidity
+            Configure how trading fees are distributed between liquidity and creator
           </p>
 
-          {parameters.auto_add_liquidity && (
-            <div className="pl-7 space-y-4">
-              <div>
-                <div className="flex justify-between mb-2">
-                  <Label className="text-white/70 text-sm">Fee Allocation (%)</Label>
-                  <span className="text-green-400 font-mono">{parameters.liquidity_fee_percent.toFixed(1)}%</span>
-                </div>
-                <Slider
-                  value={[parameters.liquidity_fee_percent]}
-                  onValueChange={([value]) => updateParameter("liquidity_fee_percent", value)}
-                  min={0}
-                  max={100}
-                  step={1}
-                  className="w-full"
-                />
+          <div className="pl-7 space-y-4">
+            <div>
+              <div className="flex justify-between mb-2">
+                <Label className="text-white/70 text-sm">To Liquidity (%)</Label>
+                <span className="text-green-400 font-mono">{parameters.fee_to_liquidity_percent?.toFixed(1) || "25.0"}%</span>
               </div>
-
-              <div>
-                <Label className="text-white/70 text-sm mb-2 block">Min Threshold (SOL)</Label>
-                <Input
-                  type="number"
-                  value={parameters.min_liquidity_threshold}
-                  onChange={(e) => updateParameter("min_liquidity_threshold", parseFloat(e.target.value) || 0)}
-                  min={0}
-                  step={0.001}
-                  className="bg-white/5 border-white/10 text-white"
-                />
-                <p className="text-xs text-white/40 mt-1">
-                  Liquidity will only be added when accumulated fees exceed this amount
-                </p>
-              </div>
+              <Slider
+                value={[parameters.fee_to_liquidity_percent || 25]}
+                onValueChange={([value]) => {
+                  updateParameter("fee_to_liquidity_percent", value)
+                  updateParameter("fee_to_creator_percent", 100 - value)
+                }}
+                min={0}
+                max={100}
+                step={1}
+                className="w-full"
+              />
             </div>
-          )}
+
+            <div>
+              <div className="flex justify-between mb-2">
+                <Label className="text-white/70 text-sm">To Creator (%)</Label>
+                <span className="text-cyan-400 font-mono">{parameters.fee_to_creator_percent?.toFixed(1) || "75.0"}%</span>
+              </div>
+              <p className="text-xs text-white/40">
+                Fee distribution must total 100%
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

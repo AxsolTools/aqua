@@ -22,7 +22,7 @@ interface TokenHeaderProps {
 }
 
 export function TokenHeader({ token, creator }: TokenHeaderProps) {
-  const { user } = useAuth()
+  const { activeWallet, isAuthenticated } = useAuth()
   const [copied, setCopied] = useState(false)
   const [isWatchlisted, setIsWatchlisted] = useState(false)
 
@@ -33,14 +33,18 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
   }
 
   const toggleWatchlist = async () => {
-    if (!user) return
+    if (!activeWallet) return
 
     const supabase = createClient()
 
     if (isWatchlisted) {
-      await supabase.from("watchlist").delete().eq("user_id", user.id).eq("token_id", token.id)
+      await supabase.from("watchlist").delete().eq("session_id", activeWallet.session_id).eq("token_id", token.id)
     } else {
-      await supabase.from("watchlist").insert({ user_id: user.id, token_id: token.id })
+      await supabase.from("watchlist").insert({ 
+        session_id: activeWallet.session_id, 
+        token_id: token.id,
+        token_address: token.mint_address
+      })
     }
 
     setIsWatchlisted(!isWatchlisted)
@@ -164,7 +168,7 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
-            {user && (
+            {isAuthenticated && (
               <button
                 onClick={toggleWatchlist}
                 className={cn(
@@ -189,12 +193,12 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               </button>
             )}
 
-            {/* Social Links */}
-            {token.social_links && (
+            {/* Social Links - accessed as direct properties */}
+            {(token.twitter || token.telegram || token.website) && (
               <div className="flex items-center gap-1">
-                {token.social_links.twitter && (
+                {token.twitter && (
                   <a
-                    href={token.social_links.twitter}
+                    href={token.twitter}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-lg border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-colors"
@@ -204,9 +208,9 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
                     </svg>
                   </a>
                 )}
-                {token.social_links.telegram && (
+                {token.telegram && (
                   <a
-                    href={token.social_links.telegram}
+                    href={token.telegram}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-lg border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-colors"
@@ -216,9 +220,9 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
                     </svg>
                   </a>
                 )}
-                {token.social_links.website && (
+                {token.website && (
                   <a
-                    href={token.social_links.website}
+                    href={token.website}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 rounded-lg border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-colors"

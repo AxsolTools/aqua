@@ -10,7 +10,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 
 interface ChatMessage {
   id: string
-  token_address: string
+  token_id: string
   wallet_address: string
   message: string
   created_at: string
@@ -19,13 +19,15 @@ interface ChatMessage {
 
 interface TokenChatProps {
   tokenAddress: string
+  tokenId?: string
 }
 
-export function TokenChat({ tokenAddress }: TokenChatProps) {
+export function TokenChat({ tokenAddress, tokenId }: TokenChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
+  const [resolvedTokenId, setResolvedTokenId] = useState<string | null>(tokenId || null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const supabase = createClientComponentClient()
   const { activeWallet, isAuthenticated } = useAuth()
@@ -35,7 +37,7 @@ export function TokenChat({ tokenAddress }: TokenChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }
 
-  // Load initial messages
+  // Load initial messages and resolve token ID
   useEffect(() => {
     const loadMessages = async () => {
       setIsLoading(true)
@@ -44,6 +46,10 @@ export function TokenChat({ tokenAddress }: TokenChatProps) {
         const data = await response.json()
         if (data.success) {
           setMessages(data.data.messages || [])
+          // Store the token_id from the first message if available, for subscription
+          if (data.data.messages?.length > 0 && data.data.messages[0].token_id) {
+            setResolvedTokenId(data.data.messages[0].token_id)
+          }
         }
       } catch (error) {
         console.error("[CHAT] Failed to load messages:", error)
@@ -54,17 +60,19 @@ export function TokenChat({ tokenAddress }: TokenChatProps) {
     loadMessages()
   }, [tokenAddress])
 
-  // Subscribe to real-time updates
+  // Subscribe to real-time updates (use token_id for filtering)
   useEffect(() => {
+    if (!resolvedTokenId) return
+
     const channel = supabase
-      .channel(`token-chat-${tokenAddress}`)
+      .channel(`token-chat-${resolvedTokenId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "token_chat",
-          filter: `token_address=eq.${tokenAddress}`,
+          filter: `token_id=eq.${resolvedTokenId}`,
         },
         (payload) => {
           const newMsg = payload.new as ChatMessage
@@ -76,7 +84,7 @@ export function TokenChat({ tokenAddress }: TokenChatProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [tokenAddress, supabase])
+  }, [resolvedTokenId, supabase])
 
   // Scroll when messages update
   useEffect(() => {
@@ -91,7 +99,11 @@ export function TokenChat({ tokenAddress }: TokenChatProps) {
     try {
       const response = await fetch(`/api/token/${tokenAddress}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-wallet-address": activeWallet.public_key,
+          "x-session-id": activeWallet.session_id || "",
+        },
         body: JSON.stringify({
           wallet_address: activeWallet.public_key,
           message: newMessage.trim(),

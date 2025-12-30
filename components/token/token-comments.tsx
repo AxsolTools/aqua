@@ -10,7 +10,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 
 interface Comment {
   id: string
-  token_address: string
+  token_id: string
   wallet_address: string
   content: string
   parent_id: string | null
@@ -23,19 +23,21 @@ interface Comment {
 
 interface TokenCommentsProps {
   tokenAddress: string
+  tokenId?: string
 }
 
-export function TokenComments({ tokenAddress }: TokenCommentsProps) {
+export function TokenComments({ tokenAddress, tokenId }: TokenCommentsProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [newComment, setNewComment] = useState("")
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const [replyContent, setReplyContent] = useState("")
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
+  const [resolvedTokenId, setResolvedTokenId] = useState<string | null>(tokenId || null)
   const supabase = createClientComponentClient()
   const { activeWallet, isAuthenticated } = useAuth()
 
-  // Load comments
+  // Load comments and resolve token ID
   useEffect(() => {
     const loadComments = async () => {
       setIsLoading(true)
@@ -55,6 +57,11 @@ export function TokenComments({ tokenAddress }: TokenCommentsProps) {
           }))
 
           setComments(threaded)
+          
+          // Store token_id from first comment for subscription
+          if (allComments.length > 0 && allComments[0].token_id) {
+            setResolvedTokenId(allComments[0].token_id)
+          }
         }
       } catch (error) {
         console.error("[COMMENTS] Failed to load:", error)
@@ -65,24 +72,9 @@ export function TokenComments({ tokenAddress }: TokenCommentsProps) {
     loadComments()
   }, [tokenAddress])
 
-  // Subscribe to real-time updates
+  // Subscribe to real-time updates (use token_id for filtering)
   useEffect(() => {
-    const channel = supabase
-      .channel(`token-comments-${tokenAddress}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "token_comments",
-          filter: `token_address=eq.${tokenAddress}`,
-        },
-        () => {
-          // Reload comments on any change
-          loadComments()
-        }
-      )
-      .subscribe()
+    if (!resolvedTokenId) return
 
     const loadComments = async () => {
       try {
@@ -103,10 +95,27 @@ export function TokenComments({ tokenAddress }: TokenCommentsProps) {
       }
     }
 
+    const channel = supabase
+      .channel(`token-comments-${resolvedTokenId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "token_comments",
+          filter: `token_id=eq.${resolvedTokenId}`,
+        },
+        () => {
+          // Reload comments on any change
+          loadComments()
+        }
+      )
+      .subscribe()
+
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [tokenAddress, supabase])
+  }, [resolvedTokenId, tokenAddress, supabase])
 
   // Post comment
   const handlePostComment = async (parentId?: string) => {
@@ -117,11 +126,15 @@ export function TokenComments({ tokenAddress }: TokenCommentsProps) {
     try {
       const response = await fetch(`/api/token/${tokenAddress}/comments`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-wallet-address": activeWallet.public_key,
+          "x-session-id": activeWallet.session_id || "",
+        },
         body: JSON.stringify({
           wallet_address: activeWallet.public_key,
           content: content.trim(),
-          parent_id: parentId || null,
+          parentId: parentId || null,
         }),
       })
 
@@ -148,7 +161,11 @@ export function TokenComments({ tokenAddress }: TokenCommentsProps) {
     try {
       await fetch(`/api/token/${tokenAddress}/comments/${commentId}/like`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-wallet-address": activeWallet.public_key,
+          "x-session-id": activeWallet.session_id || "",
+        },
         body: JSON.stringify({
           wallet_address: activeWallet.public_key,
         }),

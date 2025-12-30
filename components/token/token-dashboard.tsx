@@ -63,8 +63,13 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
 
     const supabase = createClient()
     const channel = supabase
-      .channel("trades-realtime")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "trades" }, (payload) => {
+      .channel(`trades-realtime-${tokenData.id}`)
+      .on("postgres_changes", { 
+        event: "INSERT", 
+        schema: "public", 
+        table: "trades",
+        filter: `token_id=eq.${tokenData.id}` 
+      }, (payload) => {
         const newTrade = payload.new as Trade
         setTrades((prev) => [newTrade, ...prev].slice(0, 50))
       })
