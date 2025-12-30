@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/lib/supabase/client"
 import { motion, AnimatePresence } from "framer-motion"
 import { MessageSquare, Heart, User, Clock, Reply, Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -34,7 +34,7 @@ export function TokenComments({ tokenAddress, tokenId }: TokenCommentsProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [isSending, setIsSending] = useState(false)
   const [resolvedTokenId, setResolvedTokenId] = useState<string | null>(tokenId || null)
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
   const { activeWallet, isAuthenticated } = useAuth()
 
   // Load comments and resolve token ID

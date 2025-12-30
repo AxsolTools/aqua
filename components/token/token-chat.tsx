@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@/lib/supabase/client"
 import { motion, AnimatePresence } from "framer-motion"
 import { Send, User, Clock } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,7 @@ export function TokenChat({ tokenAddress, tokenId }: TokenChatProps) {
   const [isSending, setIsSending] = useState(false)
   const [resolvedTokenId, setResolvedTokenId] = useState<string | null>(tokenId || null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const supabase = createClientComponentClient()
+  const supabase = createClient()
   const { activeWallet, isAuthenticated } = useAuth()
 
   // Scroll to bottom when new messages arrive
