@@ -34,6 +34,11 @@ import {
   X
 } from "lucide-react"
 import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
+import { WaterLevelMeter } from "@/components/metrics/water-level-meter"
+import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
+import { EvaporationTracker } from "@/components/metrics/evaporation-tracker"
+import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
+import { TideHarvestCard } from "@/components/metrics/tide-harvest-card"
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding } = useAuth()
@@ -203,90 +208,76 @@ export default function DashboardPage() {
                     subtitle="Real-time metrics for your token ecosystem"
                   />
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    {/* Water Level */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                    {/* Water Level - Animated */}
+                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
                       <div className="flex items-center gap-2 mb-3">
                         <Droplets className="w-4 h-4 text-teal-400" />
                         <span className="text-xs font-medium text-zinc-400">Water Level</span>
                       </div>
-                      <div className="relative h-24 rounded-lg bg-zinc-900 border border-zinc-700 overflow-hidden">
-                        <motion.div
-                          initial={{ height: 0 }}
-                          animate={{ height: `${createdTokens[0]?.water_level || 75}%` }}
-                          transition={{ duration: 1, ease: "easeOut" }}
-                          className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-teal-600/60 to-teal-400/30"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="text-xl font-bold text-teal-400">
-                            {createdTokens[0]?.water_level || 75}%
-                          </span>
-                        </div>
-                      </div>
+                      <WaterLevelMeter 
+                        level={createdTokens[0]?.water_level || 75} 
+                        size="md" 
+                        showLabel={true}
+                      />
                       <p className="text-xs text-zinc-500 mt-2 text-center">Liquidity Depth</p>
                     </div>
 
-                    {/* Pour Rate */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                    {/* Pour Rate - Animated */}
+                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
                       <div className="flex items-center gap-2 mb-3">
                         <TrendingUp className="w-4 h-4 text-cyan-400" />
                         <span className="text-xs font-medium text-zinc-400">Pour Rate</span>
                       </div>
-                      <div className="h-24 flex items-center justify-center">
-                        <span className="text-3xl font-bold text-cyan-400">
-                          {createdTokens[0]?.pour_rate || 1.5}%
-                        </span>
-                      </div>
-                      <p className="text-xs text-zinc-500 mt-2 text-center">Per Hour</p>
+                      <PourRateVisualizer rate={createdTokens[0]?.pour_rate || 1.5} />
                     </div>
 
-                    {/* Evaporation */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                    {/* Evaporation - Animated */}
+                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
                       <div className="flex items-center gap-2 mb-3">
                         <Flame className="w-4 h-4 text-amber-400" />
                         <span className="text-xs font-medium text-zinc-400">Evaporation</span>
                       </div>
-                      <div className="h-24 flex flex-col items-center justify-center">
-                        <span className="text-3xl font-bold text-amber-400">
-                          {createdTokens[0]?.evaporation_rate || 0.5}%
-                        </span>
-                        <div className="flex gap-0.5 mt-2">
-                          <span className="text-amber-400/60">▲</span>
-                          <span className="text-amber-400/80">▲</span>
-                          <span className="text-amber-400">▲</span>
-                        </div>
-                      </div>
-                      <p className="text-xs text-zinc-500 mt-2 text-center">Burn Rate</p>
+                      <EvaporationTracker 
+                        totalEvaporated={createdTokens[0]?.total_evaporated || 0}
+                        evaporationRate={createdTokens[0]?.evaporation_rate || 0.5}
+                        symbol={createdTokens[0]?.symbol || "TOKEN"}
+                      />
                     </div>
 
-                    {/* Constellation */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                    {/* Constellation - Animated */}
+                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
                       <div className="flex items-center gap-2 mb-3">
                         <Star className="w-4 h-4 text-purple-400" />
                         <span className="text-xs font-medium text-zinc-400">Health Score</span>
                       </div>
-                      <div className="h-24 flex items-center justify-center">
-                        <span className="text-3xl font-bold text-purple-400">
-                          {createdTokens[0]?.constellation_score || 85}
-                        </span>
+                      <div className="h-28">
+                        <ConstellationGauge strength={createdTokens[0]?.constellation_strength || 85} />
                       </div>
-                      <p className="text-xs text-zinc-500 mt-2 text-center">Constellation</p>
                     </div>
 
-                    {/* Tide Harvest */}
-                    <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                    {/* Tide Harvest - Animated */}
+                    <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20 overflow-hidden">
                       <div className="flex items-center gap-2 mb-3">
                         <Gift className="w-4 h-4 text-amber-400" />
                         <span className="text-xs font-medium text-amber-400">Harvest</span>
                       </div>
-                      <div className="h-24 flex flex-col items-center justify-center">
-                        <span className="text-2xl font-bold text-amber-400">
-                          {formatNumber(totalRewards)}
-                        </span>
-                        <span className="text-xs text-zinc-500 mt-1">SOL</span>
-                      </div>
-                      <ActionButton variant="outline" size="sm" className="w-full mt-2 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
-                        Claim
-                      </ActionButton>
+                      {createdTokens[0] ? (
+                        <TideHarvestCard 
+                          tokenId={createdTokens[0].id}
+                          creatorId={createdTokens[0].creator_id}
+                          tokenAddress={createdTokens[0].mint_address}
+                        />
+                      ) : (
+                        <div className="h-32 flex flex-col items-center justify-center">
+                          <span className="text-2xl font-bold text-amber-400">
+                            {formatNumber(totalRewards)}
+                          </span>
+                          <span className="text-xs text-zinc-500 mt-1">SOL</span>
+                          <ActionButton variant="outline" size="sm" className="w-full mt-3 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
+                            Claim
+                          </ActionButton>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </FintechCard>
