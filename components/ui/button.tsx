@@ -5,21 +5,21 @@ import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from '@/lib/utils'
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua-primary)]/30",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-teal-500/30",
   {
     variants: {
       variant: {
-        default: 'bg-[var(--aqua-primary)] text-white hover:bg-[var(--aqua-secondary)] shadow-md shadow-[var(--aqua-primary)]/20',
+        default: 'bg-teal-600 text-white hover:bg-teal-500 shadow-md shadow-teal-600/20',
         destructive:
-          'bg-[var(--red)] text-white hover:bg-[var(--red-light)] shadow-md shadow-[var(--red)]/20',
+          'bg-red-600 text-white hover:bg-red-500 shadow-md shadow-red-600/20',
         outline:
-          'border border-[rgba(255,255,255,0.15)] bg-[var(--bg-input)] text-[var(--text-primary)] hover:bg-[var(--bg-card-hover)] hover:border-[rgba(255,255,255,0.25)]',
+          'border border-zinc-600 bg-zinc-900/80 text-zinc-100 hover:bg-zinc-800 hover:border-zinc-500',
         secondary:
-          'bg-[var(--bg-secondary)] text-[var(--text-primary)] border border-[rgba(255,255,255,0.1)] hover:bg-[var(--bg-elevated)] hover:border-[rgba(255,255,255,0.15)]',
+          'bg-zinc-800 text-zinc-100 border border-zinc-700 hover:bg-zinc-700 hover:border-zinc-600',
         ghost:
-          'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]',
-        link: 'text-[var(--aqua-primary)] underline-offset-4 hover:underline',
-        success: 'bg-[var(--green)] text-white hover:bg-[var(--green-light)] shadow-md shadow-[var(--green)]/20',
+          'text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
+        link: 'text-teal-500 underline-offset-4 hover:underline',
+        success: 'bg-green-600 text-white hover:bg-green-500 shadow-md shadow-green-600/20',
       },
       size: {
         default: 'h-10 px-4 py-2 has-[>svg]:px-3',

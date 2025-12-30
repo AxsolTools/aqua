@@ -10,22 +10,26 @@ function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
       className={cn(
         // Base styles with visible border
         'h-10 w-full min-w-0 rounded-md px-3 py-2 text-base md:text-sm',
-        // Background and border - VISIBLE border color
-        'bg-[var(--bg-input)] border border-[rgba(255,255,255,0.15)]',
+        // Background - dark input background
+        'bg-zinc-900/80',
+        // VISIBLE border - white with opacity
+        'border border-zinc-600',
         // Text and placeholder
-        'text-[var(--text-primary)] placeholder:text-[var(--text-muted)]',
-        // Focus states with aqua glow
-        'focus:outline-none focus:border-[var(--aqua-primary)] focus:ring-2 focus:ring-[var(--aqua-primary)]/20',
+        'text-zinc-100 placeholder:text-zinc-500',
+        // Focus states with teal/aqua glow
+        'focus:outline-none focus:border-teal-500 focus:ring-2 focus:ring-teal-500/30',
+        // Hover state
+        'hover:border-zinc-500',
         // Transitions
         'transition-all duration-150',
         // File input styles
-        'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-[var(--text-primary)]',
+        'file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-zinc-100',
         // Disabled state
         'disabled:cursor-not-allowed disabled:opacity-50',
         // Invalid state
-        'aria-invalid:border-[var(--red)] aria-invalid:ring-[var(--red)]/20',
+        'aria-invalid:border-red-500 aria-invalid:ring-red-500/30',
         // Selection
-        'selection:bg-[var(--aqua-primary)] selection:text-white',
+        'selection:bg-teal-500 selection:text-white',
         className,
       )}
       {...props}
