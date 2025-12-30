@@ -103,18 +103,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Return wallet info to user
-    // IMPORTANT: Only return mnemonic once - user must save it!
+    // IMPORTANT: Only return mnemonic and secretKey once - user must save them!
+    const secretKeyBase58 = bs58.encode(keypair.secretKey);
+    
     return NextResponse.json({
       success: true,
       data: {
         walletId: wallet.id,
         publicKey,
+        secretKey: secretKeyBase58, // Base58 encoded private key - shown only once!
         sessionId,
-        mnemonic, // User MUST save this - shown only once!
+        mnemonic, // 12-word recovery phrase - shown only once!
         isPrimary: isFirstWallet,
         label: label || 'Main Wallet',
       },
-      warning: 'Save your recovery phrase now! It will NOT be shown again.',
+      warning: 'Save your recovery phrase and private key now! They will NOT be shown again.',
     });
 
   } catch (error) {
