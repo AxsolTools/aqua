@@ -20,6 +20,7 @@ import {
   VersionedTransaction,
   LAMPORTS_PER_SOL,
   sendAndConfirmTransaction,
+  SystemProgram,
 } from '@solana/web3.js';
 import { solToLamports, lamportsToSol } from '@/lib/precision';
 
@@ -462,15 +463,81 @@ export async function claimCreatorRewards(
       };
     }
 
-    // TODO: Implement actual claim instruction
-    // This would call the Pump.fun program to claim rewards
     console.log(`[PUMP] Claiming ${balance} SOL from vault ${vaultAddress}`);
 
-    // Placeholder
+    // Use PumpPortal API for creator reward claims
+    const response = await fetch('https://pumpportal.fun/api/creator-claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mint: tokenMint,
+        creatorPublicKey: creatorKeypair.publicKey.toBase58(),
+        amount: Math.floor(balance * LAMPORTS_PER_SOL),
+      }),
+    });
+
+    if (!response.ok) {
+      // Fallback: Direct vault withdrawal if PumpPortal API unavailable
+      const vaultPubkey = new PublicKey(vaultAddress);
+      
+      // Create withdrawal transaction
+      const transaction = new Transaction();
+      
+      // Get recent blockhash
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = creatorKeypair.publicKey;
+
+      // Add transfer instruction from vault to creator
+      // Note: This only works if the vault is a regular account owned by creator
+      // For PDA vaults, the program must sign the transfer
+      transaction.add(
+        SystemProgram.transfer({
+          fromPubkey: vaultPubkey,
+          toPubkey: creatorKeypair.publicKey,
+          lamports: Math.floor(balance * LAMPORTS_PER_SOL),
+        })
+      );
+
+      transaction.sign(creatorKeypair);
+
+      const signature = await connection.sendRawTransaction(transaction.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+        maxRetries: 3,
+      });
+
+      await connection.confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        'confirmed'
+      );
+
+      console.log(`[PUMP] Claim executed (direct): ${signature}`);
+      return {
+        success: true,
+        amount: balance,
+        txSignature: signature,
+      };
+    }
+
+    // Process PumpPortal response
+    const txData = await response.arrayBuffer();
+    const tx = Transaction.from(Buffer.from(txData));
+    tx.sign(creatorKeypair);
+
+    const signature = await connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+      maxRetries: 3,
+    });
+
+    await connection.confirmTransaction(signature, 'confirmed');
+    
+    console.log(`[PUMP] Claim executed via PumpPortal: ${signature}`);
     return {
       success: true,
       amount: balance,
-      txSignature: `sim_claim_${Date.now()}`,
+      txSignature: signature,
     };
 
   } catch (error) {
