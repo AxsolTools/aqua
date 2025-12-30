@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Header } from "@/components/layout/header"
 import { LiquidBackground } from "@/components/visuals/liquid-background"
@@ -20,6 +20,8 @@ export default function ProfilePage() {
   const [createdTokens, setCreatedTokens] = useState<Token[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
   const [dataLoading, setDataLoading] = useState(true)
+  const [walletBalances, setWalletBalances] = useState<Record<string, number>>({})
+  const [balancesLoading, setBalancesLoading] = useState(false)
   
   // Settings state
   const [slippage, setSlippage] = useState<number>(1)
@@ -124,6 +126,48 @@ export default function ProfilePage() {
       fetchUserData()
     }
   }, [isAuthenticated, activeWallet])
+
+  const fetchWalletBalances = useCallback(async () => {
+    if (wallets.length === 0) return
+    setBalancesLoading(true)
+    try {
+      const addresses = wallets.map(w => w.public_key)
+      const response = await fetch("/api/wallet/balance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ addresses }),
+      })
+      const data = await response.json()
+      if (data.success && data.data?.balances) {
+        const newBalances: Record<string, number> = {}
+        data.data.balances.forEach((balance: { address: string; balanceSol: number }) => {
+          const wallet = wallets.find(w => w.public_key === balance.address)
+          if (wallet) {
+            newBalances[wallet.id] = balance.balanceSol || 0
+          }
+        })
+        setWalletBalances(newBalances)
+      }
+    } catch (error) {
+      console.error("[PROFILE] Failed to fetch wallet balances:", error)
+    } finally {
+      setBalancesLoading(false)
+    }
+  }, [wallets])
+
+  // Fetch wallet balances
+  useEffect(() => {
+    if (isAuthenticated && wallets.length > 0) {
+      fetchWalletBalances()
+      
+      // Refresh balances every 30 seconds
+      const interval = setInterval(fetchWalletBalances, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [isAuthenticated, wallets, fetchWalletBalances])
+
+  // Calculate total balance
+  const totalBalance = Object.values(walletBalances).reduce((sum, balance) => sum + balance, 0)
 
   const fetchUserData = async () => {
     if (!activeWallet) return
@@ -240,14 +284,24 @@ export default function ProfilePage() {
                   {activeTab === "portfolio" && (
                     <div className="space-y-6">
                       {/* Wallet Overview */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                         <GlassPanel className="p-6">
                           <p className="text-sm text-[var(--text-muted)] mb-1">Total Wallets</p>
                           <p className="text-3xl font-bold text-[var(--text-primary)]">{wallets.length}</p>
                         </GlassPanel>
                         <GlassPanel className="p-6" glow="aqua">
+                          <p className="text-sm text-[var(--text-muted)] mb-1">Total Balance</p>
+                          {balancesLoading ? (
+                            <p className="text-3xl font-bold text-[var(--aqua-primary)]">...</p>
+                          ) : (
+                            <p className="text-3xl font-bold text-[var(--aqua-primary)]">
+                              {totalBalance.toFixed(4)} SOL
+                            </p>
+                          )}
+                        </GlassPanel>
+                        <GlassPanel className="p-6">
                           <p className="text-sm text-[var(--text-muted)] mb-1">Tokens Created</p>
-                          <p className="text-3xl font-bold text-[var(--aqua-primary)]">{createdTokens.length}</p>
+                          <p className="text-3xl font-bold text-[var(--text-primary)]">{createdTokens.length}</p>
                         </GlassPanel>
                         <GlassPanel className="p-6">
                           <p className="text-sm text-[var(--text-muted)] mb-1">Total Trades</p>
@@ -270,7 +324,7 @@ export default function ProfilePage() {
                               )}
                             >
                               <div className="flex items-center justify-between">
-                                <div>
+                                <div className="flex-1">
                                   <div className="flex items-center gap-2 mb-1">
                                     <span className="text-sm font-medium text-[var(--text-primary)]">
                                       {wallet.label || "Wallet"}
@@ -281,9 +335,22 @@ export default function ProfilePage() {
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-sm font-mono text-[var(--text-secondary)]">
+                                  <p className="text-sm font-mono text-[var(--text-secondary)] mb-2">
                                     {formatAddress(wallet.public_key)}
                                   </p>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-[var(--text-muted)]">Balance:</span>
+                                    {balancesLoading ? (
+                                      <span className="text-xs text-[var(--text-secondary)]">Loading...</span>
+                                    ) : (
+                                      <span className="text-sm font-semibold text-[var(--aqua-primary)]">
+                                        {walletBalances[wallet.id] !== undefined 
+                                          ? `${walletBalances[wallet.id].toFixed(4)} SOL`
+                                          : "—"
+                                        }
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                                 <button
                                   onClick={() => navigator.clipboard.writeText(wallet.public_key)}

@@ -217,8 +217,8 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
         try {
           const response = await fetch(`/api/wallet/balance?address=${wallet.public_key}`)
           const data = await response.json()
-          if (data.success) {
-            newBalances[wallet.id] = data.data.balance
+          if (data.success && data.data) {
+            newBalances[wallet.id] = data.data.balanceSol || 0
           }
         } catch (error) {
           console.error(`[WALLET] Balance fetch error for ${wallet.public_key}:`, error)
@@ -257,8 +257,8 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
     // Refresh balances after withdrawal
     const balanceResponse = await fetch(`/api/wallet/balance?address=${withdrawWallet.public_key}`)
     const balanceData = await balanceResponse.json()
-    if (balanceData.success) {
-      setBalances(prev => ({ ...prev, [withdrawWallet.id]: balanceData.data.balance }))
+    if (balanceData.success && balanceData.data) {
+      setBalances(prev => ({ ...prev, [withdrawWallet.id]: balanceData.data.balanceSol || 0 }))
     }
   }
 
