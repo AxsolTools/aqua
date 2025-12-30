@@ -43,7 +43,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
       items: [
         { label: "Total Supply", value: Number(formData.totalSupply).toLocaleString() },
         { label: "Decimals", value: "6 (pump.fun standard)" },
-        { label: "Creator Allocation", value: `${Number(formData.creatorAllocation).toLocaleString()} tokens` },
+        { label: "Initial Purchase", value: `${parseFloat(formData.initialBuySol) || 0} SOL` },
       ],
     },
     {

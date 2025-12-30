@@ -26,7 +26,7 @@ export interface TokenFormData {
   telegram: string
   discord: string
   totalSupply: string
-  creatorAllocation: string
+  initialBuySol: string
   pourRate: number
   evaporationRate: number
 }
@@ -42,7 +42,7 @@ const initialFormData: TokenFormData = {
   telegram: "",
   discord: "",
   totalSupply: "1000000000",
-  creatorAllocation: "0",
+  initialBuySol: "0",
   pourRate: 1,
   evaporationRate: 0.5,
 }
@@ -142,6 +142,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           discord: formData.discord,
           totalSupply: parseInt(formData.totalSupply),
           decimals: 6, // pump.fun tokens always use 6 decimals
+          initialBuySol: parseFloat(formData.initialBuySol) || 0,
           pourRate: formData.pourRate,
           evaporationRate: formData.evaporationRate,
           // Send pre-generated mint keypair so backend uses the same address
