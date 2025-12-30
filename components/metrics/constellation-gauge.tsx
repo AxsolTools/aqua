@@ -5,9 +5,10 @@ import { cn } from "@/lib/utils"
 
 interface ConstellationGaugeProps {
   strength: number
+  isLoading?: boolean
 }
 
-export function ConstellationGauge({ strength }: ConstellationGaugeProps) {
+export function ConstellationGauge({ strength, isLoading = false }: ConstellationGaugeProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const clampedStrength = Math.max(0, Math.min(100, strength))
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/providers/auth-provider"
@@ -9,21 +9,42 @@ import type { TideHarvest } from "@/lib/types/database"
 interface TideHarvestCardProps {
   tokenId: string
   creatorId: string
+  tokenAddress?: string // Optional mint address for on-chain queries
 }
 
-export function TideHarvestCard({ tokenId, creatorId }: TideHarvestCardProps) {
+export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarvestCardProps) {
   const { userId } = useAuth()
   const [harvest, setHarvest] = useState<TideHarvest | null>(null)
+  const [onChainBalance, setOnChainBalance] = useState<number>(0)
   const [isLoading, setIsLoading] = useState(true)
   const [isClaiming, setIsClaiming] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const isCreator = userId === creatorId
 
+  // Fetch on-chain vault balance from metrics API
+  const fetchOnChainBalance = useCallback(async () => {
+    if (!tokenAddress) return
+
+    try {
+      const response = await fetch(`/api/token/${tokenAddress}/metrics`)
+      const data = await response.json()
+      if (data.success && data.data.tideHarvest !== undefined) {
+        setOnChainBalance(data.data.tideHarvest)
+        console.log(`[TIDE-HARVEST] On-chain balance: ${data.data.tideHarvest} SOL`)
+      }
+    } catch (error) {
+      console.warn('[TIDE-HARVEST] Failed to fetch on-chain balance:', error)
+    }
+  }, [tokenAddress])
+
   useEffect(() => {
     const fetchHarvest = async () => {
       try {
-        // Try API first, fallback to direct Supabase
+        // Fetch on-chain balance (priority source)
+        fetchOnChainBalance()
+
+        // Also fetch database harvest records for history
         const response = await fetch(`/api/tide-harvest/claim?token_address=${tokenId}`)
         const data = await response.json()
 
@@ -50,7 +71,11 @@ export function TideHarvestCard({ tokenId, creatorId }: TideHarvestCardProps) {
     }
 
     fetchHarvest()
-  }, [tokenId])
+
+    // Poll on-chain balance every 30 seconds
+    const interval = setInterval(fetchOnChainBalance, 30_000)
+    return () => clearInterval(interval)
+  }, [tokenId, fetchOnChainBalance])
 
   // Wave animation
   useEffect(() => {
@@ -107,7 +132,10 @@ export function TideHarvestCard({ tokenId, creatorId }: TideHarvestCardProps) {
     return () => cancelAnimationFrame(animationId)
   }, [])
 
-  const claimable = harvest ? harvest.total_accumulated - harvest.total_claimed : 0
+  // Use on-chain balance as primary source, fallback to database
+  const claimable = onChainBalance > 0 
+    ? onChainBalance 
+    : (harvest ? harvest.total_accumulated - harvest.total_claimed : 0)
 
   const handleClaim = async () => {
     if (!isCreator || claimable <= 0 || !harvest) return

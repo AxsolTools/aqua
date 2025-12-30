@@ -283,6 +283,7 @@ async function logPourExecution(
   status: 'pending' | 'success' | 'failed',
   errorMessage?: string
 ): Promise<void> {
+  // Log to pour_rate_logs
   await supabase
     .from('pour_rate_logs')
     .insert({
@@ -293,6 +294,23 @@ async function logPourExecution(
       status,
       error_message: errorMessage,
     });
+
+  // CRITICAL: Also log to liquidity_history for real-time metrics
+  // This enables the Pour Rate visualizer to show live data
+  if (status === 'success' && amountSol > 0) {
+    await supabase
+      .from('liquidity_history')
+      .insert({
+        token_id: tokenId,
+        timestamp: new Date().toISOString(),
+        liquidity_sol: amountSol,
+        source: 'pour',
+        change_amount_sol: amountSol,
+        tx_signature: txSignature,
+      });
+    
+    console.log(`[POUR] Logged ${amountSol} SOL to liquidity_history for token ${tokenId}`);
+  }
 }
 
 // ============================================================================
@@ -590,16 +608,38 @@ async function processPourForToken(token: TokenWithParams): Promise<PourResult> 
       })
       .eq('token_id', token.id);
 
-    // Update token liquidity
+    // Update token liquidity and calculate real-time metrics
+    const newLiquidity = token.current_liquidity + pourAmountSol;
+    
+    // Calculate water_level: (Liquidity / Total Supply) * 100, normalized to 0-100
+    // Using a reasonable baseline where 1 SOL of liquidity per 1M tokens = 100%
+    const totalSupplyNormalized = 1_000_000_000; // 1B tokens standard
+    const waterLevel = Math.min(100, Math.max(0, (newLiquidity / 100) * 100)); // Simplified: 100 SOL = 100%
+    
+    // Get market cap for constellation strength calculation
+    const { data: tokenData } = await supabase
+      .from('tokens')
+      .select('market_cap, total_supply')
+      .eq('id', token.id)
+      .single();
+    
+    // Calculate constellation_strength: (Liquidity / Market Cap) * 100
+    let constellationStrength = 50; // Default
+    if (tokenData?.market_cap && tokenData.market_cap > 0) {
+      constellationStrength = Math.min(100, Math.max(0, (newLiquidity / tokenData.market_cap) * 100));
+    }
+
     await supabase
       .from('tokens')
       .update({
-        current_liquidity: token.current_liquidity + pourAmountSol,
+        current_liquidity: newLiquidity,
+        water_level: waterLevel,
+        constellation_strength: constellationStrength,
         updated_at: new Date().toISOString(),
       })
       .eq('id', token.id);
 
-    console.log(`[POUR] ${token.symbol}: Poured ${pourAmountSol.toFixed(6)} SOL (TX: ${txSignature.slice(0, 8)}...)`);
+    console.log(`[POUR] ${token.symbol}: Poured ${pourAmountSol.toFixed(6)} SOL (TX: ${txSignature.slice(0, 8)}...) | Water: ${waterLevel.toFixed(1)}% | Constellation: ${constellationStrength.toFixed(1)}%`);
 
     return {
       tokenId: token.id,

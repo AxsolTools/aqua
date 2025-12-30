@@ -6,9 +6,10 @@ interface EvaporationTrackerProps {
   totalEvaporated: number
   evaporationRate: number
   symbol: string
+  isLoading?: boolean
 }
 
-export function EvaporationTracker({ totalEvaporated, evaporationRate, symbol }: EvaporationTrackerProps) {
+export function EvaporationTracker({ totalEvaporated, evaporationRate, symbol, isLoading = false }: EvaporationTrackerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {

@@ -28,9 +28,11 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchData = async () => {
-      const supabase = createClient()
+    const supabase = createClient()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+    let tokenId: string | null = null
 
+    const fetchData = async () => {
       const { data: tokenData, error: tokenError } = await supabase
         .from("tokens")
         .select("*")
@@ -44,6 +46,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       }
 
       setToken(tokenData as Token)
+      tokenId = tokenData.id
 
       const { data: tradesData } = await supabase
         .from("trades")
@@ -57,33 +60,46 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       }
 
       setIsLoading(false)
+
+      // CRITICAL FIX: Set up real-time subscription AFTER token data is loaded
+      // This ensures tokenId is available for the filter
+      channel = supabase
+        .channel(`token-dashboard-${tokenData.id}`)
+        .on("postgres_changes", { 
+          event: "INSERT", 
+          schema: "public", 
+          table: "trades",
+          filter: `token_id=eq.${tokenData.id}` 
+        }, (payload) => {
+          const newTrade = payload.new as Trade
+          setTrades((prev) => [newTrade, ...prev].slice(0, 50))
+        })
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "tokens", filter: `mint_address=eq.${address}` },
+          (payload) => {
+            setToken(payload.new as Token)
+          },
+        )
+        // Subscribe to liquidity_history for real-time pour rate updates
+        .on("postgres_changes", {
+          event: "INSERT",
+          schema: "public",
+          table: "liquidity_history",
+          filter: `token_id=eq.${tokenData.id}`
+        }, () => {
+          // Trigger a refresh of metrics when liquidity is added
+          console.log('[DASHBOARD] Liquidity update detected')
+        })
+        .subscribe()
     }
 
     fetchData()
 
-    const supabase = createClient()
-    const channel = supabase
-      .channel(`trades-realtime-${tokenData.id}`)
-      .on("postgres_changes", { 
-        event: "INSERT", 
-        schema: "public", 
-        table: "trades",
-        filter: `token_id=eq.${tokenData.id}` 
-      }, (payload) => {
-        const newTrade = payload.new as Trade
-        setTrades((prev) => [newTrade, ...prev].slice(0, 50))
-      })
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "tokens", filter: `mint_address=eq.${address}` },
-        (payload) => {
-          setToken(payload.new as Token)
-        },
-      )
-      .subscribe()
-
     return () => {
-      supabase.removeChannel(channel)
+      if (channel) {
+        supabase.removeChannel(channel)
+      }
     }
   }, [address])
 

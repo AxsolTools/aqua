@@ -7,9 +7,10 @@ interface WaterLevelMeterProps {
   level: number
   size?: "sm" | "md" | "lg"
   showLabel?: boolean
+  isLoading?: boolean
 }
 
-export function WaterLevelMeter({ level, size = "md", showLabel = true }: WaterLevelMeterProps) {
+export function WaterLevelMeter({ level, size = "md", showLabel = true, isLoading = false }: WaterLevelMeterProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const clampedLevel = Math.max(0, Math.min(100, level))
 

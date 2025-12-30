@@ -4,9 +4,10 @@ import { useEffect, useRef } from "react"
 
 interface PourRateVisualizerProps {
   rate: number
+  isLoading?: boolean
 }
 
-export function PourRateVisualizer({ rate }: PourRateVisualizerProps) {
+export function PourRateVisualizer({ rate, isLoading = false }: PourRateVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {

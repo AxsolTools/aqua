@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState, useCallback } from "react"
 import { motion } from "framer-motion"
 import type { Token } from "@/lib/types/database"
 import { GlassPanel } from "@/components/ui/glass-panel"
@@ -11,6 +12,18 @@ import { TideHarvestCard } from "@/components/metrics/tide-harvest-card"
 
 interface MetricsGridProps {
   token: Token
+}
+
+interface RealTimeMetrics {
+  waterLevel: number
+  evaporated: number
+  evaporationRate: number
+  constellationStrength: number
+  tideHarvest: number
+  pourRateTotal: number
+  pourRateLast24h: number
+  liquidity: number
+  marketCap: number
 }
 
 const containerVariants = {
@@ -28,7 +41,47 @@ const itemVariants = {
   show: { opacity: 1, y: 0 },
 }
 
+// Polling interval for real-time metrics (10 seconds)
+const METRICS_POLL_INTERVAL = 10_000
+
 export function MetricsGrid({ token }: MetricsGridProps) {
+  const [metrics, setMetrics] = useState<RealTimeMetrics | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch real-time metrics from the aggregated API
+  const fetchMetrics = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/token/${token.mint_address}/metrics`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setMetrics(data.data)
+        }
+      }
+    } catch (error) {
+      console.warn('[METRICS-GRID] Failed to fetch metrics:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [token.mint_address])
+
+  // Initial fetch and polling
+  useEffect(() => {
+    fetchMetrics()
+
+    // Poll for updates every 10 seconds
+    const interval = setInterval(fetchMetrics, METRICS_POLL_INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [fetchMetrics])
+
+  // Use real-time data if available, fall back to token props
+  const waterLevel = metrics?.waterLevel ?? token.water_level ?? 0
+  const evaporated = metrics?.evaporated ?? token.total_evaporated ?? 0
+  const evaporationRate = metrics?.evaporationRate ?? token.evaporation_rate ?? 0
+  const constellationStrength = metrics?.constellationStrength ?? token.constellation_strength ?? 0
+  const pourRate = metrics?.pourRateLast24h ?? token.pour_rate ?? 0
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -62,7 +115,7 @@ export function MetricsGrid({ token }: MetricsGridProps) {
                 </svg>
               </div>
             </div>
-            <WaterLevelMeter level={token.water_level || 0} size="lg" />
+            <WaterLevelMeter level={waterLevel} size="lg" isLoading={isLoading} />
           </GlassPanel>
         </motion.div>
 
@@ -86,9 +139,10 @@ export function MetricsGrid({ token }: MetricsGridProps) {
               </div>
             </div>
             <EvaporationTracker
-              totalEvaporated={token.total_evaporated || 0}
-              evaporationRate={token.evaporation_rate || 0}
+              totalEvaporated={evaporated}
+              evaporationRate={evaporationRate}
               symbol={token.symbol}
+              isLoading={isLoading}
             />
           </GlassPanel>
         </motion.div>
@@ -112,7 +166,7 @@ export function MetricsGrid({ token }: MetricsGridProps) {
                 </svg>
               </div>
             </div>
-            <ConstellationGauge strength={token.constellation_strength || 0} />
+            <ConstellationGauge strength={constellationStrength} isLoading={isLoading} />
           </GlassPanel>
         </motion.div>
 
@@ -130,7 +184,7 @@ export function MetricsGrid({ token }: MetricsGridProps) {
                 </svg>
               </div>
             </div>
-            <PourRateVisualizer rate={token.pour_rate || 0} />
+            <PourRateVisualizer rate={pourRate} isLoading={isLoading} />
           </GlassPanel>
         </motion.div>
 
@@ -153,7 +207,7 @@ export function MetricsGrid({ token }: MetricsGridProps) {
                 </svg>
               </div>
             </div>
-            <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} />
+            <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} tokenAddress={token.mint_address} />
           </GlassPanel>
         </motion.div>
       </motion.div>
