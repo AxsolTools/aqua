@@ -193,8 +193,8 @@ export function WalletOnboarding() {
                   >
                     <Wallet className="w-10 h-10 text-teal-400" />
                   </motion.div>
-                  <h1 className="text-3xl font-bold text-white mb-3">Welcome to Aquarius</h1>
-                  <p className="text-slate-400 text-lg">Your wallet is your passport to infinite liquidity</p>
+                  <h1 className="text-3xl font-bold text-white mb-3">Get Started</h1>
+                  <p className="text-slate-400 text-lg">Your wallet = your account. Quick and secure.</p>
                 </div>
 
                 {/* Options */}
@@ -212,8 +212,8 @@ export function WalletOnboarding() {
                         <Plus className="w-7 h-7 text-teal-400" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-white mb-1">Create New Wallet</h3>
-                        <p className="text-slate-400">Generate a fresh Solana keypair</p>
+                        <h3 className="text-lg font-semibold text-white mb-1">New Wallet</h3>
+                        <p className="text-slate-400">Fresh wallet, fresh start</p>
                       </div>
                       <Sparkles className="w-5 h-5 text-teal-400/50 group-hover:text-teal-400 transition-colors" />
                     </div>
@@ -231,8 +231,8 @@ export function WalletOnboarding() {
                         <Upload className="w-6 h-6 text-slate-400" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-white mb-1">Import Existing</h3>
-                        <p className="text-slate-400">Use your private key or seed phrase</p>
+                        <h3 className="text-lg font-semibold text-white mb-1">Import Wallet</h3>
+                        <p className="text-slate-400">Already have one? Bring it over</p>
                       </div>
                     </div>
                   </motion.button>
@@ -246,7 +246,7 @@ export function WalletOnboarding() {
                   className="flex items-center justify-center gap-2 text-slate-500"
                 >
                   <Shield className="w-4 h-4" />
-                  <span className="text-sm">AES-256-GCM Encrypted Storage</span>
+                  <span className="text-sm">Keys encrypted & stored securely</span>
                 </motion.div>
 
                 {/* Close button */}

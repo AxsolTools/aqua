@@ -146,7 +146,7 @@ export default function DashboardPage() {
                   </div>
                   <h1 className="text-2xl font-bold text-zinc-100">Creator Dashboard</h1>
                 </div>
-                <p className="text-zinc-500">Manage your tokens and track rewards</p>
+                <p className="text-zinc-500">Your tokens. Your rewards. Real-time data.</p>
               </div>
               {mainWallet && (
                 <div className="flex items-center gap-3">
@@ -205,7 +205,7 @@ export default function DashboardPage() {
                 <FintechCard>
                   <FintechHeader 
                     title="Liquidity Health" 
-                    subtitle="Real-time metrics for your token ecosystem"
+                    subtitle="Live stats from your active tokens"
                   />
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     {/* Water Level - Animated */}
@@ -298,8 +298,8 @@ export default function DashboardPage() {
                 <FintechCard>
                   <EmptyState
                     icon={<Coins className="w-8 h-8" />}
-                    title="No Tokens Yet"
-                    description="Deploy your first token to start earning creator rewards through Tide Harvest"
+                    title="Ready to Launch?"
+                    description="Drop your first token and start collecting rewards."
                     action={
                       <Link href="/launch">
                         <ActionButton icon={<Plus className="w-4 h-4" />}>
@@ -440,8 +440,8 @@ export default function DashboardPage() {
             <FintechCard>
               <EmptyState
                 icon={<Wallet className="w-8 h-8" />}
-                title="Connect Your Wallet"
-                description="Connect your wallet to access your creator dashboard and manage your tokens"
+                title="Connect Wallet"
+                description="Link up to see your tokens and rewards."
                 action={
                   <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
                     Connect Wallet

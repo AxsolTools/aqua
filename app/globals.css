@@ -208,6 +208,7 @@
    ============================================ */
 
 .btn-primary {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -215,19 +216,65 @@
   padding: 0.625rem 1.25rem;
   font-weight: 600;
   font-size: 0.875rem;
-  color: #ffffff;
-  background: linear-gradient(135deg, var(--aqua-primary) 0%, var(--aqua-secondary) 100%);
+  color: var(--text-primary);
+  background: var(--bg-primary);
   border: none;
-  border-radius: 0.5rem;
+  border-radius: 0.75rem;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(20, 184, 166, 0.25);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: 0.75rem;
+  background: linear-gradient(
+    90deg, 
+    #f59e0b, 
+    #14b8a6, 
+    #8b5cf6, 
+    #ec4899,
+    #f59e0b
+  );
+  background-size: 300% 100%;
+  animation: gradient-flow 3s linear infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+.btn-primary:hover::before {
+  opacity: 1;
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--aqua-secondary) 0%, var(--aqua-tertiary) 100%);
-  box-shadow: 0 4px 16px rgba(20, 184, 166, 0.35);
-  transform: translateY(-1px);
+  color: #ffffff;
+  box-shadow: 0 0 25px rgba(20, 184, 166, 0.3), 
+              0 0 50px rgba(139, 92, 246, 0.15);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary:disabled::before {
+  animation: none;
+  opacity: 0.3;
+}
+
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 300% 50%;
+  }
 }
 
 .btn-secondary {
@@ -666,4 +713,22 @@
 
 .animate-fade-in-up {
   animation: fade-in-up 0.5s ease-out forwards;
+}
+
+/* Animated gradient border */
+@keyframes gradient-border {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-gradient-border {
+  background-size: 300% 300%;
+  animation: gradient-border 4s ease infinite;
 }

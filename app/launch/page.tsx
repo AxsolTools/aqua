@@ -52,8 +52,8 @@ export default function LaunchPage() {
             <h1 className="text-2xl font-bold text-zinc-100">Launch Token</h1>
           </div>
           <p className="text-zinc-500 max-w-2xl">
-            Create your token with infinite liquidity mechanics. Pour Rate technology ensures 
-            continuous liquidity flow, making your token resilient and sustainable.
+            Drop your token and watch liquidity flow in automatically. 
+            No more rug pulls, no more dead pools - just pure upside.
           </p>
         </motion.div>
 
@@ -67,19 +67,19 @@ export default function LaunchPage() {
           <FeatureCard
             icon={<Droplets className="w-6 h-6" />}
             title="Pour Rate"
-            description="Continuous liquidity injection that keeps your token healthy and tradeable"
+            description="Liquidity keeps flowing in. Your token stays tradeable 24/7."
             color="teal"
           />
           <FeatureCard
             icon={<Flame className="w-5 h-5" />}
             title="Evaporation"
-            description="Deflationary burn mechanism that reduces supply over time"
+            description="Burns on every trade. Less supply = more value. Simple math."
             color="amber"
           />
           <FeatureCard
             icon={<Gift className="w-5 h-5" />}
             title="Tide Harvest"
-            description="Earn creator rewards from trading fees automatically"
+            description="Collect SOL from trading fees. Get paid while you sleep."
             color="purple"
           />
         </motion.div>
@@ -98,11 +98,11 @@ export default function LaunchPage() {
             <FintechCard>
               <EmptyState
                 icon={<Wallet className="w-8 h-8" />}
-                title="Connect Your Wallet"
-                description="To deploy a token, you need to connect your wallet first. Your wallet serves as your identity on Aquarius."
+                title="Connect Wallet"
+                description="Quick setup, then you're ready to launch."
                 action={
                   <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
-                    Connect Wallet
+                    Let's Go
                   </ActionButton>
                 }
               />
@@ -122,12 +122,10 @@ export default function LaunchPage() {
               <TrendingUp className="w-5 h-5 text-teal-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-zinc-200 mb-1">How Infinite Liquidity Works</h3>
+              <h3 className="font-semibold text-zinc-200 mb-1">Why This Works</h3>
               <p className="text-sm text-zinc-500 leading-relaxed">
-                Unlike traditional tokens that can suffer from liquidity drain, Aquarius tokens 
-                continuously replenish their liquidity through the Pour Rate mechanism. A portion 
-                of every trade is automatically added back to the liquidity pool, ensuring your 
-                token remains tradeable at all times.
+                Every trade adds liquidity back to the pool. No dev can drain it. 
+                Your holders can always sell. That's the AQUA difference.
               </p>
             </div>
           </div>

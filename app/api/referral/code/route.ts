@@ -6,12 +6,16 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrCreateReferral, getReferralStats, REFERRAL_CONFIG } from '@/lib/referral';
+import { getOrCreateReferral, REFERRAL_CONFIG } from '@/lib/referral';
 
 export async function GET(request: NextRequest) {
   try {
-    // Get user ID from header (set by auth middleware)
-    const userId = request.headers.get('x-user-id');
+    // Get wallet address from query params (primary auth method)
+    const { searchParams } = new URL(request.url);
+    const walletAddress = searchParams.get('wallet_address');
+    
+    // Fallback to header
+    const userId = walletAddress || request.headers.get('x-user-id');
     
     if (!userId) {
       return NextResponse.json(
@@ -19,7 +23,7 @@ export async function GET(request: NextRequest) {
           success: false,
           error: {
             code: 5000,
-            message: 'Authentication required',
+            message: 'Wallet address required',
           },
         },
         { status: 401 }
@@ -27,16 +31,16 @@ export async function GET(request: NextRequest) {
     }
     
     if (!REFERRAL_CONFIG.enabled) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: {
-            code: 5005,
-            message: 'Referral system is currently disabled',
-          },
+      // Return a default response when disabled
+      return NextResponse.json({
+        success: true,
+        data: {
+          referralCode: userId.slice(0, 8).toUpperCase(),
+          isNew: false,
+          sharePercent: 50,
+          shareLink: `${process.env.NEXT_PUBLIC_APP_URL || ''}?ref=${userId.slice(0, 8).toUpperCase()}`,
         },
-        { status: 503 }
-      );
+      });
     }
     
     const { referralCode, isNew } = await getOrCreateReferral(userId);

@@ -157,9 +157,9 @@ export function ReferralPanel() {
             <Gift className="w-6 h-6 text-cyan-400" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-white">Referral Program</h3>
+            <h3 className="text-xl font-bold text-white">Refer & Earn</h3>
             <p className="text-white/50 text-sm">
-              Earn 50% of platform fees from referred users
+              Share your link. Get 50% of their trading fees. Easy money.
             </p>
           </div>
         </div>
@@ -269,25 +269,25 @@ export function ReferralPanel() {
 
       {/* How it works */}
       <div className="p-6 bg-white/5 border-t border-white/10">
-        <h4 className="text-sm font-medium text-white mb-3">How it works</h4>
+        <h4 className="text-sm font-medium text-white mb-3">3 Steps</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
           <div className="flex items-start gap-2">
             <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 text-cyan-400 text-xs font-bold">
               1
             </div>
-            <p className="text-white/60">Share your unique referral link with friends</p>
+            <p className="text-white/60">Copy your link above</p>
           </div>
           <div className="flex items-start gap-2">
             <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 text-cyan-400 text-xs font-bold">
               2
             </div>
-            <p className="text-white/60">They trade on AQUA using your link</p>
+            <p className="text-white/60">Drop it in your group chats</p>
           </div>
           <div className="flex items-start gap-2">
             <div className="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center flex-shrink-0 text-cyan-400 text-xs font-bold">
               3
             </div>
-            <p className="text-white/60">Earn 50% of platform fees from their trades</p>
+            <p className="text-white/60">Stack SOL when they trade</p>
           </div>
         </div>
       </div>

@@ -36,10 +36,10 @@ export const metadata: Metadata = {
   authors: [{ name: "Aquarius" }],
   icons: {
     icon: [
-      { url: "/favicon.jpg", sizes: "32x32", type: "image/jpeg" },
-      { url: "/aquarius-logo.svg", type: "image/svg+xml" },
+      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/logo-192.png", sizes: "192x192", type: "image/png" },
     ],
-    apple: "/logo-192.jpg",
+    apple: "/apple-touch-icon.png",
   },
   manifest: "/manifest.json",
   openGraph: {
@@ -48,13 +48,13 @@ export const metadata: Metadata = {
       "The next-generation Solana token launchpad with continuous liquidity flow. Pour Rate technology keeps liquidity flowing eternally.",
     type: "website",
     siteName: "Aquarius Launchpad",
-    images: ["/logo-512.jpg"],
+    images: ["/logo-512.png"],
   },
   twitter: {
     card: "summary_large_image",
     title: "Aquarius | Infinite Liquidity Launchpad",
     description: "Pour Rate technology ensures your token never runs dry",
-    images: ["/logo-512.jpg"],
+    images: ["/logo-512.png"],
   },
     generator: 'v0.app'
 }

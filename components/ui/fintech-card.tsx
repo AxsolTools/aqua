@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 
@@ -185,33 +185,139 @@ interface FeatureCardProps {
 }
 
 export function FeatureCard({ icon, title, description, color = "teal" }: FeatureCardProps) {
-  const colorClasses = {
+  const canvasRef = React.useRef<HTMLCanvasElement>(null)
+
+  const colorConfig = {
     teal: {
       icon: "text-teal-400 bg-teal-500/10 border-teal-500/20",
       title: "text-teal-400",
+      primary: "rgba(20, 184, 166, ",
+      secondary: "rgba(6, 182, 212, ",
     },
     amber: {
       icon: "text-amber-400 bg-amber-500/10 border-amber-500/20",
       title: "text-amber-400",
+      primary: "rgba(245, 158, 11, ",
+      secondary: "rgba(251, 191, 36, ",
     },
     purple: {
       icon: "text-purple-400 bg-purple-500/10 border-purple-500/20",
       title: "text-purple-400",
+      primary: "rgba(168, 85, 247, ",
+      secondary: "rgba(192, 132, 252, ",
     },
   }
 
-  const classes = colorClasses[color]
+  const config = colorConfig[color]
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = canvas.offsetWidth * dpr
+    canvas.height = canvas.offsetHeight * dpr
+    ctx.scale(dpr, dpr)
+
+    const width = canvas.offsetWidth
+    const height = canvas.offsetHeight
+
+    let animationId: number
+    let time = 0
+
+    interface Particle {
+      x: number
+      y: number
+      size: number
+      speed: number
+      opacity: number
+      angle: number
+    }
+
+    const particles: Particle[] = []
+
+    // Create initial particles
+    for (let i = 0; i < 15; i++) {
+      particles.push({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        size: 1 + Math.random() * 2,
+        speed: 0.2 + Math.random() * 0.3,
+        opacity: 0.2 + Math.random() * 0.4,
+        angle: Math.random() * Math.PI * 2,
+      })
+    }
+
+    const animate = () => {
+      ctx.clearRect(0, 0, width, height)
+
+      // Animated gradient wave at bottom
+      ctx.beginPath()
+      ctx.moveTo(0, height)
+      for (let x = 0; x <= width; x++) {
+        const wave1 = Math.sin((x / width) * Math.PI * 2 + time * 0.002) * 8
+        const wave2 = Math.sin((x / width) * Math.PI * 4 + time * 0.003) * 4
+        ctx.lineTo(x, height - 20 + wave1 + wave2)
+      }
+      ctx.lineTo(width, height)
+      ctx.closePath()
+
+      const gradient = ctx.createLinearGradient(0, height - 40, 0, height)
+      gradient.addColorStop(0, config.primary + "0)")
+      gradient.addColorStop(0.5, config.primary + "0.08)")
+      gradient.addColorStop(1, config.primary + "0.15)")
+      ctx.fillStyle = gradient
+      ctx.fill()
+
+      // Floating particles
+      particles.forEach((p) => {
+        p.x += Math.cos(p.angle) * p.speed
+        p.y += Math.sin(p.angle) * p.speed - 0.1
+        p.opacity = 0.2 + Math.sin(time * 0.003 + p.x) * 0.2
+
+        // Wrap around
+        if (p.x < 0) p.x = width
+        if (p.x > width) p.x = 0
+        if (p.y < 0) p.y = height
+        if (p.y > height) p.y = 0
+
+        ctx.beginPath()
+        const particleGradient = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 3)
+        particleGradient.addColorStop(0, config.primary + String(p.opacity) + ")")
+        particleGradient.addColorStop(1, config.primary + "0)")
+        ctx.fillStyle = particleGradient
+        ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2)
+        ctx.fill()
+      })
+
+      time += 16
+      animationId = requestAnimationFrame(animate)
+    }
+
+    animate()
+
+    return () => cancelAnimationFrame(animationId)
+  }, [color, config.primary])
 
   return (
-    <div className="p-5 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all group">
-      <div className={cn(
-        "w-12 h-12 rounded-lg flex items-center justify-center border mb-4",
-        classes.icon
-      )}>
-        {icon}
+    <div className="relative p-5 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all group overflow-hidden">
+      <canvas 
+        ref={canvasRef} 
+        className="absolute inset-0 w-full h-full pointer-events-none"
+      />
+      <div className="relative z-10">
+        <div className={cn(
+          "w-12 h-12 rounded-lg flex items-center justify-center border mb-4 backdrop-blur-sm",
+          config.icon
+        )}>
+          {icon}
+        </div>
+        <h4 className={cn("font-semibold mb-1.5", config.title)}>{title}</h4>
+        <p className="text-sm text-zinc-500">{description}</p>
       </div>
-      <h4 className={cn("font-semibold mb-1.5", classes.title)}>{title}</h4>
-      <p className="text-sm text-zinc-500">{description}</p>
     </div>
   )
 }
@@ -233,23 +339,57 @@ export function ActionButton({
   disabled,
   ...props 
 }: ActionButtonProps) {
-  const variantClasses = {
-    primary: "bg-gradient-to-r from-teal-600 to-teal-500 text-white hover:from-teal-500 hover:to-teal-400 shadow-lg shadow-teal-500/20",
-    secondary: "bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700",
-    outline: "border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:border-zinc-600",
-    ghost: "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50",
-  }
-
   const sizeClasses = {
     sm: "px-3 py-1.5 text-sm",
     md: "px-4 py-2.5 text-sm",
     lg: "px-6 py-3 text-base",
   }
 
+  // Primary button with animated border
+  if (variant === "primary") {
+    return (
+      <button
+        className={cn(
+          "relative rounded-xl font-medium transition-all duration-300 flex items-center justify-center gap-2",
+          "bg-zinc-950 text-zinc-100 hover:text-white",
+          "disabled:opacity-50 disabled:cursor-not-allowed",
+          "group overflow-hidden",
+          sizeClasses[size],
+          className
+        )}
+        disabled={disabled || loading}
+        {...props}
+      >
+        {/* Animated gradient border */}
+        <span className="absolute inset-0 rounded-xl p-[1px] bg-gradient-to-r from-amber-500 via-teal-400 to-purple-500 animate-gradient-border opacity-70 group-hover:opacity-100 transition-opacity" />
+        <span className="absolute inset-[1px] rounded-[10px] bg-zinc-950" />
+        
+        {/* Glow effect on hover */}
+        <span className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-amber-500/10 via-teal-400/10 to-purple-500/10" />
+        
+        <span className="relative z-10 flex items-center gap-2">
+          {loading ? (
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          ) : icon}
+          {children}
+        </span>
+      </button>
+    )
+  }
+
+  const variantClasses = {
+    secondary: "bg-zinc-900 text-zinc-100 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600",
+    outline: "border border-zinc-700 text-zinc-300 hover:bg-zinc-900 hover:border-zinc-500",
+    ghost: "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/50",
+  }
+
   return (
     <button
       className={cn(
-        "rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2",
+        "rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-2",
         "disabled:opacity-50 disabled:cursor-not-allowed",
         variantClasses[variant],
         sizeClasses[size],
