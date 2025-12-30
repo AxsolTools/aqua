@@ -101,14 +101,40 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
     // Create form data
     const formData = new FormData();
     
-    // Handle image
+    // Handle image - support File, URL, or base64 data URI
     if (metadata.image instanceof File) {
       formData.append('file', metadata.image);
-    } else if (typeof metadata.image === 'string' && metadata.image.startsWith('http')) {
-      // Fetch and convert URL to blob
-      const response = await fetch(metadata.image);
-      const blob = await response.blob();
-      formData.append('file', blob, 'image.png');
+    } else if (typeof metadata.image === 'string') {
+      if (metadata.image.startsWith('http')) {
+        // Fetch and convert URL to blob
+        try {
+          const response = await fetch(metadata.image);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.status}`);
+          }
+          const blob = await response.blob();
+          formData.append('file', blob, 'image.png');
+        } catch (e) {
+          console.warn('[IPFS] Failed to fetch image from URL, skipping image upload');
+        }
+      } else if (metadata.image.startsWith('data:')) {
+        // Handle base64 data URI
+        try {
+          const base64Data = metadata.image.split(',')[1];
+          const mimeType = metadata.image.match(/data:([^;]+);/)?.[1] || 'image/png';
+          const byteCharacters = atob(base64Data);
+          const byteNumbers = new Array(byteCharacters.length);
+          for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: mimeType });
+          const extension = mimeType.split('/')[1] || 'png';
+          formData.append('file', blob, `image.${extension}`);
+        } catch (e) {
+          console.warn('[IPFS] Failed to process base64 image, skipping image upload');
+        }
+      }
     }
     
     formData.append('name', metadata.name);
@@ -121,7 +147,9 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
     formData.append('showName', String(metadata.showName ?? true));
 
     // Try official Pump.fun endpoint first
+    let lastError: Error | null = null;
     try {
+      console.log('[IPFS] Attempting upload to pump.fun endpoint...');
       const response = await fetch(PUMP_IPFS_API, {
         method: 'POST',
         body: formData,
@@ -129,30 +157,45 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
 
       if (response.ok) {
         const data = await response.json();
+        console.log('[IPFS] Upload successful to pump.fun:', data.metadataUri);
         return {
           success: true,
-          metadataUri: data.metadataUri,
+          metadataUri: data.metadataUri || data.uri || data.url,
         };
+      } else {
+        const errorText = await response.text();
+        console.warn(`[IPFS] pump.fun endpoint returned ${response.status}:`, errorText);
+        lastError = new Error(`pump.fun endpoint returned ${response.status}: ${errorText}`);
       }
     } catch (e) {
-      console.warn('[IPFS] Official endpoint failed, trying PumpPortal fallback');
+      console.warn('[IPFS] pump.fun endpoint failed:', e);
+      lastError = e instanceof Error ? e : new Error('Unknown error');
     }
 
     // Fallback to PumpPortal IPFS
-    const fallbackResponse = await fetch(PUMP_PORTAL_IPFS, {
-      method: 'POST',
-      body: formData,
-    });
+    try {
+      console.log('[IPFS] Attempting upload to PumpPortal endpoint...');
+      const fallbackResponse = await fetch(PUMP_PORTAL_IPFS, {
+        method: 'POST',
+        body: formData,
+      });
 
-    if (!fallbackResponse.ok) {
-      throw new Error(`IPFS upload failed: ${fallbackResponse.status}`);
+      if (fallbackResponse.ok) {
+        const fallbackData = await fallbackResponse.json();
+        console.log('[IPFS] Upload successful to PumpPortal:', fallbackData.metadataUri);
+        return {
+          success: true,
+          metadataUri: fallbackData.metadataUri || fallbackData.uri || fallbackData.url,
+        };
+      } else {
+        const errorText = await fallbackResponse.text();
+        console.error(`[IPFS] PumpPortal endpoint returned ${fallbackResponse.status}:`, errorText);
+        throw new Error(`PumpPortal IPFS upload failed: ${fallbackResponse.status} - ${errorText}`);
+      }
+    } catch (e) {
+      console.error('[IPFS] PumpPortal endpoint failed:', e);
+      throw lastError || (e instanceof Error ? e : new Error('Both IPFS endpoints failed'));
     }
-
-    const fallbackData = await fallbackResponse.json();
-    return {
-      success: true,
-      metadataUri: fallbackData.metadataUri,
-    };
 
   } catch (error) {
     console.error('[IPFS] Upload error:', error);
@@ -182,9 +225,11 @@ export async function createToken(
     const ipfsResult = await uploadToIPFS(metadata);
     
     if (!ipfsResult.success || !ipfsResult.metadataUri) {
+      console.error('[PUMP] IPFS upload failed:', ipfsResult.error);
+      // If IPFS fails, we can't proceed - PumpPortal requires a metadata URI
       return {
         success: false,
-        error: ipfsResult.error || 'Failed to upload metadata',
+        error: `IPFS upload failed: ${ipfsResult.error}. Please check that the IPFS service is available or try again later.`,
       };
     }
 
