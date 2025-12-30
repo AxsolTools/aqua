@@ -32,7 +32,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
     let channel: ReturnType<typeof supabase.channel> | null = null
     let tokenId: string | null = null
 
-    const fetchData = async () => {
+    const fetchData = async (retryCount = 0) => {
       const { data: tokenData, error: tokenError } = await supabase
         .from("tokens")
         .select("*")
@@ -40,6 +40,13 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
         .single()
 
       if (tokenError) {
+        // If token not found and we haven't retried, wait and retry (token might be newly created)
+        if (retryCount < 3 && tokenError.code === 'PGRST116') {
+          console.log(`[TOKEN] Token not found, retrying in ${(retryCount + 1) * 1000}ms... (attempt ${retryCount + 1}/3)`)
+          await new Promise(resolve => setTimeout(resolve, (retryCount + 1) * 1000))
+          return fetchData(retryCount + 1)
+        }
+        
         setError("Token not found")
         setIsLoading(false)
         return

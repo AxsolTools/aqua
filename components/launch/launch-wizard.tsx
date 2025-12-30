@@ -154,13 +154,28 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
       const data = await response.json()
       console.log('[LAUNCH] Response:', data)
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         throw new Error(data.error?.message || data.error || "Failed to create token")
       }
 
       // Use the pre-generated mint address (or fallback to response)
       const finalMintAddress = data.data?.mintAddress || data.mintAddress || currentMintKeypair.publicKey.toBase58()
-      router.push(`/token/${finalMintAddress}`)
+      
+      if (!finalMintAddress) {
+        throw new Error("Token created but mint address not returned")
+      }
+
+      console.log('[LAUNCH] Token created successfully:', {
+        mintAddress: finalMintAddress,
+        tokenId: data.data?.tokenId,
+        txSignature: data.data?.txSignature
+      })
+      
+      // Small delay to ensure database is updated and propagated
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      
+      // Redirect to token page - use router.replace to avoid back button issues
+      router.replace(`/token/${finalMintAddress}`)
     } catch (err) {
       console.error('[LAUNCH] Error:', err)
       setDeployError(err instanceof Error ? err.message : "Deployment failed")

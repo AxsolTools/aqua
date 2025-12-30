@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Header } from "@/components/layout/header"
 import { 
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const [selectedTokenForManage, setSelectedTokenForManage] = useState<string | null>(null)
 
   const supabase = createClient()
+  const router = useRouter()
 
   useEffect(() => {
     console.log('[DASHBOARD] Auth state:', { 
@@ -62,6 +64,32 @@ export default function DashboardPage() {
       setDataLoading(false)
     }
   }, [isAuthenticated, mainWallet, sessionId, isLoading])
+
+  // Refresh data when returning to dashboard (e.g., after token creation)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isAuthenticated && mainWallet) {
+        console.log('[DASHBOARD] Window focused, refreshing data')
+        fetchCreatorData()
+      }
+    }
+    
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [isAuthenticated, mainWallet])
+
+  // Refresh data when returning to dashboard (e.g., after token creation)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isAuthenticated && mainWallet) {
+        console.log('[DASHBOARD] Window focused, refreshing data')
+        fetchCreatorData()
+      }
+    }
+    
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [isAuthenticated, mainWallet])
 
   const fetchCreatorData = async () => {
     if (!mainWallet) return
