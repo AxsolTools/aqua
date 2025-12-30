@@ -5,6 +5,8 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { LaunchWizard } from "@/components/launch/launch-wizard"
 import { motion } from "framer-motion"
 import { Header } from "@/components/layout/header"
+import { FintechCard, FeatureCard, ActionButton, EmptyState } from "@/components/ui/fintech-card"
+import { Droplets, Flame, Gift, Wallet, Sparkles, TrendingUp } from "lucide-react"
 
 export default function LaunchPage() {
   const { isAuthenticated, isLoading, mainWallet, setIsOnboarding } = useAuth()
@@ -17,76 +19,118 @@ export default function LaunchPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
-        <div className="text-[var(--text-muted)]">Loading...</div>
+      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
+        <div className="flex items-center gap-3 text-zinc-500">
+          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          <span>Loading...</span>
+        </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen relative overflow-hidden">
+    <main className="min-h-screen bg-zinc-950">
+      {/* Subtle gradient background */}
+      <div className="fixed inset-0 bg-gradient-to-br from-zinc-950 via-zinc-950 to-teal-950/20 pointer-events-none" />
+      
       <Header />
 
-      <div className="px-4 sm:px-6 py-6 max-w-7xl mx-auto">
-        {/* Page Header - Terminal Style */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-          <div className="font-mono text-[var(--aqua-primary)] terminal-glow-aqua text-xl">$ deploy_token --new</div>
-          <div className="font-mono text-sm text-[var(--text-muted)]">
-            {">"} Create token with infinite liquidity mechanics
+      <div className="relative z-10 px-4 sm:px-6 py-8 max-w-6xl mx-auto">
+        {/* Page Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="mb-8"
+        >
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+              <Sparkles className="w-5 h-5 text-teal-400" />
+            </div>
+            <h1 className="text-2xl font-bold text-zinc-100">Launch Token</h1>
           </div>
-          <div className="font-mono text-sm text-[var(--text-muted)]">
-            {">"} Pour Rate technology ensures eternal liquidity flow
-            <span className="cursor-blink" />
-          </div>
+          <p className="text-zinc-500 max-w-2xl">
+            Create your token with infinite liquidity mechanics. Pour Rate technology ensures 
+            continuous liquidity flow, making your token resilient and sustainable.
+          </p>
         </motion.div>
 
-        {/* Features Preview - Terminal Cards */}
+        {/* Features Grid */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8"
+          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8"
         >
-          <div className="terminal-panel rounded-lg p-4">
-            <div className="font-mono text-xs text-[var(--text-muted)] mb-2">{">"} FEATURE_01</div>
-            <div className="font-mono text-sm text-[var(--aqua-primary)]">POUR_RATE</div>
-            <div className="font-mono text-xs text-[var(--text-muted)] mt-1">Continuous liquidity injection</div>
-          </div>
-
-          <div className="terminal-panel rounded-lg p-4">
-            <div className="font-mono text-xs text-[var(--text-muted)] mb-2">{">"} FEATURE_02</div>
-            <div className="font-mono text-sm text-[var(--warm-orange)]">EVAPORATION</div>
-            <div className="font-mono text-xs text-[var(--text-muted)] mt-1">Deflationary burn mechanism</div>
-          </div>
-
-          <div className="terminal-panel rounded-lg p-4">
-            <div className="font-mono text-xs text-[var(--text-muted)] mb-2">{">"} FEATURE_03</div>
-            <div className="font-mono text-sm text-[var(--warm-pink)]">TIDE_HARVEST</div>
-            <div className="font-mono text-xs text-[var(--text-muted)] mt-1">Creator reward distribution</div>
-          </div>
+          <FeatureCard
+            icon={<Droplets className="w-6 h-6" />}
+            title="Pour Rate"
+            description="Continuous liquidity injection that keeps your token healthy and tradeable"
+            color="teal"
+          />
+          <FeatureCard
+            icon={<Flame className="w-5 h-5" />}
+            title="Evaporation"
+            description="Deflationary burn mechanism that reduces supply over time"
+            color="amber"
+          />
+          <FeatureCard
+            icon={<Gift className="w-5 h-5" />}
+            title="Tide Harvest"
+            description="Earn creator rewards from trading fees automatically"
+            color="purple"
+          />
         </motion.div>
 
-        {/* Launch Wizard */}
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+        {/* Main Content */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          transition={{ delay: 0.2 }}
+        >
           {isAuthenticated && mainWallet ? (
-            <LaunchWizard creatorWallet={mainWallet.public_key} />
+            <FintechCard glow>
+              <LaunchWizard creatorWallet={mainWallet.public_key} />
+            </FintechCard>
           ) : (
-            <div className="text-center py-8">
-              <div className="w-16 h-16 mx-auto mb-4 rounded border-2 border-[var(--aqua-primary)] flex items-center justify-center bg-black/30">
-                <span className="font-mono text-2xl text-[var(--aqua-primary)] terminal-glow-aqua">◇</span>
-              </div>
-              <div className="font-mono text-[var(--terminal-amber)] mb-2">ERROR: WALLET_NOT_CONNECTED</div>
-              <div className="font-mono text-xs text-[var(--text-muted)] mb-6">
-                {">"} Authentication required to deploy token
-              </div>
-              <button
-                onClick={() => setIsOnboarding(true)}
-                className="bg-[var(--aqua-primary)] text-white px-4 py-2 rounded"
-              >
-                CONNECT_WALLET
-              </button>
-            </div>
+            <FintechCard>
+              <EmptyState
+                icon={<Wallet className="w-8 h-8" />}
+                title="Connect Your Wallet"
+                description="To deploy a token, you need to connect your wallet first. Your wallet serves as your identity on Aquarius."
+                action={
+                  <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
+                    Connect Wallet
+                  </ActionButton>
+                }
+              />
+            </FintechCard>
           )}
+        </motion.div>
+
+        {/* Info Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mt-8 p-5 rounded-xl bg-zinc-900/50 border border-zinc-800"
+        >
+          <div className="flex items-start gap-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 shrink-0">
+              <TrendingUp className="w-5 h-5 text-teal-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-zinc-200 mb-1">How Infinite Liquidity Works</h3>
+              <p className="text-sm text-zinc-500 leading-relaxed">
+                Unlike traditional tokens that can suffer from liquidity drain, Aquarius tokens 
+                continuously replenish their liquidity through the Pour Rate mechanism. A portion 
+                of every trade is automatically added back to the liquidity pool, ensuring your 
+                token remains tradeable at all times.
+              </p>
+            </div>
+          </div>
         </motion.div>
       </div>
     </main>
