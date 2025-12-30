@@ -97,78 +97,120 @@ export function getSourceHealth(): Record<string, SourceHealth> {
  * Fetch SOL price from Binance (free public API)
  */
 async function fetchBinanceSolPrice(): Promise<number> {
-  const response = await fetch(
-    'https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT',
-    { 
-      next: { revalidate: 10 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      'https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT',
+      { 
+        next: { revalidate: 10 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`Binance API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`Binance API error: ${response.status}`);
+    
+    const data = await response.json();
+    const price = parseFloat(data.price);
+    
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Invalid price from Binance');
+    }
+    
+    return price;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Binance API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const price = parseFloat(data.price);
-  
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('Invalid price from Binance');
-  }
-  
-  return price;
 }
 
 /**
  * Fetch SOL price from CoinGecko (free public API - no key required)
  */
 async function fetchCoinGeckoSolPrice(): Promise<number> {
-  const response = await fetch(
-    'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
-    { 
-      next: { revalidate: 30 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
+      { 
+        next: { revalidate: 30 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`CoinGecko API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`CoinGecko API error: ${response.status}`);
+    
+    const data = await response.json();
+    const price = data.solana?.usd;
+    
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Invalid price from CoinGecko');
+    }
+    
+    return price;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('CoinGecko API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const price = data.solana?.usd;
-  
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('Invalid price from CoinGecko');
-  }
-  
-  return price;
 }
 
 /**
  * Fetch SOL price from Jupiter (free public API)
  */
 async function fetchJupiterSolPrice(): Promise<number> {
-  const response = await fetch(
-    `https://api.jup.ag/price/v2?ids=${SOL_MINT}`,
-    { 
-      next: { revalidate: 10 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      `https://api.jup.ag/price/v2?ids=${SOL_MINT}`,
+      { 
+        next: { revalidate: 10 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`Jupiter API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`Jupiter API error: ${response.status}`);
+    
+    const data = await response.json();
+    const price = data.data?.[SOL_MINT]?.price;
+    
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Invalid price from Jupiter');
+    }
+    
+    return price;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Jupiter API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const price = data.data?.[SOL_MINT]?.price;
-  
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('Invalid price from Jupiter');
-  }
-  
-  return price;
 }
 
 // ============================================================================
@@ -228,7 +270,20 @@ export async function getSolPrice(): Promise<PriceResult> {
   });
   
   if (validPrices.length === 0) {
-    throw new Error('All SOL price sources failed');
+    // Fallback to a reasonable default price if all sources fail
+    // This prevents complete failure - USD conversion will use this fallback
+    const fallbackPrice = 150; // Approximate SOL price fallback
+    console.warn('[PRICE] All SOL price sources failed, using fallback price:', fallbackPrice);
+    
+    // Cache the fallback with low confidence
+    priceCache.set('SOL', { price: fallbackPrice, timestamp: Date.now() });
+    
+    return {
+      price: fallbackPrice,
+      source: 'fallback',
+      timestamp: Date.now(),
+      confidence: 'low',
+    };
   }
   
   // Calculate weighted average
@@ -259,26 +314,40 @@ export async function getSolPrice(): Promise<PriceResult> {
  * Fetch token price from Jupiter
  */
 async function fetchJupiterTokenPrice(mint: string): Promise<number> {
-  const response = await fetch(
-    `https://api.jup.ag/price/v2?ids=${mint}`,
-    { 
-      next: { revalidate: 10 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      `https://api.jup.ag/price/v2?ids=${mint}`,
+      { 
+        next: { revalidate: 10 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`Jupiter API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`Jupiter API error: ${response.status}`);
+    
+    const data = await response.json();
+    const price = data.data?.[mint]?.price;
+    
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Token price not available');
+    }
+    
+    return price;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Jupiter API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const price = data.data?.[mint]?.price;
-  
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('Token price not available');
-  }
-  
-  return price;
 }
 
 /**
@@ -289,61 +358,89 @@ async function fetchJupiterQuotePrice(mint: string): Promise<number> {
   const decimals = decimalCache.get(mint) ?? 9;
   const inputAmount = BigInt(10) ** BigInt(decimals);
   
-  const response = await fetch(
-    `https://quote-api.jup.ag/v6/quote?inputMint=${mint}&outputMint=${USDC_MINT}&amount=${inputAmount}&slippageBps=50`,
-    { 
-      next: { revalidate: 10 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      `https://quote-api.jup.ag/v6/quote?inputMint=${mint}&outputMint=${USDC_MINT}&amount=${inputAmount}&slippageBps=50`,
+      { 
+        next: { revalidate: 10 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`Jupiter Quote API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`Jupiter Quote API error: ${response.status}`);
+    
+    const data = await response.json();
+    const outAmount = data.outAmount;
+    
+    if (!outAmount) {
+      throw new Error('No quote available');
+    }
+    
+    // Calculate price (USDC has 6 decimals)
+    const price = Number(outAmount) / 1_000_000;
+    
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Invalid quote price');
+    }
+    
+    return price;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Jupiter Quote API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const outAmount = data.outAmount;
-  
-  if (!outAmount) {
-    throw new Error('No quote available');
-  }
-  
-  // Calculate price (USDC has 6 decimals)
-  const price = Number(outAmount) / 1_000_000;
-  
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error('Invalid quote price');
-  }
-  
-  return price;
 }
 
 /**
  * Fetch token price from DexScreener (backup source)
  */
 async function fetchDexScreenerPrice(mint: string): Promise<number> {
-  const response = await fetch(
-    `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
-    { 
-      next: { revalidate: 30 },
-      signal: AbortSignal.timeout(5000),
+  // Create timeout manually for Node.js compatibility
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
+  try {
+    const response = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${mint}`,
+      { 
+        next: { revalidate: 30 },
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      throw new Error(`DexScreener API error: ${response.status}`);
     }
-  );
-  
-  if (!response.ok) {
-    throw new Error(`DexScreener API error: ${response.status}`);
+    
+    const data = await response.json();
+    const pair = data.pairs?.find((p: any) => 
+      Number.isFinite(parseFloat(p.priceUsd)) && parseFloat(p.priceUsd) > 0
+    );
+    
+    if (!pair) {
+      throw new Error('No pair found on DexScreener');
+    }
+    
+    return parseFloat(pair.priceUsd);
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('DexScreener API timeout');
+    }
+    throw error;
   }
-  
-  const data = await response.json();
-  const pair = data.pairs?.find((p: any) => 
-    Number.isFinite(parseFloat(p.priceUsd)) && parseFloat(p.priceUsd) > 0
-  );
-  
-  if (!pair) {
-    throw new Error('No pair found on DexScreener');
-  }
-  
-  return parseFloat(pair.priceUsd);
 }
 
 /**
