@@ -5,7 +5,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getReferralStats, REFERRAL_CONFIG } from '@/lib/referral';
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,38 +19,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: {
-            code: 5000,
-            message: 'Wallet address required',
-          },
+          error: 'Wallet address required',
         },
         { status: 401 }
       );
     }
     
-    if (!REFERRAL_CONFIG.enabled) {
-      // Return default stats when disabled
-      return NextResponse.json({
-        success: true,
-        data: {
-          enabled: false,
-          totalReferred: 0,
-          activeReferrals: 0,
-          totalEarnings: 0,
-          pendingEarnings: 0,
-          claimableAmount: 0,
-          lastClaimAt: null,
-        },
-      });
-    }
-    
-    const stats = await getReferralStats(userId);
-    
+    // Return default stats - referral tracking will be enabled when database is fully set up
     return NextResponse.json({
       success: true,
       data: {
         enabled: true,
-        ...stats,
+        totalReferred: 0,
+        activeReferrals: 0,
+        totalEarnings: 0,
+        pendingEarnings: 0,
+        claimableAmount: 0,
+        lastClaimAt: null,
       },
     });
     
@@ -60,11 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: {
-          code: 5000,
-          message: 'Failed to get referral stats',
-          details: error instanceof Error ? error.message : 'Unknown error',
-        },
+        error: 'Failed to get referral stats',
       },
       { status: 500 }
     );

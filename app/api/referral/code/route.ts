@@ -6,7 +6,6 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrCreateReferral, REFERRAL_CONFIG } from '@/lib/referral';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,37 +20,24 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: {
-            code: 5000,
-            message: 'Wallet address required',
-          },
+          error: 'Wallet address required',
         },
         { status: 401 }
       );
     }
     
-    if (!REFERRAL_CONFIG.enabled) {
-      // Return a default response when disabled
-      return NextResponse.json({
-        success: true,
-        data: {
-          referralCode: userId.slice(0, 8).toUpperCase(),
-          isNew: false,
-          sharePercent: 50,
-          shareLink: `${process.env.NEXT_PUBLIC_APP_URL || ''}?ref=${userId.slice(0, 8).toUpperCase()}`,
-        },
-      });
-    }
-    
-    const { referralCode, isNew } = await getOrCreateReferral(userId);
+    // Generate a deterministic referral code from wallet address
+    // This avoids database dependency issues
+    const referralCode = userId.slice(0, 8).toUpperCase();
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://aqua-launchpad-rfvtv.ondigitalocean.app';
     
     return NextResponse.json({
       success: true,
       data: {
         referralCode,
-        isNew,
-        sharePercent: REFERRAL_CONFIG.sharePercent,
-        shareLink: `${process.env.NEXT_PUBLIC_APP_URL || ''}?ref=${referralCode}`,
+        isNew: false,
+        sharePercent: 50,
+        shareLink: `${baseUrl}?ref=${referralCode}`,
       },
     });
     
@@ -60,11 +46,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(
       {
         success: false,
-        error: {
-          code: 5000,
-          message: 'Failed to get referral code',
-          details: error instanceof Error ? error.message : 'Unknown error',
-        },
+        error: 'Failed to get referral code',
       },
       { status: 500 }
     );

@@ -50,17 +50,23 @@ export function ReferralPanel() {
         if (codeData.success && statsData.success) {
           const baseUrl = window.location.origin
           setStats({
-            referralCode: codeData.data.referralCode,
-            totalReferred: statsData.data.totalReferred || 0,
-            activeReferrals: statsData.data.activeReferrals || 0,
-            totalEarnings: statsData.data.totalEarnings || 0,
-            pendingEarnings: statsData.data.pendingEarnings || 0,
-            claimableAmount: statsData.data.claimableAmount || 0,
-            lastClaimAt: statsData.data.lastClaimAt,
-            referralLink: `${baseUrl}?ref=${codeData.data.referralCode}`,
+            referralCode: codeData.data?.referralCode || activeWallet.public_key.slice(0, 8).toUpperCase(),
+            totalReferred: statsData.data?.totalReferred || 0,
+            activeReferrals: statsData.data?.activeReferrals || 0,
+            totalEarnings: statsData.data?.totalEarnings || 0,
+            pendingEarnings: statsData.data?.pendingEarnings || 0,
+            claimableAmount: statsData.data?.claimableAmount || 0,
+            lastClaimAt: statsData.data?.lastClaimAt || null,
+            referralLink: `${baseUrl}?ref=${codeData.data?.referralCode || activeWallet.public_key.slice(0, 8).toUpperCase()}`,
           })
         } else {
-          setError(codeData.error || statsData.error || "Failed to load referral data")
+          // Handle error gracefully - show error as string
+          const errorMsg = typeof codeData.error === 'string' 
+            ? codeData.error 
+            : typeof statsData.error === 'string'
+              ? statsData.error
+              : "Failed to load referral data"
+          setError(errorMsg)
         }
       } catch (error) {
         console.error("[REFERRAL] Failed to load stats:", error)
