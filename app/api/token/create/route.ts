@@ -249,11 +249,68 @@ export async function POST(request: NextRequest) {
 
     // ========== CREATE DATABASE RECORDS ==========
     
+    // Ensure user exists in users table (upsert by wallet address)
+    let finalUserId = userId;
+    if (userId) {
+      // First check if user exists by ID
+      const { data: existingUserById } = await adminClient
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single();
+      
+      if (existingUserById) {
+        finalUserId = existingUserById.id;
+      } else {
+        // User doesn't exist by ID, check by wallet address
+        const { data: existingUserByWallet } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('main_wallet_address', walletAddress)
+          .single();
+        
+        if (existingUserByWallet) {
+          // User exists with this wallet, use that ID
+          finalUserId = existingUserByWallet.id;
+        } else {
+          // Create new user with the provided userId
+          const { data: newUser, error: userError } = await adminClient
+            .from('users')
+            .insert({
+              id: userId,
+              main_wallet_address: walletAddress,
+            })
+            .select('id')
+            .single();
+          
+          if (userError || !newUser) {
+            // If insert fails (e.g., duplicate wallet), try to get existing user
+            const { data: existingUser } = await adminClient
+              .from('users')
+              .select('id')
+              .eq('main_wallet_address', walletAddress)
+              .single();
+            
+            if (existingUser) {
+              finalUserId = existingUser.id;
+            } else {
+              console.warn('[TOKEN] Failed to create/find user record, proceeding with NULL creator_id:', userError);
+              finalUserId = null; // Set to null if user creation fails
+            }
+          } else {
+            finalUserId = newUser.id;
+          }
+        }
+      }
+    } else {
+      finalUserId = null;
+    }
+    
     // Create token record
     const { data: token, error: insertError } = await adminClient
       .from('tokens')
       .insert({
-        creator_id: userId,
+        creator_id: finalUserId, // Use finalUserId which may be null
         creator_wallet: walletAddress,
         mint_address: createResult.mintAddress,
         name,
