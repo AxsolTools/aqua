@@ -4,6 +4,7 @@ import { useState } from "react"
 import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
+import { FeeBreakdown } from "@/components/ui/fee-breakdown"
 import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
@@ -212,6 +213,17 @@ export function TradePanel({ token }: TradePanelProps) {
             `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}`
           )}
         </button>
+      )}
+
+      {/* Fee breakdown */}
+      {amount && parseFloat(amount) > 0 && (
+        <div className="mt-4">
+          <FeeBreakdown
+            operationType={mode}
+            amount={mode === "buy" ? parseFloat(amount) : estimatedSol}
+            tokenSymbol={token.symbol}
+          />
+        </div>
       )}
 
       {/* Price info footer */}

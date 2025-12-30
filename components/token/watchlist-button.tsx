@@ -2,39 +2,40 @@
 
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/providers/auth-provider"
 import { cn } from "@/lib/utils"
 
 interface WatchlistButtonProps {
   tokenId: string
+  tokenAddress?: string
   className?: string
 }
 
-export function WatchlistButton({ tokenId, className }: WatchlistButtonProps) {
-  const { userId, isAuthenticated, setIsOnboarding } = useAuth()
+export function WatchlistButton({ tokenId, tokenAddress, className }: WatchlistButtonProps) {
+  const { sessionId, isAuthenticated, setIsOnboarding } = useAuth()
   const [isWatching, setIsWatching] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
 
-  const supabase = createClient()
-
   useEffect(() => {
-    if (userId) {
+    if (sessionId && tokenAddress) {
       checkWatchlist()
     }
-  }, [tokenId, userId])
+  }, [tokenId, tokenAddress, sessionId])
 
   const checkWatchlist = async () => {
-    if (!userId) return
+    if (!sessionId || !tokenAddress) return
 
-    const { data } = await supabase
-      .from("watchlist")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("token_id", tokenId)
-      .single()
-
-    setIsWatching(!!data)
+    try {
+      const response = await fetch(`/api/watchlist?token_address=${tokenAddress}`, {
+        headers: {
+          Authorization: `Bearer ${sessionId}`,
+        },
+      })
+      const data = await response.json()
+      setIsWatching(data.data?.isWatchlisted || false)
+    } catch (error) {
+      console.error("[WATCHLIST] Check failed:", error)
+    }
   }
 
   const toggleWatchlist = async () => {
@@ -43,19 +44,35 @@ export function WatchlistButton({ tokenId, className }: WatchlistButtonProps) {
       return
     }
 
-    if (!userId || isLoading) return
+    if (!sessionId || !tokenAddress || isLoading) return
 
     setIsLoading(true)
 
-    if (isWatching) {
-      await supabase.from("watchlist").delete().eq("user_id", userId).eq("token_id", tokenId)
-      setIsWatching(false)
-    } else {
-      await supabase.from("watchlist").insert({
-        user_id: userId,
-        token_id: tokenId,
-      })
-      setIsWatching(true)
+    try {
+      if (isWatching) {
+        await fetch(`/api/watchlist?token_address=${tokenAddress}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${sessionId}`,
+          },
+        })
+        setIsWatching(false)
+      } else {
+        await fetch("/api/watchlist", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${sessionId}`,
+          },
+          body: JSON.stringify({
+            token_address: tokenAddress,
+            token_id: tokenId,
+          }),
+        })
+        setIsWatching(true)
+      }
+    } catch (error) {
+      console.error("[WATCHLIST] Toggle failed:", error)
     }
 
     setIsLoading(false)

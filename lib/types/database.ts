@@ -124,6 +124,7 @@ export interface Token {
   price_sol: number;
   price_usd: number;
   market_cap: number;
+  market_cap_usd: number; // Added for frontend compatibility
   current_liquidity: number;
   volume_24h: number;
   change_24h: number;
@@ -141,6 +142,8 @@ export interface Token {
   discord: string | null;
   launch_tx_signature: string | null;
   initial_buy_sol: number;
+  vote_count: number; // Added for votes feature
+  boost_amount: number; // Added for boosts feature
   created_at: string;
   updated_at: string;
 }
@@ -252,6 +255,21 @@ export interface TideHarvestLog {
   status: 'pending' | 'success' | 'failed';
   error_message: string | null;
   claimed_at: string;
+}
+
+// TideHarvest - Alias for frontend components
+export interface TideHarvest {
+  id: string;
+  token_id: string;
+  token_address: string;
+  creator_wallet: string;
+  total_accumulated: number;
+  total_claimed: number;
+  pending_amount: number;
+  last_claim_at: string | null;
+  last_accumulation_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ========== CHAT & COMMENTS ==========

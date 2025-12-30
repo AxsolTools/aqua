@@ -10,8 +10,9 @@ import { cn } from "@/lib/utils"
 import type { Token, Trade } from "@/lib/types/database"
 import Link from "next/link"
 import { motion } from "framer-motion"
+import { ReferralPanel } from "@/components/profile/referral-panel"
 
-type TabType = "portfolio" | "created" | "activity" | "settings"
+type TabType = "portfolio" | "created" | "activity" | "referrals" | "settings"
 
 export default function ProfilePage() {
   const { isAuthenticated, isLoading, wallets, mainWallet, activeWallet, setIsOnboarding } = useAuth()
@@ -117,7 +118,7 @@ export default function ProfilePage() {
                   transition={{ delay: 0.1 }}
                   className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"
                 >
-                  {(["portfolio", "created", "activity", "settings"] as TabType[]).map((tab) => (
+                  {(["portfolio", "created", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -337,6 +338,10 @@ export default function ProfilePage() {
                         </div>
                       )}
                     </GlassPanel>
+                  )}
+
+                  {activeTab === "referrals" && (
+                    <ReferralPanel />
                   )}
 
                   {activeTab === "settings" && (

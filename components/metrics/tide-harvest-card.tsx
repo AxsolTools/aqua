@@ -22,12 +22,28 @@ export function TideHarvestCard({ tokenId, creatorId }: TideHarvestCardProps) {
 
   useEffect(() => {
     const fetchHarvest = async () => {
-      const supabase = createClient()
+      try {
+        // Try API first, fallback to direct Supabase
+        const response = await fetch(`/api/tide-harvest/claim?token_address=${tokenId}`)
+        const data = await response.json()
 
-      const { data } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
-
-      if (data) {
-        setHarvest(data as TideHarvest)
+        if (data.success && data.data.harvests?.length > 0) {
+          setHarvest(data.data.harvests[0] as TideHarvest)
+        } else {
+          // Fallback to direct query
+          const supabase = createClient()
+          const { data: dbData } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
+          if (dbData) {
+            setHarvest(dbData as TideHarvest)
+          }
+        }
+      } catch {
+        // Fallback to direct query on error
+        const supabase = createClient()
+        const { data } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
+        if (data) {
+          setHarvest(data as TideHarvest)
+        }
       }
 
       setIsLoading(false)
@@ -94,14 +110,34 @@ export function TideHarvestCard({ tokenId, creatorId }: TideHarvestCardProps) {
   const claimable = harvest ? harvest.total_accumulated - harvest.total_claimed : 0
 
   const handleClaim = async () => {
-    if (!isCreator || claimable <= 0) return
+    if (!isCreator || claimable <= 0 || !harvest) return
 
     setIsClaiming(true)
 
-    // Claim logic would interact with Creator Vault PDA
-    setTimeout(() => {
-      setIsClaiming(false)
-    }, 2000)
+    try {
+      const response = await fetch("/api/tide-harvest/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token_address: harvest.token_address || tokenId,
+          creator_wallet: harvest.creator_wallet,
+          claim_amount: claimable,
+        }),
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        // Update local state with new values
+        setHarvest({
+          ...harvest,
+          total_claimed: harvest.total_claimed + claimable,
+        })
+      }
+    } catch (error) {
+      console.error("[TIDE-HARVEST] Claim failed:", error)
+    }
+
+    setIsClaiming(false)
   }
 
   const formatSol = (amount: number) => {

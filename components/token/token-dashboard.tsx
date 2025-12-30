@@ -13,6 +13,8 @@ import { TransactionHistory } from "@/components/token/transaction-history"
 import { BoostSection } from "@/components/token/boost-section"
 import { VoteBoostPanel } from "@/components/token/vote-boost-panel"
 import { TokenPourOverlay } from "@/components/token/token-pour-overlay"
+import { TokenChat } from "@/components/token/token-chat"
+import { TokenComments } from "@/components/token/token-comments"
 import Link from "next/link"
 
 interface TokenDashboardProps {
@@ -130,6 +132,12 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <VoteBoostPanel tokenAddress={token.mint_address} />
         <BoostSection tokenAddress={token.mint_address} />
+      </div>
+
+      {/* Chat & Comments */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <TokenChat tokenAddress={token.mint_address} />
+        <TokenComments tokenAddress={token.mint_address} />
       </div>
 
       {/* Transaction History */}

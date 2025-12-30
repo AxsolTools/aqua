@@ -24,6 +24,8 @@ const migrations = [
   '006-create-chat-comments-tables.sql',
   '007-create-trades-price-history.sql',
   '008-create-helper-functions.sql',
+  '013-create-missing-tables.sql',
+  '014-setup-platform-config.sql',
 ];
 
 async function runMigration(client, filename) {

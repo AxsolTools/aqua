@@ -30,14 +30,17 @@ import {
   Settings,
   Plus,
   BarChart3,
-  Activity
+  Activity,
+  X
 } from "lucide-react"
+import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding } = useAuth()
   const [createdTokens, setCreatedTokens] = useState<(Token & { harvest?: TideHarvest })[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [totalRewards, setTotalRewards] = useState(0)
+  const [selectedTokenForManage, setSelectedTokenForManage] = useState<string | null>(null)
 
   const supabase = createClient()
 
@@ -400,7 +403,11 @@ export default function DashboardPage() {
                               View
                             </ActionButton>
                           </Link>
-                          <ActionButton variant="secondary" className="flex-1">
+                          <ActionButton 
+                            variant="secondary" 
+                            className="flex-1"
+                            onClick={() => setSelectedTokenForManage(token.mint_address)}
+                          >
                             <Settings className="w-4 h-4" />
                             Manage
                           </ActionButton>
@@ -409,6 +416,33 @@ export default function DashboardPage() {
                     </motion.div>
                   ))}
                 </div>
+              )}
+
+              {/* Token Parameters Modal */}
+              {selectedTokenForManage && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+                  onClick={() => setSelectedTokenForManage(null)}
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="relative">
+                      <button
+                        onClick={() => setSelectedTokenForManage(null)}
+                        className="absolute -top-2 -right-2 z-10 p-2 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 transition-colors"
+                      >
+                        <X className="w-4 h-4 text-zinc-400" />
+                      </button>
+                      <TokenParametersPanel tokenAddress={selectedTokenForManage} />
+                    </div>
+                  </motion.div>
+                </motion.div>
               )}
             </>
           ) : (
