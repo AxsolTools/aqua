@@ -77,6 +77,7 @@ export interface TradeParams {
   amountSol: number;
   slippageBps?: number;
   priorityFee?: number;
+  tokenDecimals?: number;
 }
 
 export interface TradeResult {
@@ -319,6 +320,22 @@ export async function createToken(
 // ============================================================================
 
 /**
+ * Format SOL amount to string (matching working implementation)
+ */
+function formatSolAmount(amount: number): string {
+  // Ensure proper precision for SOL amounts
+  if (amount >= 1) {
+    return amount.toFixed(4);
+  } else if (amount >= 0.1) {
+    return amount.toFixed(5);
+  } else if (amount >= 0.01) {
+    return amount.toFixed(6);
+  } else {
+    return amount.toFixed(9);
+  }
+}
+
+/**
  * Buy tokens on Pump.fun bonding curve
  */
 export async function buyOnBondingCurve(
@@ -327,23 +344,34 @@ export async function buyOnBondingCurve(
 ): Promise<TradeResult> {
   const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001 } = params;
   
+  // Format the amount properly (matching working implementation)
+  const formattedAmount = formatSolAmount(amountSol);
+  // Convert slippageBps to percentage (500 bps = 5%)
+  const slippagePercent = slippageBps / 100;
+  
   // Try PumpPortal API first
   try {
-    console.log(`[PUMP] Buying ${amountSol} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`[PUMP] Buying ${formattedAmount} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+
+    const requestBody = {
+      publicKey: walletKeypair.publicKey.toBase58(),
+      action: 'buy',
+      mint: tokenMint,
+      amount: formattedAmount,
+      denominatedInSol: 'true',
+      slippage: slippagePercent,
+      priorityFee: priorityFee,
+      pool: 'pump',
+      jitoOnly: 'true',
+      skipPreflight: 'false',
+    };
+    
+    console.log('[PUMP] Buy request body:', JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        publicKey: walletKeypair.publicKey.toBase58(),
-        action: 'buy',
-        mint: tokenMint,
-        amount: amountSol,
-        denominatedInSol: 'true',
-        slippage: slippageBps,
-        priorityFee: priorityFee,
-        pool: 'pump',
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
@@ -433,31 +461,88 @@ export async function buyOnBondingCurve(
 }
 
 /**
+ * Format token amount to string with proper decimals
+ */
+function formatTokenAmount(amount: number, decimals: number = 6): string {
+  // Ensure proper precision for token amounts
+  return amount.toFixed(decimals);
+}
+
+/**
+ * Get associated token account address for a wallet and mint
+ */
+async function getTokenAccountAddress(
+  connection: Connection,
+  walletPubkey: PublicKey,
+  mintPubkey: PublicKey
+): Promise<string | null> {
+  try {
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(walletPubkey, {
+      mint: mintPubkey,
+    });
+    
+    if (tokenAccounts.value.length > 0) {
+      return tokenAccounts.value[0].pubkey.toBase58();
+    }
+    return null;
+  } catch (error) {
+    console.error('[PUMP] Error getting token account:', error);
+    return null;
+  }
+}
+
+/**
  * Sell tokens on Pump.fun bonding curve
  */
 export async function sellOnBondingCurve(
   connection: Connection,
-  params: TradeParams & { amountTokens: number }
+  params: TradeParams & { amountTokens: number; tokenDecimals?: number }
 ): Promise<TradeResult> {
-  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001 } = params;
+  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001, tokenDecimals = 6 } = params;
+
+  // Format the amount properly (Pump.fun uses 6 decimals)
+  const formattedAmount = formatTokenAmount(amountTokens, tokenDecimals);
+  // Convert slippageBps to percentage (500 bps = 5%)
+  const slippagePercent = slippageBps / 100;
+  
+  // Get the token account address (required for sells)
+  const tokenAccountAddress = await getTokenAccountAddress(
+    connection,
+    walletKeypair.publicKey,
+    new PublicKey(tokenMint)
+  );
+  
+  if (!tokenAccountAddress) {
+    return {
+      success: false,
+      error: 'No token account found. You may not hold this token.',
+    };
+  }
 
   // Try PumpPortal API first
   try {
-    console.log(`[PUMP] Selling ${amountTokens} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`[PUMP] Selling ${formattedAmount} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+
+    const requestBody = {
+      publicKey: walletKeypair.publicKey.toBase58(),
+      action: 'sell',
+      mint: tokenMint,
+      amount: formattedAmount,
+      denominatedInSol: 'false',
+      slippage: slippagePercent,
+      priorityFee: priorityFee,
+      pool: 'pump',
+      tokenAccount: tokenAccountAddress,
+      skipPreflight: 'false',
+      jitoOnly: 'false',
+    };
+    
+    console.log('[PUMP] Sell request body:', JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        publicKey: walletKeypair.publicKey.toBase58(),
-        action: 'sell',
-        mint: tokenMint,
-        amount: amountTokens,
-        denominatedInSol: 'false',
-        slippage: slippageBps,
-        priorityFee: priorityFee,
-        pool: 'pump',
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

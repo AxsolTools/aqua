@@ -192,7 +192,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       </div>
 
       {/* Transaction History - at the bottom */}
-      <TransactionHistory tokenAddress={token.mint_address} />
+      <TransactionHistory tokenAddress={token.mint_address} tokenId={token.id} />
     </div>
   )
 }

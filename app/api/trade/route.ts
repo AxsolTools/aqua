@@ -41,7 +41,16 @@ export async function POST(request: NextRequest) {
     const walletAddress = request.headers.get('x-wallet-address');
     const userId = request.headers.get('x-user-id');
 
+    console.log('[TRADE] Request received:', {
+      hasSessionId: !!sessionId,
+      sessionIdPrefix: sessionId?.slice(0, 8),
+      hasWalletAddress: !!walletAddress,
+      walletPrefix: walletAddress?.slice(0, 8),
+      hasUserId: !!userId,
+    });
+
     if (!sessionId || !walletAddress) {
+      console.error('[TRADE] Missing auth headers:', { sessionId: !!sessionId, walletAddress: !!walletAddress });
       return NextResponse.json(
         { success: false, error: { code: 1001, message: 'Wallet connection required' } },
         { status: 401 }
@@ -50,7 +59,9 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { action, tokenMint, amount, slippageBps = 500 } = body;
+    const { action, tokenMint, amount, slippageBps = 500, tokenDecimals = 6 } = body;
+    
+    console.log('[TRADE] Request body:', { action, tokenMint: tokenMint?.slice(0, 8), amount, slippageBps, tokenDecimals });
 
     // Validate action
     if (!['buy', 'sell'].includes(action)) {
@@ -80,6 +91,8 @@ export async function POST(request: NextRequest) {
     const connection = new Connection(HELIUS_RPC_URL, 'confirmed');
 
     // Get user's wallet keypair
+    console.log('[TRADE] Looking up wallet:', { sessionId: sessionId.slice(0, 8), walletAddress: walletAddress.slice(0, 8) });
+    
     const { data: wallet, error: walletError } = await adminClient
       .from('wallets')
       .select('encrypted_private_key')
@@ -88,16 +101,43 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (walletError || !wallet) {
+      console.error('[TRADE] Wallet lookup failed:', {
+        error: walletError?.message || 'No wallet found',
+        code: walletError?.code,
+        sessionId: sessionId.slice(0, 8),
+        walletAddress: walletAddress.slice(0, 8),
+      });
+      
+      // Check if any wallet exists for this session
+      const { data: allWallets, error: listError } = await adminClient
+        .from('wallets')
+        .select('public_key')
+        .eq('session_id', sessionId);
+      
+      console.log('[TRADE] Wallets for this session:', allWallets?.map(w => w.public_key?.slice(0, 8)) || 'none');
+      
       return NextResponse.json(
-        { success: false, error: { code: 1003, message: 'Wallet not found' } },
+        { success: false, error: { code: 1003, message: 'Wallet not found. Please reconnect your wallet.' } },
         { status: 404 }
       );
     }
+    
+    console.log('[TRADE] Wallet found, decrypting private key...');
 
     // Decrypt private key
-    const serviceSalt = await getOrCreateServiceSalt(adminClient);
-    const privateKeyBase58 = decryptPrivateKey(wallet.encrypted_private_key, sessionId, serviceSalt);
-    const userKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
+    let userKeypair: Keypair;
+    try {
+      const serviceSalt = await getOrCreateServiceSalt(adminClient);
+      const privateKeyBase58 = decryptPrivateKey(wallet.encrypted_private_key, sessionId, serviceSalt);
+      userKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
+      console.log('[TRADE] Private key decrypted successfully for wallet:', userKeypair.publicKey.toBase58().slice(0, 8));
+    } catch (decryptError) {
+      console.error('[TRADE] Failed to decrypt private key:', decryptError);
+      return NextResponse.json(
+        { success: false, error: { code: 1002, message: 'Session invalid. Please reconnect your wallet.' } },
+        { status: 401 }
+      );
+    }
 
     // Get token info
     const { data: token } = await adminClient
@@ -155,6 +195,7 @@ export async function POST(request: NextRequest) {
         amountSol: 0, // Not used for sells
         amountTokens: amount,
         slippageBps,
+        tokenDecimals,
       });
     }
 

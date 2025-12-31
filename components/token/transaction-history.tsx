@@ -18,27 +18,62 @@ interface Transaction {
 
 interface TransactionHistoryProps {
   tokenAddress: string
+  tokenId?: string
 }
 
-export function TransactionHistory({ tokenAddress }: TransactionHistoryProps) {
+export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistoryProps) {
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [resolvedTokenId, setResolvedTokenId] = useState<string | null>(tokenId || null)
 
   useEffect(() => {
     const fetchTransactions = async () => {
       try {
         const supabase = createClient()
+        
+        // First, get the token_id if not provided
+        let effectiveTokenId = tokenId
+        if (!effectiveTokenId && tokenAddress) {
+          const { data: tokenData } = await supabase
+            .from("tokens")
+            .select("id")
+            .eq("mint_address", tokenAddress)
+            .single()
+          
+          if (tokenData) {
+            effectiveTokenId = tokenData.id
+            setResolvedTokenId(tokenData.id)
+          }
+        }
+        
+        if (!effectiveTokenId) {
+          console.warn('[TRANSACTIONS] No token_id found for address:', tokenAddress)
+          setIsLoading(false)
+          return
+        }
+        
+        // Query trades table using token_id (this is the correct table/column)
         const { data, error } = await supabase
-          .from("transactions")
-          .select("*")
-          .eq("token_address", tokenAddress)
+          .from("trades")
+          .select("id, token_id, wallet_address, trade_type, amount_sol, tx_signature, status, created_at")
+          .eq("token_id", effectiveTokenId)
           .order("created_at", { ascending: false })
           .limit(50)
 
         if (error) {
           console.warn('[TRANSACTIONS] Query error:', error)
         } else if (data) {
-          setTransactions(data)
+          // Map trades data to Transaction format
+          const mappedData = data.map(trade => ({
+            id: trade.id,
+            type: trade.trade_type,
+            wallet_address: trade.wallet_address,
+            amount_sol: trade.amount_sol,
+            tx_signature: trade.tx_signature,
+            status: trade.status,
+            created_at: trade.created_at
+          }))
+          setTransactions(mappedData)
         }
       } catch (err) {
         console.warn('[TRANSACTIONS] Failed to fetch:', err)
@@ -47,16 +82,29 @@ export function TransactionHistory({ tokenAddress }: TransactionHistoryProps) {
     }
 
     fetchTransactions()
-
-    // Real-time subscription
+  }, [tokenAddress, tokenId])
+  
+  // Real-time subscription (separate effect to handle resolved token ID)
+  useEffect(() => {
+    if (!resolvedTokenId) return
+    
     const supabase = createClient()
     const channel = supabase
-      .channel(`txns-${tokenAddress}`)
+      .channel(`txns-${resolvedTokenId}`)
       .on(
         "postgres_changes",
-        { event: "INSERT", schema: "public", table: "transactions", filter: `token_address=eq.${tokenAddress}` },
+        { event: "INSERT", schema: "public", table: "trades", filter: `token_id=eq.${resolvedTokenId}` },
         (payload) => {
-          const newTx = payload.new as Transaction
+          const trade = payload.new as { id: string; trade_type: string; wallet_address: string; amount_sol: number; tx_signature: string; status: string; created_at: string }
+          const newTx: Transaction = {
+            id: trade.id,
+            type: trade.trade_type,
+            wallet_address: trade.wallet_address,
+            amount_sol: trade.amount_sol,
+            tx_signature: trade.tx_signature,
+            status: trade.status,
+            created_at: trade.created_at
+          }
           setTransactions((prev) => [newTx, ...prev].slice(0, 50))
         },
       )
@@ -65,7 +113,7 @@ export function TransactionHistory({ tokenAddress }: TransactionHistoryProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [tokenAddress])
+  }, [resolvedTokenId])
 
   const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
   const formatTime = (date: string) => {

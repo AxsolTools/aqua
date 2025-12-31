@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
@@ -10,6 +10,47 @@ import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
   token: Token
+}
+
+// Hook to fetch live token price
+function useLiveTokenPrice(mintAddress: string | null) {
+  const [priceSol, setPriceSol] = useState<number>(0)
+  const [priceUsd, setPriceUsd] = useState<number>(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchPrice = useCallback(async () => {
+    if (!mintAddress) {
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/price/token?mint=${mintAddress}`)
+      const data = await response.json()
+
+      if (data.success && data.data) {
+        setPriceSol(data.data.priceSol || 0)
+        setPriceUsd(data.data.priceUsd || 0)
+        setError(null)
+      } else {
+        setError(data.error || "Failed to fetch price")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch price")
+    }
+    setIsLoading(false)
+  }, [mintAddress])
+
+  useEffect(() => {
+    fetchPrice()
+    
+    // Refresh price every 10 seconds
+    const interval = setInterval(fetchPrice, 10000)
+    return () => clearInterval(interval)
+  }, [fetchPrice])
+
+  return { priceSol, priceUsd, isLoading, error, refresh: fetchPrice }
 }
 
 // Error code to user-friendly message mapping
@@ -40,6 +81,17 @@ export function TradePanel({ token }: TradePanelProps) {
   const [showWalletSelector, setShowWalletSelector] = useState(false)
   const selectorRef = useRef<HTMLDivElement>(null)
   
+  // Fetch LIVE token price (not from database)
+  const { 
+    priceSol: livePriceSol, 
+    priceUsd: livePriceUsd,
+    isLoading: priceLoading,
+    refresh: refreshPrice 
+  } = useLiveTokenPrice(token.mint_address || null)
+  
+  // Use live price if available, fallback to database price
+  const effectivePriceSol = livePriceSol > 0 ? livePriceSol : (token.price_sol || 0)
+  
   // Fetch wallet balance (SOL)
   const { balanceSol, isLoading: balanceLoading, refresh: refreshBalance } = useBalance(
     activeWallet?.public_key || null,
@@ -57,8 +109,9 @@ export function TradePanel({ token }: TradePanelProps) {
     { refreshInterval: 15000, enabled: !!activeWallet && !!token.mint_address }
   )
 
-  const estimatedTokens = amount ? Number(amount) / (token.price_sol || 0.0001) : 0
-  const estimatedSol = amount ? Number(amount) * (token.price_sol || 0.0001) : 0
+  // Calculate estimated amounts using LIVE price
+  const estimatedTokens = amount && effectivePriceSol > 0 ? Number(amount) / effectivePriceSol : 0
+  const estimatedSol = amount && effectivePriceSol > 0 ? Number(amount) * effectivePriceSol : 0
   
   // Handle percentage button clicks for sell mode
   const handleQuickAmount = (amt: string) => {
@@ -146,12 +199,14 @@ export function TradePanel({ token }: TradePanelProps) {
         headers: getAuthHeaders({
           sessionId: sessionId || userId,
           walletAddress: activeWallet.public_key,
+          userId: userId,
         }),
         body: JSON.stringify({
           action: mode,
           tokenMint: token.mint_address,
           amount: parseFloat(amount),
           slippageBps: parseFloat(slippage) * 100,
+          tokenDecimals: token.decimals || 6,
         }),
       })
 
@@ -169,10 +224,11 @@ export function TradePanel({ token }: TradePanelProps) {
 
       setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}! 🎉`)
       setAmount("")
-      // Refresh balances after successful trade
+      // Refresh balances and price after successful trade
       setTimeout(() => {
         refreshBalance()
         refreshTokenBalance()
+        refreshPrice()
       }, 2000)
     } catch (err) {
       console.error('[TRADE] Error:', err)
@@ -524,7 +580,17 @@ export function TradePanel({ token }: TradePanelProps) {
       <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-2 text-xs">
         <div className="flex justify-between">
           <span className="text-[var(--text-muted)]">Price</span>
-          <span className="text-[var(--text-primary)] font-medium">{(token.price_sol || 0).toFixed(8)} SOL</span>
+          <div className="flex items-center gap-1.5">
+            {priceLoading && (
+              <div className="w-2 h-2 border border-[var(--aqua-primary)] border-t-transparent rounded-full animate-spin" />
+            )}
+            <span className="text-[var(--text-primary)] font-medium">
+              {effectivePriceSol > 0 ? effectivePriceSol.toFixed(8) : "Loading..."} SOL
+            </span>
+            {livePriceSol > 0 && (
+              <span className="text-[9px] px-1 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">LIVE</span>
+            )}
+          </div>
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-muted)]">Price impact</span>

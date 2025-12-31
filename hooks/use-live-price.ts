@@ -68,12 +68,9 @@ export function useLivePrice(
     }
 
     try {
-      // Use our server-side API to fetch prices (avoids CORS/auth issues)
-      const params = new URLSearchParams({ mint: mintAddress })
-      if (totalSupply) params.append("supply", totalSupply.toString())
-      if (decimals) params.append("decimals", decimals.toString())
-      
-      const response = await fetch(`/api/price/token?${params}`)
+      // Use our server-side API to fetch prices
+      // The API now fetches supply from RPC and calculates market cap properly
+      const response = await fetch(`/api/price/token?mint=${mintAddress}`)
       
       if (response.ok) {
         const result = await response.json()
@@ -86,11 +83,12 @@ export function useLivePrice(
           setSolPriceUsd(result.solPriceUsd || 0)
           setLastUpdated(Date.now())
           setError(null)
+          setIsLoading(false)
           return
         }
       }
 
-      // Fallback to direct DexScreener (usually no CORS issues)
+      // Fallback: try DexScreener directly for FDV (market cap)
       try {
         const dexResponse = await fetch(
           `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`
@@ -98,29 +96,39 @@ export function useLivePrice(
         if (dexResponse.ok) {
           const dexData = await dexResponse.json()
           const pair = dexData.pairs?.find(
-            (p: { priceUsd?: string }) => p.priceUsd && parseFloat(p.priceUsd) > 0
+            (p: { priceUsd?: string; fdv?: number }) => 
+              p.priceUsd && parseFloat(p.priceUsd) > 0
           )
           if (pair) {
             const tokenPriceUsd = parseFloat(pair.priceUsd)
-            const fetchedSolPrice = solPriceUsd > 0 ? solPriceUsd : 150
-            const tokenPriceSol = tokenPriceUsd / fetchedSolPrice
+            // Use FDV from DexScreener as market cap
+            const dexMarketCap = pair.fdv || pair.marketCap || 0
             
-            // Calculate market cap
-            const circulatingSupply = totalSupply
-              ? totalSupply / Math.pow(10, decimals)
-              : 0
-            const calculatedMarketCap = tokenPriceUsd * circulatingSupply
+            // Get SOL price for conversion
+            let currentSolPrice = solPriceUsd
+            if (currentSolPrice <= 0) {
+              try {
+                const solRes = await fetch('/api/price/sol')
+                const solData = await solRes.json()
+                currentSolPrice = solData.data?.price || 150
+              } catch {
+                currentSolPrice = 150
+              }
+            }
+            
+            const tokenPriceSol = tokenPriceUsd / currentSolPrice
             
             setPriceUsd(tokenPriceUsd)
             setPriceSol(tokenPriceSol)
-            setMarketCap(calculatedMarketCap)
+            setMarketCap(dexMarketCap)
+            setSolPriceUsd(currentSolPrice)
             setSource("dexscreener")
             setLastUpdated(Date.now())
             setError(null)
           }
         }
       } catch {
-        // Silently fail
+        // Silently fail fallback
       }
     } catch (err) {
       console.warn("[useLivePrice] Failed to fetch prices:", err)
@@ -128,7 +136,7 @@ export function useLivePrice(
     } finally {
       setIsLoading(false)
     }
-  }, [mintAddress, totalSupply, decimals, solPriceUsd])
+  }, [mintAddress, solPriceUsd])
 
   // Initial fetch and polling
   useEffect(() => {

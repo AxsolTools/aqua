@@ -1,137 +1,319 @@
 /**
  * AQUA Launchpad - Token Price API
- * Fetches token prices from multiple sources (Jupiter, DexScreener)
+ * Fetches token prices from multiple sources with proper fallback cascade
+ * Based on the working implementation in raydiumspltoken/price_pipeline.js
  */
 
 import { NextRequest, NextResponse } from "next/server"
+import { Connection, PublicKey } from "@solana/web3.js"
 
-const JUPITER_PRICE_API = "https://api.jup.ag/price/v2"
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
 const SOL_MINT = "So11111111111111111111111111111111111111112"
+const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+const USDC_DECIMALS = 6
 
-interface PriceData {
-  mint: string
-  priceUsd: number
-  priceSol: number
+const HELIUS_RPC = process.env.HELIUS_RPC_URL || "https://api.mainnet-beta.solana.com"
+const connection = new Connection(HELIUS_RPC, "confirmed")
+
+// ============================================================================
+// PRICE SOURCES (in order of priority)
+// ============================================================================
+
+interface PriceResult {
+  price: number
   source: string
-  marketCap?: number
 }
+
+/**
+ * Fetch from Jupiter Quote API (most accurate for any token)
+ */
+async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): Promise<PriceResult> {
+  const amount = BigInt(10) ** BigInt(decimals)
+  
+  const params = new URLSearchParams({
+    inputMint: tokenMint,
+    outputMint: USDC_MINT,
+    amount: amount.toString(),
+    slippageBps: "0",
+    onlyDirectRoutes: "true"
+  })
+
+  const response = await fetch(`https://quote-api.jup.ag/v6/quote?${params}`, {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(3500)
+  })
+
+  if (!response.ok) throw new Error(`Jupiter quote failed: ${response.status}`)
+
+  const data = await response.json()
+  const outAmount = data.outAmount || data.data?.outAmount
+  const inAmount = data.inAmount || data.data?.inAmount || amount.toString()
+
+  if (!outAmount || !inAmount) throw new Error("Quote response missing amounts")
+
+  const inAmountNum = BigInt(inAmount)
+  const outAmountNum = BigInt(outAmount)
+  
+  if (inAmountNum === 0n || outAmountNum === 0n) throw new Error("Zero amount in Jupiter quote")
+
+  const tokenUnits = Number(inAmountNum) / Math.pow(10, decimals)
+  const usdcUnits = Number(outAmountNum) / Math.pow(10, USDC_DECIMALS)
+
+  if (!Number.isFinite(tokenUnits) || tokenUnits <= 0 || !Number.isFinite(usdcUnits) || usdcUnits <= 0) {
+    throw new Error("Invalid amounts from Jupiter quote")
+  }
+
+  return {
+    price: usdcUnits / tokenUnits,
+    source: "jupiter_quote"
+  }
+}
+
+/**
+ * Fetch from Jupiter Price API v2
+ */
+async function fetchFromJupiterPriceV2(tokenMint: string): Promise<PriceResult> {
+  const response = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`, {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(3000)
+  })
+
+  if (!response.ok) throw new Error(`Jupiter price v2 failed: ${response.status}`)
+
+  const data = await response.json()
+  const price = data.data?.[tokenMint]?.price
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Jupiter price v2 returned invalid data")
+  }
+
+  return { price, source: "jupiter_price_v2" }
+}
+
+/**
+ * Fetch from Jupiter Price API v4 (legacy)
+ */
+async function fetchFromJupiterLegacy(tokenMint: string): Promise<PriceResult> {
+  const response = await fetch(`https://price.jup.ag/v4/price?ids=${tokenMint}`, {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(3000)
+  })
+
+  if (!response.ok) throw new Error(`Jupiter v4 failed: ${response.status}`)
+
+  const data = await response.json()
+  const price = data.data?.[tokenMint]?.price
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Jupiter legacy price invalid")
+  }
+
+  return { price, source: "jupiter_price_v4" }
+}
+
+/**
+ * Fetch from DexScreener
+ */
+async function fetchFromDexScreener(tokenMint: string): Promise<PriceResult> {
+  const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenMint}`, {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(4000)
+  })
+
+  if (!response.ok) throw new Error(`DexScreener failed: ${response.status}`)
+
+  const data = await response.json()
+  const pair = data.pairs?.find((p: { priceUsd?: string }) => 
+    p.priceUsd && parseFloat(p.priceUsd) > 0
+  )
+
+  if (!pair) throw new Error("DexScreener returned no price")
+
+  return {
+    price: parseFloat(pair.priceUsd),
+    source: "dexscreener"
+  }
+}
+
+/**
+ * Fetch SOL price from Binance (most reliable for SOL)
+ */
+async function fetchSolFromBinance(): Promise<PriceResult> {
+  const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(3000)
+  })
+
+  if (!response.ok) throw new Error(`Binance failed: ${response.status}`)
+
+  const data = await response.json()
+  const price = parseFloat(data.price)
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Binance returned invalid SOL price")
+  }
+
+  return { price, source: "binance" }
+}
+
+/**
+ * Fetch SOL price from CoinGecko
+ */
+async function fetchSolFromCoinGecko(): Promise<PriceResult> {
+  const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", {
+    headers: { "Accept": "application/json" },
+    signal: AbortSignal.timeout(5000)
+  })
+
+  if (!response.ok) throw new Error(`CoinGecko failed: ${response.status}`)
+
+  const data = await response.json()
+  const price = data.solana?.usd
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("CoinGecko returned invalid SOL price")
+  }
+
+  return { price, source: "coingecko" }
+}
+
+/**
+ * Get token decimals from RPC
+ */
+async function getTokenDecimals(tokenMint: string): Promise<number> {
+  try {
+    const mintPubkey = new PublicKey(tokenMint)
+    const mintInfo = await connection.getParsedAccountInfo(mintPubkey)
+    
+    if (mintInfo.value?.data && 'parsed' in mintInfo.value.data) {
+      return mintInfo.value.data.parsed.info.decimals
+    }
+  } catch (error) {
+    console.warn(`[TOKEN-PRICE] Could not get decimals for ${tokenMint}:`, error)
+  }
+  return 6 // Default for pump.fun tokens
+}
+
+/**
+ * Get circulating supply from RPC (NOT database)
+ */
+async function getCirculatingSupply(tokenMint: string): Promise<number> {
+  try {
+    const mintPubkey = new PublicKey(tokenMint)
+    const supply = await connection.getTokenSupply(mintPubkey)
+    return supply.value.uiAmount || 0
+  } catch (error) {
+    console.warn(`[TOKEN-PRICE] Could not get supply for ${tokenMint}:`, error)
+    return 0
+  }
+}
+
+/**
+ * Resolve token price using cascade of sources
+ */
+async function resolveTokenPrice(tokenMint: string, decimals: number): Promise<PriceResult> {
+  const errors: { source: string; message: string }[] = []
+  
+  // Ordered sources for token prices
+  const sources = [
+    { name: "jupiter_quote", fetch: () => fetchFromJupiterQuote(tokenMint, decimals) },
+    { name: "jupiter_price_v2", fetch: () => fetchFromJupiterPriceV2(tokenMint) },
+    { name: "jupiter_price_v4", fetch: () => fetchFromJupiterLegacy(tokenMint) },
+    { name: "dexscreener", fetch: () => fetchFromDexScreener(tokenMint) }
+  ]
+
+  for (const source of sources) {
+    try {
+      const result = await source.fetch()
+      console.log(`[TOKEN-PRICE] ${tokenMint.slice(0, 8)}: $${result.price.toExponential(2)} from ${result.source}`)
+      return result
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      errors.push({ source: source.name, message: msg })
+    }
+  }
+
+  console.error(`[TOKEN-PRICE] All sources failed for ${tokenMint}:`, errors)
+  throw new Error("All price sources failed")
+}
+
+/**
+ * Resolve SOL price using dedicated sources
+ */
+async function resolveSolPrice(): Promise<PriceResult> {
+  const errors: { source: string; message: string }[] = []
+  
+  // SOL-specific sources (more reliable)
+  const sources = [
+    { name: "binance", fetch: fetchSolFromBinance },
+    { name: "coingecko", fetch: fetchSolFromCoinGecko },
+    { name: "jupiter", fetch: () => fetchFromJupiterPriceV2(SOL_MINT) }
+  ]
+
+  for (const source of sources) {
+    try {
+      const result = await source.fetch()
+      console.log(`[SOL-PRICE] $${result.price.toFixed(2)} from ${result.source}`)
+      return result
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error)
+      errors.push({ source: source.name, message: msg })
+    }
+  }
+
+  console.error("[SOL-PRICE] All sources failed:", errors)
+  throw new Error("All SOL price sources failed")
+}
+
+// ============================================================================
+// API ROUTES
+// ============================================================================
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const mintAddress = searchParams.get("mint")
-    const totalSupplyStr = searchParams.get("supply")
-    const decimalsStr = searchParams.get("decimals")
 
     if (!mintAddress) {
-      return NextResponse.json(
-        { error: "mint address is required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "mint address is required" }, { status: 400 })
     }
 
-    const totalSupply = totalSupplyStr ? parseFloat(totalSupplyStr) : 0
-    const decimals = decimalsStr ? parseInt(decimalsStr) : 6
+    // Get decimals from RPC
+    const decimals = await getTokenDecimals(mintAddress)
+    
+    // Get prices in parallel
+    const [tokenPriceResult, solPriceResult, circulatingSupply] = await Promise.all([
+      resolveTokenPrice(mintAddress, decimals).catch(() => ({ price: 0, source: "none" })),
+      resolveSolPrice().catch(() => ({ price: 0, source: "none" })),
+      getCirculatingSupply(mintAddress)
+    ])
 
-    let priceUsd = 0
-    let solPriceUsd = 0
-    let source = "none"
-
-    // Try Jupiter first
-    try {
-      const [solRes, tokenRes] = await Promise.all([
-        fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`, {
-          headers: { "Accept": "application/json" },
-        }),
-        fetch(`${JUPITER_PRICE_API}?ids=${mintAddress}`, {
-          headers: { "Accept": "application/json" },
-        }),
-      ])
-
-      if (solRes.ok) {
-        const solData = await solRes.json()
-        solPriceUsd = solData.data?.[SOL_MINT]?.price || 0
-      }
-
-      if (tokenRes.ok) {
-        const tokenData = await tokenRes.json()
-        priceUsd = tokenData.data?.[mintAddress]?.price || 0
-        if (priceUsd > 0) source = "jupiter"
-      }
-    } catch (err) {
-      console.warn("[TOKEN-PRICE] Jupiter failed:", err)
-    }
-
-    // Fallback to DexScreener
-    if (priceUsd === 0) {
-      try {
-        const dexRes = await fetch(
-          `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
-          { headers: { "Accept": "application/json" } }
-        )
-
-        if (dexRes.ok) {
-          const dexData = await dexRes.json()
-          const pair = dexData.pairs?.find(
-            (p: { priceUsd?: string; fdv?: number }) => 
-              p.priceUsd && parseFloat(p.priceUsd) > 0
-          )
-          if (pair) {
-            priceUsd = parseFloat(pair.priceUsd)
-            source = "dexscreener"
-            // DexScreener also provides market cap
-            if (pair.fdv && !totalSupply) {
-              // Use FDV as market cap if no supply provided
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("[TOKEN-PRICE] DexScreener failed:", err)
-      }
-    }
-
-    // Fallback SOL price if Jupiter failed
-    if (solPriceUsd === 0) {
-      try {
-        const fallbackRes = await fetch(
-          `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/price/sol`
-        )
-        const fallbackData = await fallbackRes.json()
-        solPriceUsd = fallbackData.data?.price || 150
-      } catch {
-        solPriceUsd = 150 // Ultimate fallback
-      }
-    }
-
-    // Calculate price in SOL
+    const priceUsd = tokenPriceResult.price
+    const solPriceUsd = solPriceResult.price
     const priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0
-
-    // Calculate market cap
-    let marketCap = 0
-    if (totalSupply > 0 && priceUsd > 0) {
-      const circulatingSupply = totalSupply / Math.pow(10, decimals)
-      marketCap = priceUsd * circulatingSupply
-    }
-
-    const result: PriceData = {
-      mint: mintAddress,
-      priceUsd,
-      priceSol,
-      source,
-      marketCap,
-    }
+    
+    // Calculate market cap from LIVE supply
+    const marketCap = priceUsd * circulatingSupply
 
     return NextResponse.json({
       success: true,
-      data: result,
-      solPriceUsd,
+      data: {
+        mint: mintAddress,
+        priceUsd,
+        priceSol,
+        source: tokenPriceResult.source,
+        marketCap,
+        circulatingSupply,
+        decimals
+      },
+      solPriceUsd
     })
   } catch (error) {
     console.error("[TOKEN-PRICE] Error:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch token price" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to fetch token price" }, { status: 500 })
   }
 }
 
@@ -142,69 +324,53 @@ export async function POST(request: NextRequest) {
     const { mints } = body
 
     if (!mints || !Array.isArray(mints) || mints.length === 0) {
-      return NextResponse.json(
-        { error: "mints array is required" },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: "mints array is required" }, { status: 400 })
     }
 
-    if (mints.length > 100) {
-      return NextResponse.json(
-        { error: "Maximum 100 mints per request" },
-        { status: 400 }
-      )
+    if (mints.length > 50) {
+      return NextResponse.json({ error: "Maximum 50 mints per request" }, { status: 400 })
     }
 
-    // Fetch SOL price first
-    let solPriceUsd = 0
-    try {
-      const solRes = await fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`)
-      if (solRes.ok) {
-        const solData = await solRes.json()
-        solPriceUsd = solData.data?.[SOL_MINT]?.price || 0
-      }
-    } catch {
-      solPriceUsd = 150 // Fallback
-    }
+    // Get SOL price first
+    const solPriceResult = await resolveSolPrice().catch(() => ({ price: 150, source: "fallback" }))
+    const solPriceUsd = solPriceResult.price
 
-    // Batch fetch from Jupiter
-    const ids = mints.join(",")
-    const prices: Record<string, PriceData> = {}
+    // Fetch prices in parallel (limit concurrency)
+    const prices: Record<string, { priceUsd: number; priceSol: number; source: string; marketCap: number }> = {}
 
-    try {
-      const res = await fetch(`${JUPITER_PRICE_API}?ids=${ids}`)
-      if (res.ok) {
-        const data = await res.json()
-        for (const mint of mints) {
-          const priceUsd = data.data?.[mint]?.price || 0
-          const priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0
-          prices[mint] = {
-            mint,
-            priceUsd,
-            priceSol,
-            source: priceUsd > 0 ? "jupiter" : "none",
+    const batchSize = 10
+    for (let i = 0; i < mints.length; i += batchSize) {
+      const batch = mints.slice(i, i + batchSize)
+      
+      await Promise.all(
+        batch.map(async (mint: string) => {
+          try {
+            const decimals = await getTokenDecimals(mint)
+            const [priceResult, supply] = await Promise.all([
+              resolveTokenPrice(mint, decimals).catch(() => ({ price: 0, source: "none" })),
+              getCirculatingSupply(mint)
+            ])
+            
+            prices[mint] = {
+              priceUsd: priceResult.price,
+              priceSol: solPriceUsd > 0 ? priceResult.price / solPriceUsd : 0,
+              source: priceResult.source,
+              marketCap: priceResult.price * supply
+            }
+          } catch {
+            prices[mint] = { priceUsd: 0, priceSol: 0, source: "error", marketCap: 0 }
           }
-        }
-      }
-    } catch (err) {
-      console.warn("[TOKEN-PRICE] Batch Jupiter failed:", err)
-      // Fill with zeros
-      for (const mint of mints) {
-        prices[mint] = { mint, priceUsd: 0, priceSol: 0, source: "none" }
-      }
+        })
+      )
     }
 
     return NextResponse.json({
       success: true,
       data: prices,
-      solPriceUsd,
+      solPriceUsd
     })
   } catch (error) {
     console.error("[TOKEN-PRICE] POST Error:", error)
-    return NextResponse.json(
-      { error: "Failed to fetch token prices" },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: "Failed to fetch token prices" }, { status: 500 })
   }
 }
-
