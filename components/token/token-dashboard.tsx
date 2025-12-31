@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import type { Token, Trade } from "@/lib/types/database"
+import type { Token } from "@/lib/types/database"
 import { TokenHeader } from "@/components/token/token-header"
 import { TokenChart } from "@/components/token/token-chart"
 import { TradePanel } from "@/components/token/trade-panel"
 import { MetricsGrid } from "@/components/token/metrics-grid"
-import { LiveFeed } from "@/components/token/live-feed"
 import { TokenInfo } from "@/components/token/token-info"
 import { TransactionHistory } from "@/components/token/transaction-history"
 import { BoostSection } from "@/components/token/boost-section"
@@ -23,7 +22,6 @@ interface TokenDashboardProps {
 
 export function TokenDashboard({ address }: TokenDashboardProps) {
   const [token, setToken] = useState<Token | null>(null)
-  const [trades, setTrades] = useState<Trade[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -62,32 +60,11 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       setToken(tokenWithMetrics)
       tokenId = tokenData.id
 
-      const { data: tradesData } = await supabase
-        .from("trades")
-        .select("*")
-        .eq("token_id", tokenData.id)
-        .order("created_at", { ascending: false })
-        .limit(50)
-
-      if (tradesData) {
-        setTrades(tradesData as Trade[])
-      }
-
       setIsLoading(false)
 
-      // CRITICAL FIX: Set up real-time subscription AFTER token data is loaded
-      // This ensures tokenId is available for the filter
+      // Set up real-time subscription for token updates
       channel = supabase
         .channel(`token-dashboard-${tokenData.id}`)
-        .on("postgres_changes", { 
-          event: "INSERT", 
-          schema: "public", 
-          table: "trades",
-          filter: `token_id=eq.${tokenData.id}` 
-        }, (payload) => {
-          const newTrade = payload.new as Trade
-          setTrades((prev) => [newTrade, ...prev].slice(0, 50))
-        })
         .on(
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "tokens", filter: `mint_address=eq.${address}` },
@@ -102,16 +79,6 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
             }))
           },
         )
-        // Subscribe to liquidity_history for real-time pour rate updates
-        .on("postgres_changes", {
-          event: "INSERT",
-          schema: "public",
-          table: "liquidity_history",
-          filter: `token_id=eq.${tokenData.id}`
-        }, () => {
-          // Trigger a refresh of metrics when liquidity is added
-          console.log('[DASHBOARD] Liquidity update detected')
-        })
         .subscribe()
     }
 
@@ -161,13 +128,11 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
           <TransactionHistory tokenAddress={token.mint_address} tokenId={token.id} />
         </div>
 
-        {/* Right Side: Trade Panel + Live Chat + Live Feed stacked */}
+        {/* Right Side: Trade Panel + Live Chat stacked */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-3">
           <TradePanel token={token} />
           {/* Live Chat */}
           <TokenChat tokenAddress={token.mint_address} />
-          {/* Live Feed (Recent Activity) */}
-          <LiveFeed trades={trades} tokenSymbol={token.symbol} />
         </div>
       </div>
 

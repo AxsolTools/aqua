@@ -1,11 +1,12 @@
 /**
- * AQUA Launchpad - Boosts API
- * Manages SOL-based boosts for token visibility
+ * Boosts API - Handle token boost payments
+ * Collects SOL to platform fee wallet
  */
 
 import { NextRequest, NextResponse } from "next/server"
+import { Connection, PublicKey, Keypair, Transaction, SystemProgram, LAMPORTS_PER_SOL } from "@solana/web3.js"
 import { createClient } from "@supabase/supabase-js"
-import { Connection, PublicKey } from "@solana/web3.js"
+import bs58 from "bs58"
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -15,209 +16,177 @@ const supabase = createClient(
 const HELIUS_RPC = process.env.HELIUS_RPC_URL || "https://api.mainnet-beta.solana.com"
 const connection = new Connection(HELIUS_RPC, "confirmed")
 
-// GET - Get boosts for a token
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const tokenAddress = searchParams.get("token_address")
-    const walletAddress = searchParams.get("wallet_address")
+// Platform fee wallet - where boost payments go
+const PLATFORM_FEE_WALLET = process.env.PLATFORM_FEE_WALLET || "AQUAx8KwoebRVxckPAGgkH4NXHCPnrHcQmvMfqK9pump"
 
-    if (!tokenAddress) {
-      return NextResponse.json(
-        { error: "token_address is required" },
-        { status: 400 }
-      )
-    }
-
-    // Get all confirmed boosts for the token
-    const { data: boosts, error } = await supabase
-      .from("boosts")
-      .select("*")
-      .eq("token_address", tokenAddress)
-      .eq("status", "confirmed")
-      .order("created_at", { ascending: false })
-
-    if (error) throw error
-
-    // Calculate total boost amount
-    const totalBoost = boosts?.reduce((sum, b) => sum + Number(b.amount), 0) || 0
-
-    // Get user's boosts if wallet provided
-    let userBoosts = null
-    let userTotalBoost = 0
-    if (walletAddress) {
-      userBoosts = boosts?.filter(b => b.wallet_address === walletAddress) || []
-      userTotalBoost = userBoosts.reduce((sum, b) => sum + Number(b.amount), 0)
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        tokenAddress,
-        totalBoost,
-        boostCount: boosts?.length || 0,
-        recentBoosts: boosts?.slice(0, 10) || [],
-        userBoosts,
-        userTotalBoost,
-      },
-    })
-  } catch (error) {
-    console.error("[BOOSTS] GET error:", error)
-    return NextResponse.json(
-      { error: "Failed to get boosts" },
-      { status: 500 }
-    )
-  }
-}
-
-// POST - Create a boost (after SOL payment)
+/**
+ * POST - Process a boost payment
+ */
 export async function POST(request: NextRequest) {
   try {
+    const sessionId = request.headers.get('x-session-id')
+    const walletAddress = request.headers.get('x-wallet-address')
+
+    if (!sessionId || !walletAddress) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      )
+    }
+
     const body = await request.json()
-    const { token_address, wallet_address, amount, tx_signature } = body
+    const { tokenAddress, amount } = body
 
-    if (!token_address || !wallet_address || !amount) {
+    if (!tokenAddress || !amount || amount <= 0) {
       return NextResponse.json(
-        { error: "token_address, wallet_address, and amount are required" },
+        { success: false, error: "Invalid boost parameters" },
         { status: 400 }
       )
     }
 
-    if (Number(amount) <= 0) {
-      return NextResponse.json(
-        { error: "amount must be greater than 0" },
-        { status: 400 }
-      )
-    }
-
-    // Verify transaction if signature provided
-    let status = "pending"
-    if (tx_signature) {
-      try {
-        const txInfo = await connection.getTransaction(tx_signature, {
-          maxSupportedTransactionVersion: 0,
-        })
-        if (txInfo && txInfo.meta && !txInfo.meta.err) {
-          status = "confirmed"
-        } else if (txInfo && txInfo.meta?.err) {
-          status = "failed"
-        }
-      } catch {
-        // Transaction might not be confirmed yet
-        status = "pending"
-      }
-    }
-
-    // Insert the boost
-    const { data, error } = await supabase
-      .from("boosts")
-      .insert({
-        token_address,
-        wallet_address,
-        amount: Number(amount),
-        tx_signature,
-        status,
-      })
-      .select()
+    // Get the wallet's encrypted private key
+    const { data: wallet, error: walletError } = await supabase
+      .from("wallets")
+      .select("encrypted_private_key")
+      .eq("session_id", sessionId)
+      .eq("public_key", walletAddress)
       .single()
 
-    if (error) throw error
-
-    // Get updated total
-    const { data: allBoosts } = await supabase
-      .from("boosts")
-      .select("amount")
-      .eq("token_address", token_address)
-      .eq("status", "confirmed")
-
-    const totalBoost = allBoosts?.reduce((sum, b) => sum + Number(b.amount), 0) || 0
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        boost: data,
-        totalBoost,
-      },
-    })
-  } catch (error) {
-    console.error("[BOOSTS] POST error:", error)
-    return NextResponse.json(
-      { error: "Failed to create boost" },
-      { status: 500 }
-    )
-  }
-}
-
-// PATCH - Update boost status (for confirming pending boosts)
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json()
-    const { boost_id, tx_signature } = body
-
-    if (!boost_id) {
+    if (walletError || !wallet?.encrypted_private_key) {
       return NextResponse.json(
-        { error: "boost_id is required" },
-        { status: 400 }
-      )
-    }
-
-    // Get the boost
-    const { data: boost, error: fetchError } = await supabase
-      .from("boosts")
-      .select("*")
-      .eq("id", boost_id)
-      .single()
-
-    if (fetchError || !boost) {
-      return NextResponse.json(
-        { error: "Boost not found" },
+        { success: false, error: "Wallet not found" },
         { status: 404 }
       )
     }
 
-    // Verify transaction
-    const sigToVerify = tx_signature || boost.tx_signature
-    let status = boost.status
-
-    if (sigToVerify) {
-      try {
-        const txInfo = await connection.getTransaction(sigToVerify, {
-          maxSupportedTransactionVersion: 0,
-        })
-        if (txInfo && txInfo.meta && !txInfo.meta.err) {
-          status = "confirmed"
-        } else if (txInfo && txInfo.meta?.err) {
-          status = "failed"
-        }
-      } catch {
-        // Keep current status
-      }
-    }
-
-    // Update the boost
-    const { data, error } = await supabase
-      .from("boosts")
-      .update({
-        status,
-        tx_signature: sigToVerify,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", boost_id)
-      .select()
+    // Get service salt for decryption
+    const { data: saltConfig } = await supabase
+      .from("system_config")
+      .select("value")
+      .eq("key", "service_salt")
       .single()
 
-    if (error) throw error
+    if (!saltConfig?.value) {
+      return NextResponse.json(
+        { success: false, error: "Service configuration error" },
+        { status: 500 }
+      )
+    }
+
+    // Decrypt private key
+    const privateKeyBase58 = decryptPrivateKey(wallet.encrypted_private_key, sessionId, saltConfig.value)
+    const payerKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58))
+
+    // Check balance
+    const balance = await connection.getBalance(payerKeypair.publicKey)
+    const amountLamports = Math.floor(amount * LAMPORTS_PER_SOL)
+    const txFeeLamports = 5000 // ~0.000005 SOL for tx fee
+
+    if (balance < amountLamports + txFeeLamports) {
+      return NextResponse.json({
+        success: false,
+        error: `Insufficient balance. Need ${((amountLamports + txFeeLamports) / LAMPORTS_PER_SOL).toFixed(6)} SOL`
+      })
+    }
+
+    // Create transfer transaction to platform fee wallet
+    const platformWallet = new PublicKey(PLATFORM_FEE_WALLET)
+    
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: payerKeypair.publicKey,
+        toPubkey: platformWallet,
+        lamports: amountLamports,
+      })
+    )
+
+    // Get recent blockhash
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("finalized")
+    transaction.recentBlockhash = blockhash
+    transaction.feePayer = payerKeypair.publicKey
+
+    // Sign and send
+    transaction.sign(payerKeypair)
+    
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: "confirmed",
+      maxRetries: 3,
+    })
+
+    // Wait for confirmation
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash, lastValidBlockHeight },
+      "confirmed"
+    )
+
+    if (confirmation.value.err) {
+      return NextResponse.json({
+        success: false,
+        error: "Transaction failed"
+      })
+    }
+
+    // Record boost in database
+    try {
+      await supabase.from("boosts").insert({
+        token_address: tokenAddress,
+        wallet_address: walletAddress,
+        amount: amount,
+        tx_signature: signature,
+        status: "confirmed",
+      })
+    } catch (dbError) {
+      console.warn("[BOOSTS] Failed to record boost in DB:", dbError)
+      // Continue - the payment was successful
+    }
+
+    console.log(`[BOOSTS] Boost successful: ${amount} SOL for ${tokenAddress} - ${signature}`)
 
     return NextResponse.json({
       success: true,
-      data,
+      data: {
+        txSignature: signature,
+        amount: amount,
+        message: `Successfully boosted with ${amount} SOL`
+      }
     })
   } catch (error) {
-    console.error("[BOOSTS] PATCH error:", error)
+    console.error("[BOOSTS] POST error:", error)
     return NextResponse.json(
-      { error: "Failed to update boost" },
+      { success: false, error: "Failed to process boost" },
       { status: 500 }
     )
   }
 }
 
+/**
+ * Decrypt private key using session ID and service salt
+ */
+function decryptPrivateKey(encryptedData: string, sessionId: string, serviceSalt: string): string {
+  // Import the decrypt function logic
+  const crypto = require('crypto')
+  
+  const parts = encryptedData.split(':')
+  if (parts.length !== 3) {
+    throw new Error('Invalid encrypted data format')
+  }
+
+  const [ivHex, ciphertextHex, authTagHex] = parts
+  
+  // Derive key from sessionId + serviceSalt
+  const keyMaterial = sessionId + serviceSalt
+  const key = crypto.createHash('sha256').update(keyMaterial).digest()
+  
+  const iv = Buffer.from(ivHex, 'hex')
+  const ciphertext = Buffer.from(ciphertextHex, 'hex')
+  const authTag = Buffer.from(authTagHex, 'hex')
+  
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv)
+  decipher.setAuthTag(authTag)
+  
+  let decrypted = decipher.update(ciphertext)
+  decrypted = Buffer.concat([decrypted, decipher.final()])
+  
+  return decrypted.toString('utf8')
+}
