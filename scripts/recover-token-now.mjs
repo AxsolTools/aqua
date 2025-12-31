@@ -60,3 +60,4 @@ console.log('\n❌ Could not recover token - server may not be running');
 console.log('Once your server is deployed, run:');
 console.log(`curl -X POST ${urls[0] || 'YOUR_DOMAIN'}/api/token/recover -H "Content-Type: application/json" -d '${JSON.stringify(tokenData)}'`);
 
+
