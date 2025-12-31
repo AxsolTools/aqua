@@ -87,7 +87,7 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
   // Real-time subscription (separate effect to handle resolved token ID)
   useEffect(() => {
     if (!resolvedTokenId) return
-    
+
     const supabase = createClient()
     const channel = supabase
       .channel(`txns-${resolvedTokenId}`)

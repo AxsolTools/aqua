@@ -5,8 +5,6 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { Token22Wizard } from "@/components/launch22/token22-wizard"
 import { motion } from "framer-motion"
 import { Header } from "@/components/layout/header"
-import { FintechCard, FeatureCard, ActionButton, EmptyState } from "@/components/ui/fintech-card"
-import { Wallet, Coins, TrendingUp, ChevronDown, Check, Sparkles } from "lucide-react"
 import Link from "next/link"
 
 export default function Launch22Page() {
@@ -33,12 +31,9 @@ export default function Launch22Page() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="flex items-center gap-3 text-zinc-500">
-          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex items-center gap-3 text-[var(--text-muted)]">
+          <div className="spinner" />
           <span>Loading...</span>
         </div>
       </main>
@@ -46,233 +41,188 @@ export default function Launch22Page() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950">
-      {/* Gradient background - emerald theme for Token-2022 */}
-      <div className="fixed inset-0 bg-gradient-to-br from-zinc-950 via-zinc-950 to-emerald-950/20 pointer-events-none" />
-      
+    <main className="min-h-screen bg-[var(--bg-primary)]">
       <Header />
 
-      <div className="relative z-10 px-3 sm:px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
-        {/* Page Header */}
+      <div className="relative z-10 px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
+        {/* Page Header - Clean & Professional */}
         <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
+          initial={{ opacity: 0, y: 12 }} 
           animate={{ opacity: 1, y: 0 }} 
-          className="mb-8"
+          className="mb-6"
         >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                <Coins className="w-5 h-5 text-emerald-400" />
+          {/* Top Bar */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              {/* Protocol Badge */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider">Token-2022</span>
               </div>
+              
+              <div className="h-4 w-px bg-[var(--border-default)]" />
+              
+              {/* Title */}
               <div>
-                <h1 className="text-2xl font-bold text-zinc-100">TOKEN22 Launch</h1>
-                <p className="text-sm text-emerald-400">Powered by Token-2022 Standard</p>
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">Create Token</h1>
               </div>
             </div>
             
-            {/* Switch to Classic */}
+            {/* Switch Protocol */}
             <Link
               href="/launch"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors text-sm text-zinc-400 hover:text-zinc-200"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--aqua-border)] transition-all text-sm text-[var(--text-secondary)] hover:text-[var(--aqua-primary)] group"
             >
-              <Sparkles className="w-4 h-4" />
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
               <span>Switch to Pump.fun</span>
             </Link>
           </div>
-          <p className="text-zinc-500 max-w-2xl">
-            Full control. Transfer fees. Authority revocation. Raydium liquidity.
-            This is how degens launch tokens in 2024.
-          </p>
-        </motion.div>
 
-        {/* Features Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8"
-        >
-          <FeatureCard
-            title="Transfer Fees"
-            description="Earn on every transaction. Built into the token, not a contract."
-            color="amber"
-          />
-          <FeatureCard
-            title="Authority Control"
-            description="Revoke mint/freeze authorities. Prove you can't rug."
-            color="teal"
-          />
-          <FeatureCard
-            title="Raydium Launch"
-            description="Skip bonding curves. Launch straight to real liquidity."
-            color="purple"
-          />
-        </motion.div>
-
-        {/* Token-2022 Benefits Banner */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="mb-8 p-4 rounded-xl bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/20"
-        >
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-sm text-white/80">Token-2022 Standard</span>
+          {/* Info Strip */}
+          <div className="flex items-center gap-6 text-xs text-[var(--text-muted)]">
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Native transfer fees</span>
             </div>
-            <div className="h-4 w-px bg-white/10 hidden sm:block" />
-            <div className="flex flex-wrap gap-3 text-xs">
-              <span className="px-2 py-1 rounded bg-white/5 text-white/60">MetadataPointer</span>
-              <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400">TransferFee</span>
-              <span className="px-2 py-1 rounded bg-red-500/10 text-red-400">MintClose</span>
-              <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-400">FreezeRevoke</span>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[var(--aqua-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <span>Authority revocation</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+              <span>Direct Raydium launch</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[var(--green)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Full supply control</span>
             </div>
           </div>
         </motion.div>
+
+        {/* Extensions Banner */}
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="mb-6"
+        >
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[var(--text-muted)]">Extensions:</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[var(--bg-secondary)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
+                MetadataPointer
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                TransferFee
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                MintClose
+              </span>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                FreezeRevoke
+              </span>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Wallet Selector Bar */}
+        {isAuthenticated && wallets.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mb-6"
+          >
+            <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]">
+              <div className="flex items-center gap-2 text-sm">
+                <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                <span className="text-[var(--text-muted)]">Deploying from:</span>
+              </div>
+              
+              <div className="relative" ref={selectorRef}>
+                <button
+                  onClick={() => setShowWalletSelector(!showWalletSelector)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--border-highlight)] transition-colors"
+                >
+                  <span className="text-sm font-mono text-[var(--text-primary)]">
+                    {activeWallet?.label || `${(activeWallet || mainWallet)?.public_key.slice(0, 6)}...${(activeWallet || mainWallet)?.public_key.slice(-4)}`}
+                  </span>
+                  <svg className={`w-3 h-3 text-[var(--text-muted)] transition-transform ${showWalletSelector ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showWalletSelector && (
+                  <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-default)] shadow-xl z-50">
+                    {wallets.map((wallet) => (
+                      <button
+                        key={wallet.id}
+                        onClick={() => {
+                          setActiveWallet(wallet)
+                          setShowWalletSelector(false)
+                        }}
+                        className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors"
+                      >
+                        <span className={activeWallet?.id === wallet.id ? "text-emerald-400 font-medium" : "text-[var(--text-secondary)]"}>
+                          {wallet.label || `${wallet.public_key.slice(0, 6)}...${wallet.public_key.slice(-4)}`}
+                        </span>
+                        {activeWallet?.id === wallet.id && (
+                          <svg className="w-4 h-4 text-emerald-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Main Content */}
         <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
+          initial={{ opacity: 0, y: 12 }} 
           animate={{ opacity: 1, y: 0 }} 
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.15 }}
         >
           {isAuthenticated && (activeWallet || mainWallet) ? (
-            <FintechCard glow>
-              {/* Wallet Selector for Token Creation */}
-              {wallets.length > 1 && (
-                <div className="mb-6 pb-4 border-b border-zinc-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Wallet className="w-4 h-4 text-emerald-400" />
-                      <span className="text-sm text-zinc-400">Creating with wallet:</span>
-                    </div>
-                    <div className="relative" ref={selectorRef}>
-                      <button
-                        onClick={() => setShowWalletSelector(!showWalletSelector)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors"
-                      >
-                        <span className="text-sm font-medium text-zinc-200">
-                          {activeWallet?.label || `${(activeWallet || mainWallet)?.public_key.slice(0, 6)}...${(activeWallet || mainWallet)?.public_key.slice(-4)}`}
-                        </span>
-                        <ChevronDown className="w-3 h-3 text-zinc-500" />
-                      </button>
-                      
-                      {showWalletSelector && (
-                        <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50">
-                          {wallets.map((wallet) => (
-                            <button
-                              key={wallet.id}
-                              onClick={() => {
-                                setActiveWallet(wallet)
-                                setShowWalletSelector(false)
-                              }}
-                              className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-zinc-800 transition-colors"
-                            >
-                              <span className={activeWallet?.id === wallet.id ? "text-emerald-400 font-medium" : "text-zinc-300"}>
-                                {wallet.label || `${wallet.public_key.slice(0, 6)}...${wallet.public_key.slice(-4)}`}
-                              </span>
-                              {activeWallet?.id === wallet.id && (
-                                <Check className="w-4 h-4 text-emerald-400" />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <Token22Wizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
-            </FintechCard>
+            <Token22Wizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
           ) : (
-            <FintechCard>
-              <EmptyState
-                icon={<Wallet className="w-8 h-8" />}
-                title="Connect Wallet"
-                description="Set up your wallet to launch a Token-2022."
-                action={
-                  <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
-                    Let's Go
-                  </ActionButton>
-                }
-              />
-            </FintechCard>
-          )}
-        </motion.div>
-
-        {/* Info Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8 p-5 rounded-xl bg-zinc-900/50 border border-zinc-800"
-        >
-          <div className="flex items-start gap-4">
-            <div className="p-2 rounded-lg bg-emerald-500/10 shrink-0">
-              <TrendingUp className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-200 mb-1">Why Token-2022?</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                Token-2022 is Solana's next-gen token standard. Features are built into the token itself, not a wrapper contract.
-                Transfer fees, authority controls, and metadata are all native. This means lower gas, more trust, and full control over your tokenomics.
+            <div className="glass-panel p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] flex items-center justify-center">
+                <svg className="w-8 h-8 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Connect Wallet</h3>
+              <p className="text-sm text-[var(--text-muted)] mb-6 max-w-sm mx-auto">
+                Connect your wallet to start creating Token-2022 tokens with advanced features
               </p>
+              <button 
+                onClick={() => setIsOnboarding(true)} 
+                className="btn-primary"
+              >
+                Connect Wallet
+              </button>
             </div>
-          </div>
-        </motion.div>
-
-        {/* Comparison Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4"
-        >
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
-            <h4 className="text-sm font-medium text-zinc-300 mb-3">Token-2022 ✓</h4>
-            <ul className="space-y-2 text-sm text-zinc-500">
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400">✓</span> Transfer fees (up to 5%)
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400">✓</span> Raydium liquidity from day 1
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400">✓</span> Control your supply distribution
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400">✓</span> Native metadata on-chain
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400">✓</span> Provable authority revocation
-              </li>
-            </ul>
-          </div>
-          <div className="p-4 rounded-xl bg-zinc-900/50 border border-zinc-800">
-            <h4 className="text-sm font-medium text-zinc-300 mb-3">vs Pump.fun</h4>
-            <ul className="space-y-2 text-sm text-zinc-500">
-              <li className="flex items-center gap-2">
-                <span className="text-zinc-500">—</span> No transfer fees possible
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-zinc-500">—</span> Bonding curve, slow migration
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-zinc-500">—</span> Fixed 1B supply, 0 control
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-zinc-500">—</span> Metadata via their servers
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-zinc-500">—</span> Trust their migration
-              </li>
-            </ul>
-          </div>
+          )}
         </motion.div>
       </div>
     </main>
   )
 }
-

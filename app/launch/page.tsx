@@ -5,8 +5,6 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { LaunchWizard } from "@/components/launch/launch-wizard"
 import { motion } from "framer-motion"
 import { Header } from "@/components/layout/header"
-import { FintechCard, FeatureCard, ActionButton, EmptyState } from "@/components/ui/fintech-card"
-import { Wallet, Sparkles, TrendingUp, ChevronDown, Check, Coins } from "lucide-react"
 import Link from "next/link"
 
 export default function LaunchPage() {
@@ -33,12 +31,9 @@ export default function LaunchPage() {
 
   if (isLoading) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-zinc-950">
-        <div className="flex items-center gap-3 text-zinc-500">
-          <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
+      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex items-center gap-3 text-[var(--text-muted)]">
+          <div className="spinner" />
           <span>Loading...</span>
         </div>
       </main>
@@ -46,159 +41,152 @@ export default function LaunchPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950">
-      {/* Subtle gradient background */}
-      <div className="fixed inset-0 bg-gradient-to-br from-zinc-950 via-zinc-950 to-teal-950/20 pointer-events-none" />
-      
+    <main className="min-h-screen bg-[var(--bg-primary)]">
       <Header />
 
-      <div className="relative z-10 px-3 sm:px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
-        {/* Page Header */}
+      <div className="relative z-10 px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
+        {/* Page Header - Clean & Professional */}
         <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
+          initial={{ opacity: 0, y: 12 }} 
           animate={{ opacity: 1, y: 0 }} 
-          className="mb-8"
+          className="mb-6"
         >
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
-                <Sparkles className="w-5 h-5 text-teal-400" />
+          {/* Top Bar */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              {/* Protocol Badge */}
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--aqua-bg)] border border-[var(--aqua-border)]">
+                <div className="w-2 h-2 rounded-full bg-[var(--aqua-primary)] animate-pulse" />
+                <span className="text-xs font-semibold text-[var(--aqua-primary)] uppercase tracking-wider">Pump.fun</span>
               </div>
+              
+              <div className="h-4 w-px bg-[var(--border-default)]" />
+              
+              {/* Title */}
               <div>
-                <h1 className="text-2xl font-bold text-zinc-100">Launch Token</h1>
-                <p className="text-sm text-teal-400">Pump.fun Bonding Curve</p>
+                <h1 className="text-xl font-bold text-[var(--text-primary)]">Create Token</h1>
               </div>
             </div>
             
-            {/* Switch to TOKEN22 */}
+            {/* Switch Protocol */}
             <Link
               href="/launch22"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-colors text-sm text-emerald-400"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--aqua-border)] transition-all text-sm text-[var(--text-secondary)] hover:text-[var(--aqua-primary)] group"
             >
-              <Coins className="w-4 h-4" />
-              <span>Switch to TOKEN22</span>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+              </svg>
+              <span>Switch to Token-2022</span>
             </Link>
           </div>
-          <p className="text-zinc-500 max-w-2xl">
-            Drop your token and watch liquidity flow in automatically. 
-            No more rug pulls, no more dead pools - just pure upside.
-          </p>
+
+          {/* Info Strip */}
+          <div className="flex items-center gap-6 text-xs text-[var(--text-muted)]">
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[var(--aqua-primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>Bonding curve liquidity</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[var(--green)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <span>Auto-migration to Raydium</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5 text-[var(--warm)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+              </svg>
+              <span>Optional burn mechanics</span>
+            </div>
+          </div>
         </motion.div>
 
-        {/* Features Grid */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8"
-        >
-          <FeatureCard
-            title="Pour Rate"
-            description="Liquidity keeps flowing in. Your token stays tradeable 24/7."
-            color="teal"
-          />
-          <FeatureCard
-            title="Evaporation"
-            description="Burns on every trade. Less supply = more value. Simple math."
-            color="amber"
-          />
-          <FeatureCard
-            title="Tide Harvest"
-            description="Collect SOL from trading fees. Get paid while you sleep."
-            color="purple"
-          />
-        </motion.div>
+        {/* Wallet Selector Bar */}
+        {isAuthenticated && wallets.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className="mb-6"
+          >
+            <div className="flex items-center justify-between p-3 rounded-lg bg-[var(--bg-card)] border border-[var(--border-subtle)]">
+              <div className="flex items-center gap-2 text-sm">
+                <svg className="w-4 h-4 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+                <span className="text-[var(--text-muted)]">Deploying from:</span>
+              </div>
+              
+              <div className="relative" ref={selectorRef}>
+                <button
+                  onClick={() => setShowWalletSelector(!showWalletSelector)}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--border-highlight)] transition-colors"
+                >
+                  <span className="text-sm font-mono text-[var(--text-primary)]">
+                    {activeWallet?.label || `${(activeWallet || mainWallet)?.public_key.slice(0, 6)}...${(activeWallet || mainWallet)?.public_key.slice(-4)}`}
+                  </span>
+                  <svg className={`w-3 h-3 text-[var(--text-muted)] transition-transform ${showWalletSelector ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                
+                {showWalletSelector && (
+                  <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-[var(--bg-elevated)] border border-[var(--border-default)] shadow-xl z-50">
+                    {wallets.map((wallet) => (
+                      <button
+                        key={wallet.id}
+                        onClick={() => {
+                          setActiveWallet(wallet)
+                          setShowWalletSelector(false)
+                        }}
+                        className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors"
+                      >
+                        <span className={activeWallet?.id === wallet.id ? "text-[var(--aqua-primary)] font-medium" : "text-[var(--text-secondary)]"}>
+                          {wallet.label || `${wallet.public_key.slice(0, 6)}...${wallet.public_key.slice(-4)}`}
+                        </span>
+                        {activeWallet?.id === wallet.id && (
+                          <svg className="w-4 h-4 text-[var(--aqua-primary)]" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* Main Content */}
         <motion.div 
-          initial={{ opacity: 0, y: 20 }} 
+          initial={{ opacity: 0, y: 12 }} 
           animate={{ opacity: 1, y: 0 }} 
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.1 }}
         >
           {isAuthenticated && (activeWallet || mainWallet) ? (
-            <FintechCard glow>
-              {/* Wallet Selector for Token Creation */}
-              {wallets.length > 1 && (
-                <div className="mb-6 pb-4 border-b border-zinc-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Wallet className="w-4 h-4 text-teal-400" />
-                      <span className="text-sm text-zinc-400">Creating with wallet:</span>
-                    </div>
-                    <div className="relative" ref={selectorRef}>
-                      <button
-                        onClick={() => setShowWalletSelector(!showWalletSelector)}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors"
-                      >
-                        <span className="text-sm font-medium text-zinc-200">
-                          {activeWallet?.label || `${(activeWallet || mainWallet)?.public_key.slice(0, 6)}...${(activeWallet || mainWallet)?.public_key.slice(-4)}`}
-                        </span>
-                        <ChevronDown className="w-3 h-3 text-zinc-500" />
-                      </button>
-                      
-                      {showWalletSelector && (
-                        <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50">
-                          {wallets.map((wallet) => (
-                            <button
-                              key={wallet.id}
-                              onClick={() => {
-                                setActiveWallet(wallet)
-                                setShowWalletSelector(false)
-                              }}
-                              className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-zinc-800 transition-colors"
-                            >
-                              <span className={activeWallet?.id === wallet.id ? "text-teal-400 font-medium" : "text-zinc-300"}>
-                                {wallet.label || `${wallet.public_key.slice(0, 6)}...${wallet.public_key.slice(-4)}`}
-                              </span>
-                              {activeWallet?.id === wallet.id && (
-                                <Check className="w-4 h-4 text-teal-400" />
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-              
-              <LaunchWizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
-            </FintechCard>
+            <LaunchWizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
           ) : (
-            <FintechCard>
-              <EmptyState
-                icon={<Wallet className="w-8 h-8" />}
-                title="Connect Wallet"
-                description="Quick setup, then you're ready to launch."
-                action={
-                  <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
-                    Let's Go
-                  </ActionButton>
-                }
-              />
-            </FintechCard>
-          )}
-        </motion.div>
-
-        {/* Info Section */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="mt-8 p-5 rounded-xl bg-zinc-900/50 border border-zinc-800"
-        >
-          <div className="flex items-start gap-4">
-            <div className="p-2 rounded-lg bg-teal-500/10 shrink-0">
-              <TrendingUp className="w-5 h-5 text-teal-400" />
-            </div>
-            <div>
-              <h3 className="font-semibold text-zinc-200 mb-1">Why This Works</h3>
-              <p className="text-sm text-zinc-500 leading-relaxed">
-                Every trade adds liquidity back to the pool. No dev can drain it. 
-                Your holders can always sell. That's the AQUA difference.
+            <div className="glass-panel p-12 text-center">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] flex items-center justify-center">
+                <svg className="w-8 h-8 text-[var(--text-muted)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Connect Wallet</h3>
+              <p className="text-sm text-[var(--text-muted)] mb-6 max-w-sm mx-auto">
+                Connect your wallet to start creating tokens on Pump.fun
               </p>
+              <button 
+                onClick={() => setIsOnboarding(true)} 
+                className="btn-primary"
+              >
+                Connect Wallet
+              </button>
             </div>
-          </div>
+          )}
         </motion.div>
       </div>
     </main>
