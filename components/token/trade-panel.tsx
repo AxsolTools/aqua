@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
@@ -11,17 +11,44 @@ interface TradePanelProps {
   token: Token
 }
 
+// Error code to user-friendly message mapping
+const ERROR_MESSAGES: Record<number, string> = {
+  1001: "Please connect your wallet first",
+  1002: "Session expired - please reconnect wallet",
+  2001: "Not enough SOL in your wallet",
+  2002: "Not enough tokens to sell",
+  2003: "Invalid amount entered",
+  3001: "Trade failed on-chain - try again",
+  3002: "Transaction timed out - check Solscan",
+  3003: "Slippage too high - increase tolerance",
+  4001: "Token not found or delisted",
+  4002: "Bonding curve locked",
+}
+
 export function TradePanel({ token }: TradePanelProps) {
-  const { isAuthenticated, activeWallet, sessionId, userId, setIsOnboarding } = useAuth()
+  const { isAuthenticated, wallets, activeWallet, setActiveWallet, sessionId, userId, setIsOnboarding } = useAuth()
   const [mode, setMode] = useState<"buy" | "sell">("buy")
   const [amount, setAmount] = useState("")
   const [slippage, setSlippage] = useState("1")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [showWalletSelector, setShowWalletSelector] = useState(false)
+  const selectorRef = useRef<HTMLDivElement>(null)
 
   const estimatedTokens = amount ? Number(amount) / (token.price_sol || 0.0001) : 0
   const estimatedSol = amount ? Number(amount) * (token.price_sol || 0.0001) : 0
+
+  // Close wallet selector when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (selectorRef.current && !selectorRef.current.contains(event.target as Node)) {
+        setShowWalletSelector(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   const handleTrade = async () => {
     if (!isAuthenticated || !activeWallet || !amount) return
@@ -35,6 +62,7 @@ export function TradePanel({ token }: TradePanelProps) {
       token: token.mint_address?.slice(0, 8),
       amount,
       slippage,
+      wallet: activeWallet.public_key?.slice(0, 8),
     })
 
     try {
@@ -48,7 +76,7 @@ export function TradePanel({ token }: TradePanelProps) {
           action: mode,
           tokenMint: token.mint_address,
           amount: parseFloat(amount),
-          slippageBps: parseFloat(slippage) * 100, // Convert percentage to basis points
+          slippageBps: parseFloat(slippage) * 100,
         }),
       })
 
@@ -56,14 +84,19 @@ export function TradePanel({ token }: TradePanelProps) {
       console.log('[TRADE] Response:', data)
 
       if (!response.ok) {
-        throw new Error(data.error?.message || data.error || "Trade failed")
+        // Use specific error message if available
+        const errorCode = data.error?.code
+        const friendlyMessage = errorCode && ERROR_MESSAGES[errorCode] 
+          ? ERROR_MESSAGES[errorCode]
+          : data.error?.message || data.error || "Trade failed - please try again"
+        throw new Error(friendlyMessage)
       }
 
-      setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}!`)
+      setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}! 🎉`)
       setAmount("")
     } catch (err) {
       console.error('[TRADE] Error:', err)
-      setError(err instanceof Error ? err.message : "Trade failed")
+      setError(err instanceof Error ? err.message : "Trade failed - please try again")
     } finally {
       setIsLoading(false)
     }
@@ -71,8 +104,88 @@ export function TradePanel({ token }: TradePanelProps) {
 
   const quickAmounts = mode === "buy" ? ["0.1", "0.5", "1", "2"] : ["25", "50", "75", "100"]
 
+  const truncateAddress = (address: string) => {
+    return `${address.slice(0, 4)}...${address.slice(-4)}`
+  }
+
   return (
     <div className="glass-panel-elevated p-4 rounded-lg">
+      {/* Active Wallet Indicator */}
+      {isAuthenticated && activeWallet && (
+        <div className="mb-4 relative" ref={selectorRef}>
+          <div 
+            onClick={() => wallets.length > 1 && setShowWalletSelector(!showWalletSelector)}
+            className={cn(
+              "flex items-center justify-between p-3 rounded-lg border transition-all",
+              "bg-[var(--bg-secondary)] border-[var(--border-subtle)]",
+              wallets.length > 1 && "cursor-pointer hover:border-[var(--aqua-primary)]"
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
+              <span className="text-xs text-[var(--text-muted)]">Trading with:</span>
+              <span className="text-sm font-mono font-medium text-[var(--text-primary)]">
+                {activeWallet.label || truncateAddress(activeWallet.public_key)}
+              </span>
+              {activeWallet.is_primary && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">
+                  Main
+                </span>
+              )}
+            </div>
+            {wallets.length > 1 && (
+              <svg 
+                className={cn("w-4 h-4 text-[var(--text-muted)] transition-transform", showWalletSelector && "rotate-180")} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </div>
+
+          {/* Wallet Selector Dropdown */}
+          {showWalletSelector && wallets.length > 1 && (
+            <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-xl overflow-hidden">
+              <div className="p-2 border-b border-[var(--border-subtle)]">
+                <span className="text-xs text-[var(--text-muted)]">Select wallet for trading</span>
+              </div>
+              {wallets.map((wallet) => (
+                <button
+                  key={wallet.id}
+                  onClick={() => {
+                    setActiveWallet(wallet)
+                    setShowWalletSelector(false)
+                  }}
+                  className={cn(
+                    "w-full flex items-center justify-between p-3 text-left transition-all",
+                    "hover:bg-[var(--bg-secondary)]",
+                    wallet.id === activeWallet.id && "bg-[var(--aqua-primary)]/10"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono text-[var(--text-primary)]">
+                      {wallet.label || truncateAddress(wallet.public_key)}
+                    </span>
+                    {wallet.is_primary && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">
+                        Main
+                      </span>
+                    )}
+                  </div>
+                  {wallet.id === activeWallet.id && (
+                    <svg className="w-4 h-4 text-[var(--aqua-primary)]" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Swap {token.symbol}</h3>
 
@@ -178,20 +291,30 @@ export function TradePanel({ token }: TradePanelProps) {
 
       {/* Error/Success messages */}
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-          {error}
+        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span className="text-red-400 text-sm">{error}</span>
+          </div>
         </div>
       )}
       {success && (
-        <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
-          {success}
+        <div className="mb-4 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-green-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span className="text-green-400 text-sm">{success}</span>
+          </div>
         </div>
       )}
 
       {/* Trade button */}
       {!isAuthenticated ? (
         <button onClick={() => setIsOnboarding(true)} className="btn-primary w-full">
-          Connect Wallet
+          Connect Wallet to Trade
         </button>
       ) : (
         <button

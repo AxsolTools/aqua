@@ -27,8 +27,30 @@ export interface TokenFormData {
   discord: string
   totalSupply: string
   initialBuySol: string
+  
+  // Pour Rate (Liquidity Engine)
+  pourEnabled: boolean
   pourRate: number
+  pourInterval: 'hourly' | 'daily'
+  pourSource: 'fees' | 'treasury' | 'both'
+  
+  // Evaporation (Burn Mechanics) - burns % of dev wallet buys
+  evaporationEnabled: boolean
   evaporationRate: number
+  
+  // Fee Distribution
+  feeToLiquidity: number
+  feeToCreator: number
+  
+  // Auto-Harvest (Tide Harvest)
+  autoClaimEnabled: boolean
+  claimThreshold: number
+  claimInterval: 'hourly' | 'daily' | 'weekly'
+  
+  // Advanced Settings
+  migrationTarget: 'raydium' | 'meteora' | 'orca' | 'pumpswap'
+  treasuryWallet: string
+  devWallet: string
 }
 
 const initialFormData: TokenFormData = {
@@ -43,8 +65,30 @@ const initialFormData: TokenFormData = {
   discord: "",
   totalSupply: "1000000000",
   initialBuySol: "0",
-  pourRate: 1,
-  evaporationRate: 0.5,
+  
+  // Pour Rate defaults
+  pourEnabled: true,
+  pourRate: 2,
+  pourInterval: 'hourly',
+  pourSource: 'fees',
+  
+  // Evaporation defaults
+  evaporationEnabled: false,
+  evaporationRate: 1,
+  
+  // Fee Distribution defaults (must total 100)
+  feeToLiquidity: 25,
+  feeToCreator: 75,
+  
+  // Auto-Harvest defaults
+  autoClaimEnabled: true,
+  claimThreshold: 0.1,
+  claimInterval: 'daily',
+  
+  // Advanced defaults
+  migrationTarget: 'raydium',
+  treasuryWallet: '',
+  devWallet: '',
 }
 
 const steps = [
@@ -143,8 +187,27 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           totalSupply: parseInt(formData.totalSupply),
           decimals: 6, // pump.fun tokens always use 6 decimals
           initialBuySol: parseFloat(formData.initialBuySol) || 0,
+          
+          // AQUA Parameters
+          pourEnabled: formData.pourEnabled,
           pourRate: formData.pourRate,
+          pourInterval: formData.pourInterval,
+          pourSource: formData.pourSource,
+          
+          evaporationEnabled: formData.evaporationEnabled,
           evaporationRate: formData.evaporationRate,
+          
+          feeToLiquidity: formData.feeToLiquidity,
+          feeToCreator: formData.feeToCreator,
+          
+          autoClaimEnabled: formData.autoClaimEnabled,
+          claimThreshold: formData.claimThreshold,
+          claimInterval: formData.claimInterval,
+          
+          migrationTarget: formData.migrationTarget,
+          treasuryWallet: formData.treasuryWallet || creatorWallet,
+          devWallet: formData.devWallet || creatorWallet,
+          
           // Send pre-generated mint keypair so backend uses the same address
           mintSecretKey: mintSecretKey,
           mintAddress: currentMintKeypair.publicKey.toBase58(),

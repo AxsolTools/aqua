@@ -25,6 +25,7 @@ import {
 import { solToLamports, lamportsToSol } from '@/lib/precision';
 import FormDataLib from 'form-data';
 import axios from 'axios';
+import { buyViaSDK, sellViaSDK, isSDKAvailable } from './pumpfun-sdk';
 
 // ============================================================================
 // CONFIGURATION
@@ -324,10 +325,11 @@ export async function buyOnBondingCurve(
   connection: Connection,
   params: TradeParams
 ): Promise<TradeResult> {
+  const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001 } = params;
+  
+  // Try PumpPortal API first
   try {
-    const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001 } = params;
-
-    console.log(`[PUMP] Buying ${amountSol} SOL worth of ${tokenMint.slice(0, 8)}...`);
+    console.log(`[PUMP] Buying ${amountSol} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
@@ -346,23 +348,39 @@ export async function buyOnBondingCurve(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
+      console.error('[PUMP] PumpPortal buy error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        mint: tokenMint,
+        amount: amountSol,
+        wallet: walletKeypair.publicKey.toBase58().slice(0, 8),
+      });
+      throw new Error(`PumpPortal: ${response.status} - ${errorText}`);
     }
 
     const txData = await response.arrayBuffer();
+    
+    if (txData.byteLength === 0) {
+      throw new Error('PumpPortal returned empty transaction data');
+    }
+    
     const tx = VersionedTransaction.deserialize(new Uint8Array(txData));
     
     tx.sign([walletKeypair]);
 
+    console.log(`[PUMP] Sending buy transaction...`);
     const signature = await connection.sendTransaction(tx, {
       skipPreflight: false,
       maxRetries: 3,
     });
 
+    console.log(`[PUMP] Confirming transaction: ${signature}`);
     const confirmation = await connection.confirmTransaction(signature, 'confirmed');
 
     if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      console.error('[PUMP] Transaction confirmation error:', confirmation.value.err);
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
     }
 
     console.log(`[PUMP] Buy successful: ${signature}`);
@@ -373,12 +391,44 @@ export async function buyOnBondingCurve(
       amountSol,
     };
 
-  } catch (error) {
-    console.error('[PUMP] Buy error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Buy failed',
-    };
+  } catch (apiError) {
+    const apiErrorMessage = apiError instanceof Error ? apiError.message : 'PumpPortal API failed';
+    console.warn(`[PUMP] PumpPortal API failed, attempting SDK fallback:`, apiErrorMessage);
+    
+    // Fallback to PumpDotFun SDK
+    try {
+      const sdkAvailable = await isSDKAvailable();
+      if (!sdkAvailable) {
+        console.error('[PUMP] SDK fallback not available');
+        return {
+          success: false,
+          error: `${apiErrorMessage} (SDK fallback unavailable)`,
+        };
+      }
+      
+      console.log('[PUMP] Using SDK fallback for buy...');
+      const sdkResult = await buyViaSDK(
+        connection,
+        tokenMint,
+        walletKeypair,
+        amountSol,
+        slippageBps
+      );
+      
+      if (sdkResult.success) {
+        console.log('[PUMP] SDK fallback buy successful');
+      }
+      
+      return sdkResult;
+      
+    } catch (sdkError) {
+      const sdkErrorMessage = sdkError instanceof Error ? sdkError.message : 'SDK fallback failed';
+      console.error('[PUMP] SDK fallback also failed:', sdkErrorMessage);
+      return {
+        success: false,
+        error: `API: ${apiErrorMessage} | SDK: ${sdkErrorMessage}`,
+      };
+    }
   }
 }
 
@@ -389,10 +439,11 @@ export async function sellOnBondingCurve(
   connection: Connection,
   params: TradeParams & { amountTokens: number }
 ): Promise<TradeResult> {
-  try {
-    const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001 } = params;
+  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001 } = params;
 
-    console.log(`[PUMP] Selling ${amountTokens} tokens of ${tokenMint.slice(0, 8)}...`);
+  // Try PumpPortal API first
+  try {
+    console.log(`[PUMP] Selling ${amountTokens} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
@@ -411,23 +462,39 @@ export async function sellOnBondingCurve(
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
+      console.error('[PUMP] PumpPortal sell error details:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorText,
+        mint: tokenMint,
+        amount: amountTokens,
+        wallet: walletKeypair.publicKey.toBase58().slice(0, 8),
+      });
+      throw new Error(`PumpPortal: ${response.status} - ${errorText}`);
     }
 
     const txData = await response.arrayBuffer();
+    
+    if (txData.byteLength === 0) {
+      throw new Error('PumpPortal returned empty transaction data');
+    }
+    
     const tx = VersionedTransaction.deserialize(new Uint8Array(txData));
     
     tx.sign([walletKeypair]);
 
+    console.log(`[PUMP] Sending sell transaction...`);
     const signature = await connection.sendTransaction(tx, {
       skipPreflight: false,
       maxRetries: 3,
     });
 
+    console.log(`[PUMP] Confirming transaction: ${signature}`);
     const confirmation = await connection.confirmTransaction(signature, 'confirmed');
 
     if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      console.error('[PUMP] Transaction confirmation error:', confirmation.value.err);
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
     }
 
     console.log(`[PUMP] Sell successful: ${signature}`);
@@ -438,12 +505,44 @@ export async function sellOnBondingCurve(
       amountTokens,
     };
 
-  } catch (error) {
-    console.error('[PUMP] Sell error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Sell failed',
-    };
+  } catch (apiError) {
+    const apiErrorMessage = apiError instanceof Error ? apiError.message : 'PumpPortal API failed';
+    console.warn(`[PUMP] PumpPortal API failed, attempting SDK fallback:`, apiErrorMessage);
+    
+    // Fallback to PumpDotFun SDK
+    try {
+      const sdkAvailable = await isSDKAvailable();
+      if (!sdkAvailable) {
+        console.error('[PUMP] SDK fallback not available');
+        return {
+          success: false,
+          error: `${apiErrorMessage} (SDK fallback unavailable)`,
+        };
+      }
+      
+      console.log('[PUMP] Using SDK fallback for sell...');
+      const sdkResult = await sellViaSDK(
+        connection,
+        tokenMint,
+        walletKeypair,
+        amountTokens,
+        slippageBps
+      );
+      
+      if (sdkResult.success) {
+        console.log('[PUMP] SDK fallback sell successful');
+      }
+      
+      return sdkResult;
+      
+    } catch (sdkError) {
+      const sdkErrorMessage = sdkError instanceof Error ? sdkError.message : 'SDK fallback failed';
+      console.error('[PUMP] SDK fallback also failed:', sdkErrorMessage);
+      return {
+        success: false,
+        error: `API: ${apiErrorMessage} | SDK: ${sdkErrorMessage}`,
+      };
+    }
   }
 }
 

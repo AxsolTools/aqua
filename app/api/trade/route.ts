@@ -159,8 +159,44 @@ export async function POST(request: NextRequest) {
     }
 
     if (!tradeResult.success) {
+      // Map error messages to user-friendly descriptions
+      let userMessage = tradeResult.error || 'Trade failed';
+      let errorCode = 3001;
+      
+      if (tradeResult.error?.includes('insufficient')) {
+        userMessage = 'Insufficient balance for this trade';
+        errorCode = 2001;
+      } else if (tradeResult.error?.includes('slippage')) {
+        userMessage = 'Price moved too much. Try increasing slippage tolerance.';
+        errorCode = 3002;
+      } else if (tradeResult.error?.includes('PumpPortal')) {
+        userMessage = 'Trading service temporarily unavailable. Please try again.';
+        errorCode = 5001;
+      } else if (tradeResult.error?.includes('SDK')) {
+        userMessage = 'Backup trading service also failed. Please try again later.';
+        errorCode = 5002;
+      } else if (tradeResult.error?.includes('on-chain')) {
+        userMessage = 'Transaction failed on the blockchain. Please try again.';
+        errorCode = 3003;
+      }
+      
+      console.error('[TRADE] Trade failed:', {
+        action,
+        tokenMint,
+        amount,
+        error: tradeResult.error,
+        wallet: walletAddress?.slice(0, 8),
+      });
+      
       return NextResponse.json(
-        { success: false, error: { code: 3001, message: tradeResult.error || 'Trade failed' } },
+        { 
+          success: false, 
+          error: { 
+            code: errorCode, 
+            message: userMessage,
+            technical: tradeResult.error, // Include technical details for debugging
+          } 
+        },
         { status: 500 }
       );
     }

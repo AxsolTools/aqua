@@ -146,6 +146,14 @@ export interface Token {
   boost_amount: number; // Added for boosts feature
   created_at: string;
   updated_at: string;
+  
+  // AQUA Metrics (from token_parameters join or calculated)
+  pour_rate?: number;
+  total_evaporated?: number;
+  evaporation_rate?: number;
+  
+  // Joined token_parameters (when fetched with select("*, token_parameters(*)"))
+  token_parameters?: TokenParameters | null;
 }
 
 // ========== TOKEN PARAMETERS (Creator Settings) ==========

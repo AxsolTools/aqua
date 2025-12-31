@@ -35,7 +35,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
     const fetchData = async (retryCount = 0) => {
       const { data: tokenData, error: tokenError } = await supabase
         .from("tokens")
-        .select("*")
+        .select("*, token_parameters(*)")
         .eq("mint_address", address)
         .single()
 
@@ -52,7 +52,14 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
         return
       }
 
-      setToken(tokenData as Token)
+      // Merge token_parameters metrics into token object for easy access
+      const tokenWithMetrics = {
+        ...tokenData,
+        pour_rate: tokenData.token_parameters?.pour_rate_percent ?? 0,
+        evaporation_rate: tokenData.token_parameters?.evaporation_rate_percent ?? 0,
+        total_evaporated: tokenData.token_parameters?.total_evaporated ?? 0,
+      } as Token
+      setToken(tokenWithMetrics)
       tokenId = tokenData.id
 
       const { data: tradesData } = await supabase
@@ -85,7 +92,14 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
           "postgres_changes",
           { event: "UPDATE", schema: "public", table: "tokens", filter: `mint_address=eq.${address}` },
           (payload) => {
-            setToken(payload.new as Token)
+            // Preserve token_parameters when updating from realtime
+            setToken(prev => ({
+              ...(payload.new as Token),
+              token_parameters: prev?.token_parameters,
+              pour_rate: prev?.pour_rate,
+              evaporation_rate: prev?.evaporation_rate,
+              total_evaporated: prev?.total_evaporated,
+            }))
           },
         )
         // Subscribe to liquidity_history for real-time pour rate updates
@@ -142,7 +156,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Chart & Live Feed */}
         <div className="xl:col-span-2 space-y-4">
-          <TokenChart tokenId={token.id} />
+          <TokenChart mintAddress={token.mint_address} tokenSymbol={token.symbol} />
           <LiveFeed trades={trades} tokenSymbol={token.symbol} />
         </div>
 

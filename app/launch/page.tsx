@@ -1,15 +1,28 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useAuth } from "@/components/providers/auth-provider"
 import { LaunchWizard } from "@/components/launch/launch-wizard"
 import { motion } from "framer-motion"
 import { Header } from "@/components/layout/header"
 import { FintechCard, FeatureCard, ActionButton, EmptyState } from "@/components/ui/fintech-card"
-import { Droplets, Flame, Gift, Wallet, Sparkles, TrendingUp } from "lucide-react"
+import { Droplets, Flame, Gift, Wallet, Sparkles, TrendingUp, ChevronDown, Check } from "lucide-react"
 
 export default function LaunchPage() {
-  const { isAuthenticated, isLoading, mainWallet, setIsOnboarding } = useAuth()
+  const { isAuthenticated, isLoading, wallets, activeWallet, setActiveWallet, mainWallet, setIsOnboarding } = useAuth()
+  const [showWalletSelector, setShowWalletSelector] = useState(false)
+  const selectorRef = useRef<HTMLDivElement>(null)
+  
+  // Close wallet selector when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (selectorRef.current && !selectorRef.current.contains(event.target as Node)) {
+        setShowWalletSelector(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -90,9 +103,54 @@ export default function LaunchPage() {
           animate={{ opacity: 1, y: 0 }} 
           transition={{ delay: 0.2 }}
         >
-          {isAuthenticated && mainWallet ? (
+          {isAuthenticated && (activeWallet || mainWallet) ? (
             <FintechCard glow>
-              <LaunchWizard creatorWallet={mainWallet.public_key} />
+              {/* Wallet Selector for Token Creation */}
+              {wallets.length > 1 && (
+                <div className="mb-6 pb-4 border-b border-zinc-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Wallet className="w-4 h-4 text-teal-400" />
+                      <span className="text-sm text-zinc-400">Creating with wallet:</span>
+                    </div>
+                    <div className="relative" ref={selectorRef}>
+                      <button
+                        onClick={() => setShowWalletSelector(!showWalletSelector)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/50 border border-zinc-700 hover:border-zinc-600 transition-colors"
+                      >
+                        <span className="text-sm font-medium text-zinc-200">
+                          {activeWallet?.label || `${(activeWallet || mainWallet)?.public_key.slice(0, 6)}...${(activeWallet || mainWallet)?.public_key.slice(-4)}`}
+                        </span>
+                        <ChevronDown className="w-3 h-3 text-zinc-500" />
+                      </button>
+                      
+                      {showWalletSelector && (
+                        <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl z-50">
+                          {wallets.map((wallet) => (
+                            <button
+                              key={wallet.id}
+                              onClick={() => {
+                                setActiveWallet(wallet)
+                                setShowWalletSelector(false)
+                              }}
+                              className="flex items-center justify-between w-full px-3 py-2 text-sm hover:bg-zinc-800 transition-colors"
+                            >
+                              <span className={activeWallet?.id === wallet.id ? "text-teal-400 font-medium" : "text-zinc-300"}>
+                                {wallet.label || `${wallet.public_key.slice(0, 6)}...${wallet.public_key.slice(-4)}`}
+                              </span>
+                              {activeWallet?.id === wallet.id && (
+                                <Check className="w-4 h-4 text-teal-400" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              <LaunchWizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
             </FintechCard>
           ) : (
             <FintechCard>

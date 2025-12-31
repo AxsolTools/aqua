@@ -68,17 +68,30 @@ export async function POST(request: NextRequest) {
       totalSupply = 1_000_000_000,
       decimals = 9,
       
-      // AQUA parameters
-      pourRate = 50,
+      // AQUA parameters - Pour Rate
       pourEnabled = true,
-      evaporationRate = 0,
+      pourRate = 2,
+      pourInterval = 'hourly',
+      pourSource = 'fees',
+      
+      // AQUA parameters - Evaporation
       evaporationEnabled = false,
-      migrationThreshold = 85,
-      migrationTarget = 'raydium',
+      evaporationRate = 1,
       
       // Fee distribution
       feeToLiquidity = 25,
       feeToCreator = 75,
+      
+      // Auto-harvest settings
+      autoClaimEnabled = true,
+      claimThreshold = 0.1,
+      claimInterval = 'daily',
+      
+      // Advanced settings
+      migrationThreshold = 85,
+      migrationTarget = 'raydium',
+      treasuryWallet,
+      devWallet,
       
       // Launch options
       initialBuySol = 0,
@@ -354,20 +367,43 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Convert intervals to seconds
+    const pourIntervalSeconds = pourInterval === 'hourly' ? 3600 : 86400; // 1 hour or 1 day
+    const claimIntervalSeconds = claimInterval === 'hourly' ? 3600 : claimInterval === 'daily' ? 86400 : 604800; // 1 hour, 1 day, or 1 week
+
     // Create token parameters with AQUA settings
     await adminClient.from('token_parameters').insert({
       token_id: token.id,
       creator_wallet: walletAddress,
+      
+      // Pour Rate settings
       pour_enabled: pourEnabled,
       pour_rate_percent: pourRate,
-      pour_interval_seconds: 3600,
-      pour_source: 'fees',
+      pour_interval_seconds: pourIntervalSeconds,
+      pour_source: pourSource,
+      pour_max_per_interval_sol: 1.0,
+      pour_min_trigger_sol: 0.01,
+      
+      // Evaporation settings
       evaporation_enabled: evaporationEnabled,
       evaporation_rate_percent: evaporationRate,
+      evaporation_interval_seconds: 86400,
+      evaporation_source: 'fees',
+      
+      // Fee distribution
       fee_to_liquidity_percent: feeToLiquidity,
       fee_to_creator_percent: feeToCreator,
+      
+      // Auto-harvest settings
+      auto_claim_enabled: autoClaimEnabled,
+      claim_threshold_sol: claimThreshold,
+      claim_interval_seconds: claimIntervalSeconds,
+      claim_destination_wallet: walletAddress,
+      
+      // Advanced settings
       migration_target: migrationTarget,
-      dev_wallet_address: walletAddress,
+      treasury_wallet: treasuryWallet || walletAddress,
+      dev_wallet_address: devWallet || walletAddress,
       dev_wallet_auto_enabled: true,
     });
 

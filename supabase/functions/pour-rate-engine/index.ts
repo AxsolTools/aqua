@@ -36,6 +36,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 const PUMPPORTAL_API = 'https://pumpportal.fun/api';
 const LAMPORTS_PER_SOL = 1_000_000_000;
 
+// Minimum market cap to process (saves API credits for dead tokens)
+const MIN_MARKET_CAP_USD = 5000;
+
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -46,6 +49,7 @@ interface TokenWithParams {
   name: string;
   symbol: string;
   stage: string;
+  market_cap: number;
   current_liquidity: number;
   token_parameters: {
     pour_enabled: boolean;
@@ -489,6 +493,7 @@ async function getEligibleTokens(): Promise<TokenWithParams[]> {
       name,
       symbol,
       stage,
+      market_cap,
       current_liquidity,
       token_parameters!inner (
         pour_enabled,
@@ -505,7 +510,8 @@ async function getEligibleTokens(): Promise<TokenWithParams[]> {
       )
     `)
     .eq('token_parameters.pour_enabled', true)
-    .in('stage', ['bonding', 'migrated']);
+    .in('stage', ['bonding', 'migrated'])
+    .gte('market_cap', MIN_MARKET_CAP_USD);
 
   if (error) {
     console.error('[POUR] Failed to fetch tokens:', error);

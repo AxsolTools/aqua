@@ -100,7 +100,7 @@ export default function DashboardPage() {
     try {
       const { data: tokens, error } = await supabase
         .from("tokens")
-        .select("*")
+        .select("*, token_parameters(*)")
         .eq("creator_wallet", mainWallet.public_key)
         .order("created_at", { ascending: false })
       
@@ -120,7 +120,14 @@ export default function DashboardPage() {
               rewards += harvest.total_accumulated - harvest.total_claimed
             }
 
-            return { ...token, harvest }
+            // Merge token_parameters metrics into token for easy access
+            return { 
+              ...token, 
+              harvest,
+              pour_rate: token.token_parameters?.pour_rate_percent ?? 0,
+              evaporation_rate: token.token_parameters?.evaporation_rate_percent ?? 0,
+              total_evaporated: token.token_parameters?.total_evaporated ?? 0,
+            }
           }),
         )
 
@@ -292,7 +299,7 @@ export default function DashboardPage() {
                       {createdTokens[0] ? (
                         <TideHarvestCard 
                           tokenId={createdTokens[0].id}
-                          creatorId={createdTokens[0].creator_id}
+                          creatorId={createdTokens[0].creator_id || ""}
                           tokenAddress={createdTokens[0].mint_address}
                         />
                       ) : (
