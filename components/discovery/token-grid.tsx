@@ -8,21 +8,36 @@ import { createClient } from "@/lib/supabase/client"
 import type { Token } from "@/lib/types/database"
 import { cn, formatTimeAgo } from "@/lib/utils"
 
+interface TokenWithCreator extends Token {
+  creator?: {
+    username: string | null
+    avatar_url: string | null
+  } | null
+}
+
 export function TokenGrid() {
-  const [tokens, setTokens] = useState<Token[]>([])
+  const [tokens, setTokens] = useState<TokenWithCreator[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
       const supabase = createClient()
+      
+      // Fetch tokens with creator info
       const { data: tokenData } = await supabase
         .from("tokens")
-        .select("*")
+        .select(`
+          *,
+          creator:users!tokens_creator_id_fkey (
+            username,
+            avatar_url
+          )
+        `)
         .order("created_at", { ascending: false })
-        .limit(24)
+        .limit(32)
 
       if (tokenData) {
-        setTokens(tokenData as Token[])
+        setTokens(tokenData as TokenWithCreator[])
       }
       setIsLoading(false)
     }
@@ -35,9 +50,9 @@ export function TokenGrid() {
       .channel("tokens-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "tokens" }, (payload) => {
         if (payload.eventType === "INSERT") {
-          setTokens((prev) => [payload.new as Token, ...prev].slice(0, 24))
+          setTokens((prev) => [payload.new as TokenWithCreator, ...prev].slice(0, 32))
         } else if (payload.eventType === "UPDATE") {
-          setTokens((prev) => prev.map((t) => (t.id === (payload.new as Token).id ? (payload.new as Token) : t)))
+          setTokens((prev) => prev.map((t) => (t.id === (payload.new as Token).id ? { ...t, ...(payload.new as Token) } : t)))
         }
       })
       .subscribe()
@@ -47,30 +62,42 @@ export function TokenGrid() {
     }
   }, [])
 
-  const formatMarketCap = (mc: number) => {
-    if (mc >= 1000000) return `$${(mc / 1000000).toFixed(2)}M`
-    if (mc >= 1000) return `$${(mc / 1000).toFixed(1)}K`
-    return `$${mc.toFixed(0)}`
+  const formatMarketCap = (mc: number | null | undefined) => {
+    const m = mc || 0
+    if (m >= 1000000) return `$${(m / 1000000).toFixed(2)}M`
+    if (m >= 1000) return `$${(m / 1000).toFixed(1)}K`
+    return `$${m.toFixed(0)}`
   }
 
-  const formatChange = (change: number) => {
-    const prefix = change >= 0 ? "+" : ""
-    return `${prefix}${change.toFixed(2)}%`
+  const formatChange = (change: number | null | undefined) => {
+    const c = change || 0
+    const prefix = c >= 0 ? "↑" : "↓"
+    return `${prefix} ${Math.abs(c).toFixed(2)}%`
   }
 
-  const formatAddress = (addr: string) => `${addr.slice(0, 6)}`
+  const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
 
   const getMigrationProgress = (token: Token) => {
     const threshold = token.migration_threshold || 69000
-    const current = token.market_cap_usd || 0
+    const current = token.market_cap_usd || token.market_cap || 0
     return Math.min((current / threshold) * 100, 100)
+  }
+
+  const getCreatorDisplay = (token: TokenWithCreator) => {
+    if (token.creator?.username) {
+      return token.creator.username
+    }
+    if (token.creator_wallet) {
+      return `${token.creator_wallet.slice(0, 4)}...${token.creator_wallet.slice(-4)}`
+    }
+    return "Unknown"
   }
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
-        {[...Array(16)].map((_, i) => (
-          <div key={i} className="h-[160px] skeleton rounded-lg" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+        {[...Array(15)].map((_, i) => (
+          <div key={i} className="h-[140px] skeleton rounded-lg" />
         ))}
       </div>
     )
@@ -100,69 +127,117 @@ export function TokenGrid() {
   }
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       {tokens.map((token, index) => {
         const progress = getMigrationProgress(token)
         const isLive = token.stage === "bonding"
         const isMigrated = token.stage === "migrated"
         const isPositive = (token.change_24h || 0) >= 0
+        const timeAgo = token.created_at ? formatTimeAgo(new Date(token.created_at)) : ""
 
         return (
           <motion.div
             key={token.id}
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: index * 0.01 }}
+            transition={{ duration: 0.15, delay: index * 0.02 }}
           >
             <Link href={`/token/${token.mint_address}`}>
-              <div className="card-interactive overflow-hidden group">
-                {/* Token Image - Compact */}
-                <div className="relative aspect-[4/3] bg-[var(--bg-secondary)]">
-                  {token.image_url ? (
-                    <Image src={token.image_url || "/placeholder.svg"} alt={token.name} fill className="object-cover" />
-                  ) : (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-2xl font-bold text-[var(--text-dim)]">{token.symbol?.slice(0, 2)}</span>
+              <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all">
+                {/* Horizontal layout: Image on left, info on right */}
+                <div className="flex gap-3 p-3">
+                  {/* Token Image - Square, left side */}
+                  <div className="relative w-20 h-20 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
+                    {token.image_url ? (
+                      <Image src={token.image_url} alt={token.name} fill className="object-cover" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
+                        <span className="text-xl font-bold text-[var(--text-muted)]">{token.symbol?.slice(0, 2)}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Token Info - Right side */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-between">
+                    {/* Top: Name + Symbol */}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">{token.name}</h3>
+                        {isLive && (
+                          <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[var(--green)] text-white flex-shrink-0">
+                            LIVE
+                          </span>
+                        )}
+                        {isMigrated && (
+                          <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-[var(--aqua-primary)] text-[var(--ocean-deep)] flex-shrink-0">
+                            DEX
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-[var(--text-muted)]">{token.symbol}</p>
                     </div>
-                  )}
 
-                  {/* Badges - Smaller */}
-                  {isLive && <div className="absolute top-1 left-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-[var(--green)] text-white">LIVE</div>}
-                  {isMigrated && <div className="absolute top-1 left-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-[var(--aqua-primary)] text-white">DEX</div>}
-                  
-                  {/* Change Badge on Image */}
-                  <div className={cn(
-                    "absolute top-1 right-1 px-1.5 py-0.5 text-[9px] font-bold rounded",
-                    isPositive ? "bg-[var(--green)]/90 text-white" : "bg-[var(--red)]/90 text-white"
-                  )}>
-                    {formatChange(token.change_24h || 0)}
+                    {/* Middle: Creator + Time */}
+                    <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+                      {/* Creator Avatar */}
+                      {token.creator?.avatar_url ? (
+                        <Image 
+                          src={token.creator.avatar_url} 
+                          alt="" 
+                          width={14} 
+                          height={14} 
+                          className="rounded-full"
+                        />
+                      ) : (
+                        <div className="w-3.5 h-3.5 rounded-full bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center">
+                          <span className="text-[7px] font-bold text-white">
+                            {(token.creator?.username || token.creator_wallet || "?").charAt(0).toUpperCase()}
+                          </span>
+                        </div>
+                      )}
+                      <span className="truncate">{getCreatorDisplay(token)}</span>
+                      {timeAgo && (
+                        <>
+                          <span className="text-[var(--text-dim)]">•</span>
+                          <span className="text-[var(--text-dim)] whitespace-nowrap">{timeAgo}</span>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Bottom: Market Cap + Progress + Change */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-[var(--text-muted)]">MC</span>
+                      <span className="text-sm font-bold text-[var(--aqua-primary)]">
+                        {formatMarketCap(token.market_cap_usd || token.market_cap)}
+                      </span>
+                      
+                      {/* Progress Bar */}
+                      <div className="flex-1 h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[var(--green)] transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                      
+                      {/* Change Percentage */}
+                      <span className={cn(
+                        "text-[11px] font-bold whitespace-nowrap",
+                        isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
+                      )}>
+                        {formatChange(token.change_24h)}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Token Info - Compact */}
-                <div className="p-2">
-                  {/* Name & Market Cap */}
-                  <div className="flex items-center justify-between gap-1 mb-0.5">
-                    <h3 className="font-semibold text-xs text-[var(--text-primary)] truncate flex-1">{token.name}</h3>
-                    <span className="text-[10px] font-medium text-[var(--aqua-primary)] whitespace-nowrap">
-                      {formatMarketCap(token.market_cap_usd || 0)}
-                    </span>
+                {/* Description preview - bottom */}
+                {token.description && (
+                  <div className="px-3 pb-2">
+                    <p className="text-[11px] text-[var(--text-muted)] line-clamp-2 leading-tight">
+                      {token.description}
+                    </p>
                   </div>
-
-                  {/* Symbol & Creator */}
-                  <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-                    <span className="font-medium">${token.symbol}</span>
-                    <span className="font-mono opacity-70">{formatAddress(token.creator_wallet || "")}</span>
-                  </div>
-
-                  {/* Progress Bar - Thinner */}
-                  <div className="mt-1.5 h-0.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full transition-all", isPositive ? "bg-[var(--green)]" : "bg-[var(--red)]")}
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                </div>
+                )}
               </div>
             </Link>
           </motion.div>
