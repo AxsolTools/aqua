@@ -52,9 +52,9 @@ async function fetchLiquidity(mintAddress: string): Promise<number> {
   let liquidity = 0;
 
   try {
-    // Try Jupiter Price API (includes liquidity info)
+    // Try Jupiter Price API v2 (new endpoint)
     const jupiterResponse = await fetch(
-      `https://price.jup.ag/v6/price?ids=${mintAddress}&vsToken=So11111111111111111111111111111111111111112`,
+      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
       { next: { revalidate: 10 } }
     );
 
@@ -108,22 +108,47 @@ async function fetchPriceAndMarketCap(
   let price = 0;
   let marketCap = 0;
 
+  // Try Jupiter Price API v2 first
   try {
-    // Jupiter Price API
     const response = await fetch(
-      `https://price.jup.ag/v6/price?ids=${mintAddress}`,
+      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
       { next: { revalidate: 10 } }
     );
 
     if (response.ok) {
       const data = await response.json();
       const tokenPrice = data.data?.[mintAddress];
-      if (tokenPrice) {
-        price = tokenPrice.price || 0;
+      if (tokenPrice?.price) {
+        price = tokenPrice.price;
       }
     }
   } catch (error) {
-    console.warn('[METRICS] Price fetch failed:', error);
+    console.warn('[METRICS] Jupiter price fetch failed:', error);
+  }
+
+  // Fallback to DexScreener if Jupiter fails
+  if (price === 0) {
+    try {
+      const dexResponse = await fetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
+        { next: { revalidate: 30 } }
+      );
+
+      if (dexResponse.ok) {
+        const dexData = await dexResponse.json();
+        const pair = dexData.pairs?.find((p: { priceUsd?: string; fdv?: number }) => 
+          p.priceUsd && parseFloat(p.priceUsd) > 0
+        );
+        if (pair) {
+          price = parseFloat(pair.priceUsd);
+          if (pair.fdv) {
+            marketCap = pair.fdv;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[METRICS] DexScreener price fetch failed:', error);
+    }
   }
 
   // Try to get market cap from database or calculate

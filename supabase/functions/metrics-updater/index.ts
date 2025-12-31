@@ -71,12 +71,13 @@ function getErrorMessage(error: unknown): string {
 }
 
 /**
- * Fetch token price from Jupiter
+ * Fetch token price from Jupiter (v2 API)
  */
 async function fetchPrice(mintAddress: string): Promise<number> {
   try {
+    // Try Jupiter Price API v2 first
     const response = await fetch(
-      `https://price.jup.ag/v6/price?ids=${mintAddress}`,
+      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
       { headers: { "Content-Type": "application/json" } }
     );
     
@@ -85,8 +86,29 @@ async function fetchPrice(mintAddress: string): Promise<number> {
       return data.data?.[mintAddress]?.price || 0;
     }
   } catch (error) {
-    console.warn(`[METRICS-UPDATER] Price fetch failed for ${mintAddress}:`, getErrorMessage(error));
+    console.warn(`[METRICS-UPDATER] Jupiter price fetch failed for ${mintAddress}:`, getErrorMessage(error));
   }
+  
+  // Fallback to DexScreener
+  try {
+    const dexResponse = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
+      { headers: { "Content-Type": "application/json" } }
+    );
+    
+    if (dexResponse.ok) {
+      const data = await dexResponse.json();
+      const pair = data.pairs?.find((p: { priceUsd?: string }) => 
+        p.priceUsd && parseFloat(p.priceUsd) > 0
+      );
+      if (pair) {
+        return parseFloat(pair.priceUsd);
+      }
+    }
+  } catch (error) {
+    console.warn(`[METRICS-UPDATER] DexScreener price fetch failed for ${mintAddress}:`, getErrorMessage(error));
+  }
+  
   return 0;
 }
 
