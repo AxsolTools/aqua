@@ -26,15 +26,23 @@ export function TransactionHistory({ tokenAddress }: TransactionHistoryProps) {
 
   useEffect(() => {
     const fetchTransactions = async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("transactions")
-        .select("*")
-        .eq("token_address", tokenAddress)
-        .order("created_at", { ascending: false })
-        .limit(50)
+      try {
+        const supabase = createClient()
+        const { data, error } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("token_address", tokenAddress)
+          .order("created_at", { ascending: false })
+          .limit(50)
 
-      if (data) setTransactions(data)
+        if (error) {
+          console.warn('[TRANSACTIONS] Query error:', error)
+        } else if (data) {
+          setTransactions(data)
+        }
+      } catch (err) {
+        console.warn('[TRANSACTIONS] Failed to fetch:', err)
+      }
       setIsLoading(false)
     }
 
@@ -151,7 +159,7 @@ export function TransactionHistory({ tokenAddress }: TransactionHistoryProps) {
                     )}
                   >
                     {tx.type === "buy" ? "+" : "-"}
-                    {Number(tx.amount_sol).toFixed(4)} SOL
+                    {(Number(tx.amount_sol) || 0).toFixed(4)} SOL
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">{formatTime(tx.created_at)}</p>
                 </div>

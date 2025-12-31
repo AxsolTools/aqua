@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/providers/auth-provider"
 import { GlassPanel } from "@/components/ui/glass-panel"
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import Link from "next/link"
 import Image from "next/image"
 import type { Trade, Token, Wallet } from "@/lib/types/database"
+import { useBatchLivePrices } from "@/hooks/use-live-price"
 
 // ========== TYPES ==========
 interface TokenHolding {
@@ -62,8 +63,13 @@ export function PnLPanel() {
   const [summary, setSummary] = useState<PnLSummary | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<"overview" | "holdings" | "trades">("overview")
+  const [tokenMints, setTokenMints] = useState<string[]>([])
+  const [rawTradeData, setRawTradeData] = useState<Map<string, { wallet: Wallet; trades: any[] }>>(new Map())
 
   const supabase = createClient()
+  
+  // Fetch live prices for all held tokens
+  const { prices: livePrices, solPriceUsd, isLoading: pricesLoading } = useBatchLivePrices(tokenMints)
 
   // Format helpers
   const formatSOL = (value: number) => {
@@ -83,8 +89,8 @@ export function PnLPanel() {
     return price.toFixed(4)
   }
 
-  // Calculate P&L for all wallets
-  const calculatePnL = useCallback(async () => {
+  // Step 1: Fetch trade data and collect token mints
+  const fetchTradeData = useCallback(async () => {
     if (!isAuthenticated || wallets.length === 0) {
       setIsLoading(false)
       return
@@ -93,8 +99,8 @@ export function PnLPanel() {
     setIsLoading(true)
 
     try {
-      const allWalletPnL: WalletPnL[] = []
-      let allTrades: TradeWithPnL[] = []
+      const tradeDataMap = new Map<string, { wallet: Wallet; trades: any[] }>()
+      const mintSet = new Set<string>()
 
       for (const wallet of wallets) {
         // Fetch trades for this wallet
@@ -115,6 +121,40 @@ export function PnLPanel() {
           .order("created_at", { ascending: false })
           .limit(100)
 
+        if (trades && trades.length > 0) {
+          tradeDataMap.set(wallet.id, { wallet, trades })
+          
+          // Collect mint addresses for live price fetching
+          for (const trade of trades) {
+            const token = (trade as any).tokens as Token
+            if (token?.mint_address) {
+              mintSet.add(token.mint_address)
+            }
+          }
+        } else {
+          tradeDataMap.set(wallet.id, { wallet, trades: [] })
+        }
+      }
+
+      setRawTradeData(tradeDataMap)
+      setTokenMints(Array.from(mintSet))
+    } catch (err) {
+      console.error("[P&L] Failed to fetch trade data:", err)
+    }
+  }, [wallets, isAuthenticated, supabase])
+
+  // Step 2: Calculate P&L using live prices
+  const calculatePnL = useCallback(() => {
+    if (rawTradeData.size === 0) {
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const allWalletPnL: WalletPnL[] = []
+      let allTrades: TradeWithPnL[] = []
+
+      for (const [walletId, { wallet, trades }] of rawTradeData) {
         if (!trades || trades.length === 0) {
           allWalletPnL.push({
             wallet,
@@ -163,20 +203,25 @@ export function PnLPanel() {
           const { token, buys, sells } = data
 
           // Total bought
-          const totalBought = buys.reduce((sum, t) => sum + t.amount_tokens, 0)
-          const totalBuyCost = buys.reduce((sum, t) => sum + t.amount_sol, 0)
+          const totalBought = buys.reduce((sum, t) => sum + (t.amount_tokens || 0), 0)
+          const totalBuyCost = buys.reduce((sum, t) => sum + (t.amount_sol || 0), 0)
           const avgBuyPrice = totalBought > 0 ? totalBuyCost / totalBought : 0
 
           // Total sold
-          const totalSold = sells.reduce((sum, t) => sum + t.amount_tokens, 0)
-          const totalSellRevenue = sells.reduce((sum, t) => sum + t.amount_sol, 0)
+          const totalSold = sells.reduce((sum, t) => sum + (t.amount_tokens || 0), 0)
+          const totalSellRevenue = sells.reduce((sum, t) => sum + (t.amount_sol || 0), 0)
 
           // Current balance
           const balance = totalBought - totalSold
           const invested = balance > 0 ? (balance / totalBought) * totalBuyCost : 0
           
-          // Current value
-          const tokenCurrentValue = balance * (token.price_sol || 0)
+          // Get LIVE price from Jupiter, fallback to DB price
+          const livePrice = token.mint_address 
+            ? livePrices.get(token.mint_address)?.priceSol || (token.price_sol || 0)
+            : (token.price_sol || 0)
+          
+          // Current value using LIVE price
+          const tokenCurrentValue = balance * livePrice
           
           // Realized P&L (from sells)
           const costBasisSold = totalSold > 0 ? (totalSold / totalBought) * totalBuyCost : 0
@@ -194,7 +239,7 @@ export function PnLPanel() {
               token,
               balance,
               avgBuyPrice,
-              currentPrice: token.price_sol || 0,
+              currentPrice: livePrice, // Use LIVE price
               totalInvested: invested,
               currentValue: tokenCurrentValue,
               pnl: tokenUnrealizedPnL,
@@ -266,11 +311,19 @@ export function PnLPanel() {
     } finally {
       setIsLoading(false)
     }
-  }, [wallets, isAuthenticated, supabase])
+  }, [rawTradeData, livePrices])
 
+  // Initial fetch of trade data
   useEffect(() => {
-    calculatePnL()
-  }, [calculatePnL])
+    fetchTradeData()
+  }, [fetchTradeData])
+
+  // Recalculate P&L when live prices update
+  useEffect(() => {
+    if (rawTradeData.size > 0 && !pricesLoading) {
+      calculatePnL()
+    }
+  }, [rawTradeData, livePrices, pricesLoading, calculatePnL])
 
   // Get currently selected wallet data
   const selectedWalletData = selectedWalletId

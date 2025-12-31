@@ -93,8 +93,8 @@ export function TradePanel({ token }: TradePanelProps) {
     }
 
     // Check balance for buy mode
-    if (mode === "buy" && balanceSol < parseFloat(amount) + 0.01) {
-      setError(`Insufficient balance. You have ${balanceSol.toFixed(4)} SOL.`)
+    if (mode === "buy" && (balanceSol || 0) < parseFloat(amount) + 0.01) {
+      setError(`Insufficient balance. You have ${(balanceSol || 0).toFixed(4)} SOL.`)
       return
     }
 
@@ -199,7 +199,7 @@ export function TradePanel({ token }: TradePanelProps) {
                   "text-sm font-mono font-semibold",
                   balanceLoading ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
                 )}>
-                  {balanceLoading ? "..." : `${balanceSol.toFixed(4)} SOL`}
+                  {balanceLoading ? "..." : `${(balanceSol || 0).toFixed(4)} SOL`}
                 </p>
               </div>
               <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
@@ -364,8 +364,8 @@ export function TradePanel({ token }: TradePanelProps) {
         <div className="flex items-baseline justify-between">
           <span className="text-lg font-semibold text-[var(--text-primary)]">
             {mode === "buy"
-              ? estimatedTokens.toLocaleString(undefined, { maximumFractionDigits: 2 })
-              : estimatedSol.toFixed(6)}
+              ? (estimatedTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
+              : (estimatedSol || 0).toFixed(6)}
           </span>
           <span className="text-xs text-[var(--text-muted)] font-medium">{mode === "buy" ? token.symbol : "SOL"}</span>
         </div>
@@ -404,7 +404,7 @@ export function TradePanel({ token }: TradePanelProps) {
             <div className="text-amber-400 text-sm">
               <p className="font-medium">Insufficient balance</p>
               <p className="text-xs opacity-80">
-                You have {balanceSol.toFixed(4)} SOL, need ~{(parsedAmount + 0.01).toFixed(4)} SOL (incl. fees)
+                You have {(balanceSol || 0).toFixed(4)} SOL, need ~{((parsedAmount || 0) + 0.01).toFixed(4)} SOL (incl. fees)
               </p>
             </div>
           </div>
@@ -477,7 +477,7 @@ export function TradePanel({ token }: TradePanelProps) {
       <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-2 text-xs">
         <div className="flex justify-between">
           <span className="text-[var(--text-muted)]">Price</span>
-          <span className="text-[var(--text-primary)] font-medium">{token.price_sol?.toFixed(8) || "0"} SOL</span>
+          <span className="text-[var(--text-primary)] font-medium">{(token.price_sol || 0).toFixed(8)} SOL</span>
         </div>
         <div className="flex justify-between">
           <span className="text-[var(--text-muted)]">Price impact</span>

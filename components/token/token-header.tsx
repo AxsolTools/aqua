@@ -8,6 +8,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useLivePrice } from "@/hooks/use-live-price"
 
 interface Creator {
   id: string
@@ -25,6 +26,17 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
   const { activeWallet, isAuthenticated } = useAuth()
   const [copied, setCopied] = useState(false)
   const [isWatchlisted, setIsWatchlisted] = useState(false)
+
+  // Fetch live prices with 30-second polling
+  const { priceUsd, marketCap, isLoading: priceLoading, source: priceSource } = useLivePrice(
+    token.mint_address,
+    token.total_supply,
+    token.decimals || 6
+  )
+
+  // Use live prices if available, fallback to database values
+  const displayPrice = priceUsd > 0 ? priceUsd : (token.price_usd || (token.price_sol || 0) * 150)
+  const displayMarketCap = marketCap > 0 ? marketCap : (token.market_cap || 0)
 
   const copyAddress = () => {
     navigator.clipboard.writeText(token.mint_address)
@@ -50,16 +62,18 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
     setIsWatchlisted(!isWatchlisted)
   }
 
-  const formatPrice = (price: number) => {
-    if (price < 0.0001) return `$${price.toExponential(2)}`
-    if (price < 1) return `$${price.toFixed(6)}`
-    return `$${price.toFixed(4)}`
+  const formatPrice = (price: number | null | undefined) => {
+    const p = price || 0
+    if (p < 0.0001) return `$${p.toExponential(2)}`
+    if (p < 1) return `$${p.toFixed(6)}`
+    return `$${p.toFixed(4)}`
   }
 
-  const formatMarketCap = (mc: number) => {
-    if (mc >= 1_000_000) return `$${(mc / 1_000_000).toFixed(2)}M`
-    if (mc >= 1_000) return `$${(mc / 1_000).toFixed(2)}K`
-    return `$${mc.toFixed(2)}`
+  const formatMarketCap = (mc: number | null | undefined) => {
+    const m = mc || 0
+    if (m >= 1_000_000) return `$${(m / 1_000_000).toFixed(2)}M`
+    if (m >= 1_000) return `$${(m / 1_000).toFixed(2)}K`
+    return `$${m.toFixed(2)}`
   }
 
   const formatWallet = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`
@@ -139,9 +153,19 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
 
         {/* Price & Stats */}
         <div className="flex items-center gap-6 flex-wrap">
-          {/* Price */}
+          {/* Price - LIVE */}
           <div>
-            <p className="text-2xl md:text-3xl font-bold text-[var(--text-primary)]">{formatPrice(token.price_usd || 0)}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-2xl md:text-3xl font-bold text-[var(--text-primary)]">{formatPrice(displayPrice)}</p>
+              {priceLoading && (
+                <div className="w-3 h-3 border-2 border-[var(--aqua-primary)] border-t-transparent rounded-full animate-spin" />
+              )}
+              {!priceLoading && priceUsd > 0 && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] uppercase">
+                  Live
+                </span>
+              )}
+            </div>
             <p
               className={cn("text-sm font-medium", (token.change_24h || 0) >= 0 ? "text-emerald-400" : "text-red-400")}
             >
@@ -157,7 +181,7 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Market Cap</p>
               <p className="text-sm md:text-base font-bold text-[var(--aqua-primary)]">
-                {formatMarketCap(token.market_cap || 0)}
+                {formatMarketCap(displayMarketCap)}
               </p>
             </div>
             <div>

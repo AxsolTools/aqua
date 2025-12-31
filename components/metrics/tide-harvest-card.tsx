@@ -58,12 +58,20 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
             setHarvest(dbData as TideHarvest)
           }
         }
-      } catch {
+      } catch (err) {
         // Fallback to direct query on error
-        const supabase = createClient()
-        const { data } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
-        if (data) {
-          setHarvest(data as TideHarvest)
+        console.warn('[TIDE-HARVEST] API failed, trying direct query:', err)
+        try {
+          const supabase = createClient()
+          const { data, error } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
+          if (error) {
+            console.warn('[TIDE-HARVEST] Direct query error:', error)
+          } else if (data) {
+            setHarvest(data as TideHarvest)
+          }
+        } catch {
+          // Silently fail - no tide harvest data available
+          console.warn('[TIDE-HARVEST] All queries failed')
         }
       }
 
@@ -168,8 +176,8 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     setIsClaiming(false)
   }
 
-  const formatSol = (amount: number) => {
-    return amount.toFixed(4)
+  const formatSol = (amount: number | null | undefined) => {
+    return (amount || 0).toFixed(4)
   }
 
   if (isLoading) {

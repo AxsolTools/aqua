@@ -152,28 +152,25 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       {/* Token Header - Compact */}
       <TokenHeader token={token} />
 
-      {/* Main Grid: Chart + Trade Panel + Chat (3 columns on XL) */}
+      {/* Main Grid: Chart + Trade Panel + Chat + Live Feed (3 columns on XL) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
         {/* Chart - Takes most space */}
         <div className="lg:col-span-7 xl:col-span-8">
           <TokenChart mintAddress={token.mint_address} tokenSymbol={token.symbol} />
         </div>
 
-        {/* Right Side: Trade Panel + Live Chat stacked */}
+        {/* Right Side: Trade Panel + Live Chat + Live Feed stacked */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-3">
           <TradePanel token={token} />
           {/* Live Chat moved up here for better visibility */}
           <TokenChat tokenAddress={token.mint_address} />
+          {/* Live Feed (Recent Trades) - fills the space below chat */}
+          <LiveFeed trades={trades} tokenSymbol={token.symbol} />
         </div>
       </div>
 
-      {/* Second Row: Live Feed + Token Info + Community (compact row) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-        {/* Live Feed - Compact */}
-        <div className="xl:col-span-1">
-          <LiveFeed trades={trades} tokenSymbol={token.symbol} />
-        </div>
-        
+      {/* Second Row: Token Info + Community (compact row) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {/* Token Info - Compact */}
         <div className="xl:col-span-1">
           <TokenInfo token={token} />

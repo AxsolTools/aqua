@@ -96,17 +96,71 @@ async function fetchLiquidity(mintAddress: string): Promise<number> {
 }
 
 /**
+ * Fetch SOL price in USD
+ */
+async function fetchSolPriceUsd(): Promise<number> {
+  const SOL_MINT = 'So11111111111111111111111111111111111111112';
+  
+  try {
+    // Try Jupiter first
+    const response = await fetch(
+      `https://api.jup.ag/price/v2?ids=${SOL_MINT}`,
+      { next: { revalidate: 10 } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      const price = data.data?.[SOL_MINT]?.price;
+      if (price && price > 0) {
+        return price;
+      }
+    }
+  } catch (error) {
+    console.warn('[METRICS] Jupiter SOL price failed:', error);
+  }
+
+  // Fallback to Binance
+  try {
+    const response = await fetch(
+      'https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT',
+      { next: { revalidate: 10 } }
+    );
+    
+    if (response.ok) {
+      const data = await response.json();
+      const price = parseFloat(data.price);
+      if (Number.isFinite(price) && price > 0) {
+        return price;
+      }
+    }
+  } catch (error) {
+    console.warn('[METRICS] Binance SOL price failed:', error);
+  }
+
+  // Ultimate fallback
+  return 150;
+}
+
+/**
  * Fetch token price and market cap
+ * 
+ * Market Cap = Token Price (USD) × Circulating Supply
+ * Token Price (USD) = Token Price (SOL) × SOL Price (USD)
  */
 async function fetchPriceAndMarketCap(
   mintAddress: string
-): Promise<{ price: number; marketCap: number }> {
+): Promise<{ price: number; priceSol: number; marketCap: number; solPriceUsd: number }> {
   // Check cache first
   const cached = getCachedPrice(mintAddress);
-  if (cached !== null) return cached;
+  if (cached !== null) return { ...cached, priceSol: 0, solPriceUsd: 0 };
 
-  let price = 0;
+  let priceUsd = 0;
+  let priceSol = 0;
   let marketCap = 0;
+  let solPriceUsd = 0;
+
+  // Fetch SOL price for conversions
+  solPriceUsd = await fetchSolPriceUsd();
 
   // Try Jupiter Price API v2 first
   try {
@@ -119,7 +173,9 @@ async function fetchPriceAndMarketCap(
       const data = await response.json();
       const tokenPrice = data.data?.[mintAddress];
       if (tokenPrice?.price) {
-        price = tokenPrice.price;
+        priceUsd = tokenPrice.price;
+        // Calculate price in SOL
+        priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0;
       }
     }
   } catch (error) {
@@ -127,7 +183,7 @@ async function fetchPriceAndMarketCap(
   }
 
   // Fallback to DexScreener if Jupiter fails
-  if (price === 0) {
+  if (priceUsd === 0) {
     try {
       const dexResponse = await fetch(
         `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
@@ -136,11 +192,17 @@ async function fetchPriceAndMarketCap(
 
       if (dexResponse.ok) {
         const dexData = await dexResponse.json();
-        const pair = dexData.pairs?.find((p: { priceUsd?: string; fdv?: number }) => 
+        const pair = dexData.pairs?.find((p: { priceUsd?: string; fdv?: number; priceNative?: string }) => 
           p.priceUsd && parseFloat(p.priceUsd) > 0
         );
         if (pair) {
-          price = parseFloat(pair.priceUsd);
+          priceUsd = parseFloat(pair.priceUsd);
+          // DexScreener provides priceNative which is price in SOL
+          if (pair.priceNative) {
+            priceSol = parseFloat(pair.priceNative);
+          } else {
+            priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0;
+          }
           if (pair.fdv) {
             marketCap = pair.fdv;
           }
@@ -151,31 +213,29 @@ async function fetchPriceAndMarketCap(
     }
   }
 
-  // Try to get market cap from database or calculate
-  try {
-    const adminClient = getAdminClient();
-    const { data: token } = await adminClient
-      .from('tokens')
-      .select('total_supply, decimals, market_cap')
-      .eq('mint_address', mintAddress)
-      .single();
+  // Calculate market cap if not already set
+  if (marketCap === 0 && priceUsd > 0) {
+    try {
+      const adminClient = getAdminClient();
+      const { data: token } = await adminClient
+        .from('tokens')
+        .select('total_supply, decimals')
+        .eq('mint_address', mintAddress)
+        .single();
 
-    if (token) {
-      if (token.market_cap && token.market_cap > 0) {
-        marketCap = token.market_cap;
-      } else if (price > 0 && token.total_supply) {
-        // Calculate market cap from price * supply
-        const supply = token.total_supply / Math.pow(10, token.decimals || 9);
-        marketCap = price * supply;
+      if (token && token.total_supply) {
+        // Market Cap = Token Price (USD) × Circulating Supply
+        const supply = token.total_supply / Math.pow(10, token.decimals || 6);
+        marketCap = priceUsd * supply;
       }
+    } catch {
+      console.warn('[METRICS] Market cap calculation failed');
     }
-  } catch {
-    console.warn('[METRICS] Market cap calculation failed');
   }
 
-  const result = { price, marketCap };
+  const result = { price: priceUsd, marketCap };
   setCachedPrice(mintAddress, result);
-  return result;
+  return { price: priceUsd, priceSol, marketCap, solPriceUsd };
 }
 
 /**
@@ -371,12 +431,13 @@ export async function GET(
         total_evaporated: burnData.total,
         market_cap: priceData.marketCap,
         current_liquidity: liquidityData,
-        price_sol: priceData.price,
+        price_sol: priceData.priceSol, // Price in SOL
+        price_usd: priceData.price, // Price in USD
         updated_at: new Date().toISOString(),
       })
       .eq('id', token.id)
       .then(() => {
-        console.log(`[METRICS] Updated DB for ${token.symbol}`);
+        console.log(`[METRICS] Updated DB for ${token.symbol}: $${priceData.price.toFixed(8)}, ${priceData.priceSol.toFixed(8)} SOL, MC: $${priceData.marketCap.toFixed(2)}`);
       })
       .catch((err) => {
         console.warn('[METRICS] DB update failed:', err);

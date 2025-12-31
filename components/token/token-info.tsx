@@ -8,11 +8,12 @@ interface TokenInfoProps {
 }
 
 export function TokenInfo({ token }: TokenInfoProps) {
-  const formatNumber = (num: number) => {
-    if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`
-    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`
-    if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`
-    return num.toFixed(0)
+  const formatNumber = (num: number | null | undefined) => {
+    const n = num || 0
+    if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(2)}K`
+    return n.toFixed(0)
   }
 
   const formatDate = (dateStr: string) => {
@@ -21,7 +22,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
   }
 
   const migrationProgress = token.migration_threshold
-    ? Math.min(100, ((token.current_liquidity || 0) / token.migration_threshold) * 100)
+    ? Math.min(100, ((token.current_liquidity || 0) / (token.migration_threshold || 1)) * 100)
     : 0
 
   return (
@@ -53,7 +54,7 @@ export function TokenInfo({ token }: TokenInfoProps) {
         <div className="mt-3 pt-3 border-t border-[var(--glass-border)]">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-[var(--text-secondary)]">Migration</span>
-            <span className="text-xs font-medium text-[var(--aqua-primary)]">{migrationProgress.toFixed(0)}%</span>
+            <span className="text-xs font-medium text-[var(--aqua-primary)]">{(migrationProgress || 0).toFixed(0)}%</span>
           </div>
           <div className="h-1.5 bg-[var(--ocean-surface)] rounded-full overflow-hidden">
             <div

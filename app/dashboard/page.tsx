@@ -115,10 +115,17 @@ export default function DashboardPage() {
         let rewards = 0
         const tokensWithHarvest = await Promise.all(
           tokens.map(async (token) => {
-            const { data: harvest } = await supabase.from("tide_harvests").select("*").eq("token_id", token.id).single()
-
-            if (harvest) {
-              rewards += harvest.total_accumulated - harvest.total_claimed
+            let harvest = null
+            try {
+              const { data, error } = await supabase.from("tide_harvests").select("*").eq("token_id", token.id).single()
+              if (error && error.code !== 'PGRST116') {
+                console.warn('[DASHBOARD] Tide harvest query error:', error)
+              } else if (data) {
+                harvest = data
+                rewards += (harvest.total_accumulated || 0) - (harvest.total_claimed || 0)
+              }
+            } catch (err) {
+              console.warn('[DASHBOARD] Failed to fetch tide harvest:', err)
             }
 
             // Merge token_parameters metrics into token for easy access
@@ -142,11 +149,12 @@ export default function DashboardPage() {
     }
   }
 
-  const formatNumber = (num: number) => {
-    if (num >= 1e9) return `${(num / 1e9).toFixed(2)}B`
-    if (num >= 1e6) return `${(num / 1e6).toFixed(2)}M`
-    if (num >= 1e3) return `${(num / 1e3).toFixed(2)}K`
-    return num.toFixed(4)
+  const formatNumber = (num: number | null | undefined) => {
+    const n = num || 0
+    if (n >= 1e9) return `${(n / 1e9).toFixed(2)}B`
+    if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`
+    if (n >= 1e3) return `${(n / 1e3).toFixed(2)}K`
+    return n.toFixed(4)
   }
 
   if (isLoading) {
