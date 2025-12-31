@@ -1,16 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { WalletSidebar } from "@/components/wallet/wallet-sidebar"
+import { ChevronDown, Sparkles, Coins } from "lucide-react"
 
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/launch", label: "Launch" },
+  { href: "/launch22", label: "TOKEN22" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
 ]
@@ -53,10 +55,39 @@ export function Header() {
 
             {/* Right Actions */}
             <div className="flex items-center gap-2">
-              {/* Launch Button */}
-              <Link href="/launch" className="hidden sm:flex btn-primary text-sm py-2 px-4">
-                Create Token
-              </Link>
+              {/* Launch Dropdown */}
+              <div className="hidden sm:block relative group">
+                <button className="flex items-center gap-1.5 btn-primary text-sm py-2 px-4">
+                  Create Token
+                  <ChevronDown className="w-3 h-3" />
+                </button>
+                <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                  <Link
+                    href="/launch"
+                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors"
+                  >
+                    <div className="p-1.5 rounded-md bg-teal-500/10">
+                      <Sparkles className="w-4 h-4 text-teal-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">Pump.fun</p>
+                      <p className="text-xs text-zinc-500">Bonding curve launch</p>
+                    </div>
+                  </Link>
+                  <Link
+                    href="/launch22"
+                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors"
+                  >
+                    <div className="p-1.5 rounded-md bg-emerald-500/10">
+                      <Coins className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">TOKEN22</p>
+                      <p className="text-xs text-zinc-500">Raydium + Extensions</p>
+                    </div>
+                  </Link>
+                </div>
+              </div>
 
               {/* Wallet */}
               {isLoading ? (
@@ -118,9 +149,14 @@ export function Header() {
                     {item.label}
                   </Link>
                 ))}
-                <div className="pt-2">
-                  <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className="btn-primary w-full text-sm">
-                    Create Token
+                <div className="pt-2 space-y-2">
+                  <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className="btn-primary w-full text-sm flex items-center justify-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    Pump.fun Launch
+                  </Link>
+                  <Link href="/launch22" onClick={() => setMobileMenuOpen(false)} className="btn-secondary w-full text-sm flex items-center justify-center gap-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20">
+                    <Coins className="w-4 h-4" />
+                    TOKEN22 Launch
                   </Link>
                 </div>
               </nav>

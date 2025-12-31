@@ -178,7 +178,7 @@ export function StatusBadge({ status, label }: StatusBadgeProps) {
 }
 
 interface FeatureCardProps {
-  icon: React.ReactNode
+  icon?: React.ReactNode
   title: string
   description: string
   color?: "teal" | "amber" | "purple"
@@ -303,20 +303,14 @@ export function FeatureCard({ icon, title, description, color = "teal" }: Featur
   }, [color, config.primary])
 
   return (
-    <div className="relative p-5 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all group overflow-hidden">
+    <div className="relative p-4 rounded-xl bg-zinc-900/50 border border-zinc-800 hover:border-zinc-700 transition-all group overflow-hidden">
       <canvas 
         ref={canvasRef} 
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
       <div className="relative z-10">
-        <div className={cn(
-          "w-12 h-12 rounded-lg flex items-center justify-center border mb-4 backdrop-blur-sm",
-          config.icon
-        )}>
-          {icon}
-        </div>
-        <h4 className={cn("font-semibold mb-1.5", config.title)}>{title}</h4>
-        <p className="text-sm text-zinc-500">{description}</p>
+        <h4 className={cn("font-semibold text-sm mb-1", config.title)}>{title}</h4>
+        <p className="text-xs text-zinc-500 leading-relaxed">{description}</p>
       </div>
     </div>
   )
