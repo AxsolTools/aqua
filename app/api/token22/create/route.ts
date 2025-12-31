@@ -24,7 +24,8 @@ import { getReferrer, addReferralEarnings } from '@/lib/referral';
 // ============================================================================
 
 const HELIUS_RPC_URL = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
-const MIN_CREATE_BALANCE_SOL = 0.05; // Minimum SOL needed to create token
+const TOKEN22_PLATFORM_FEE_SOL = 0.2; // Platform fee for Token-2022 creation
+const MIN_CREATE_BALANCE_SOL = 0.03; // Minimum SOL needed for rent/transaction fees
 
 // ============================================================================
 // HANDLER
@@ -143,7 +144,8 @@ export async function POST(request: NextRequest) {
     const creatorKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
 
     // ========== BALANCE VALIDATION ==========
-    const estimatedCostSol = MIN_CREATE_BALANCE_SOL + (autoCreatePool ? parseFloat(poolSolAmount) : 0);
+    // Total cost = platform fee (0.2 SOL) + rent/tx fees + optional pool SOL
+    const estimatedCostSol = TOKEN22_PLATFORM_FEE_SOL + MIN_CREATE_BALANCE_SOL + (autoCreatePool ? parseFloat(poolSolAmount) : 0);
     const operationLamports = solToLamports(estimatedCostSol);
     const priorityFeeLamports = solToLamports(0.001);
 
@@ -165,6 +167,8 @@ export async function POST(request: NextRequest) {
               currentBalance: lamportsToSol(balanceValidation.currentBalance).toFixed(9),
               required: lamportsToSol(balanceValidation.requiredTotal).toFixed(9),
               shortfall: balanceValidation.shortfall ? lamportsToSol(balanceValidation.shortfall).toFixed(9) : undefined,
+              platformFee: TOKEN22_PLATFORM_FEE_SOL.toFixed(2),
+              rentAndFees: MIN_CREATE_BALANCE_SOL.toFixed(4),
             },
           },
         },
@@ -231,9 +235,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ========== COLLECT PLATFORM FEE ==========
-    const feeBaseSol = MIN_CREATE_BALANCE_SOL;
-    const platformFeeLamports = calculatePlatformFee(solToLamports(feeBaseSol));
+    // ========== COLLECT PLATFORM FEE (0.2 SOL) ==========
+    // Platform fee is charged AFTER successful token creation
+    const platformFeeSol = TOKEN22_PLATFORM_FEE_SOL;
+    const platformFeeLamports = solToLamports(platformFeeSol);
 
     // Check for referrer
     const referrerUserId = userId ? await getReferrer(userId) : null;
@@ -255,7 +260,7 @@ export async function POST(request: NextRequest) {
     const feeResult = await collectPlatformFee(
       connection,
       creatorKeypair,
-      solToLamports(feeBaseSol),
+      platformFeeLamports,
       referrerWallet
     );
 
@@ -370,9 +375,9 @@ export async function POST(request: NextRequest) {
       wallet_address: walletAddress,
       source_tx_signature: createResult.txSignature,
       operation_type: 'token22_create',
-      transaction_amount_lamports: Number(solToLamports(feeBaseSol)),
+      transaction_amount_lamports: Number(platformFeeLamports),
       fee_amount_lamports: Number(platformFeeLamports),
-      fee_percentage: 2,
+      fee_percentage: 100, // Full 0.2 SOL is the platform fee
       referral_split_lamports: feeResult.referralShare ? Number(feeResult.referralShare) : 0,
       referrer_id: referrerUserId,
       fee_tx_signature: feeResult.signature,

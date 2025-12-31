@@ -31,24 +31,18 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
 
   const fetchCounts = async () => {
     try {
-      const [votesResult, boostsResult] = await Promise.all([
-        supabase.from("votes").select("*", { count: "exact", head: true }).eq("token_address", tokenAddress),
-        supabase.from("boosts").select("*", { count: "exact", head: true }).eq("token_address", tokenAddress),
-      ])
-
-      if (votesResult.error) {
-        console.warn('[VOTES] Count query error:', votesResult.error)
-      } else {
-        setVoteCount(votesResult.count || 0)
-      }
-
-      if (boostsResult.error) {
-        console.warn('[BOOSTS] Count query error:', boostsResult.error)
-      } else {
-        setBoostCount(boostsResult.count || 0)
+      // Use API to avoid direct database queries that may fail if tables don't exist
+      const response = await fetch(`/api/votes?tokenAddress=${tokenAddress}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setVoteCount(data.votes || 0)
+          setBoostCount(data.boosts || 0)
+        }
       }
     } catch (err) {
-      console.warn('[VOTE-BOOST] Failed to fetch counts:', err)
+      // Silently handle - vote/boost feature may not be enabled
+      console.debug('[VOTE-BOOST] API unavailable:', err)
     }
   }
 
@@ -56,20 +50,13 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
     if (!activeWallet) return
 
     try {
-      const { data, error } = await supabase
-        .from("votes")
-        .select("id")
-        .eq("token_address", tokenAddress)
-        .eq("wallet_address", activeWallet.public_key)
-        .single()
-
-      if (error && error.code !== 'PGRST116') {
-        // PGRST116 is "no rows returned" which is expected
-        console.warn('[VOTES] User vote check error:', error)
+      const response = await fetch(`/api/votes?tokenAddress=${tokenAddress}&walletAddress=${activeWallet.public_key}`)
+      if (response.ok) {
+        const data = await response.json()
+        setHasVoted(data.hasVoted || false)
       }
-      setHasVoted(!!data)
     } catch (err) {
-      console.warn('[VOTES] Failed to check user vote:', err)
+      console.debug('[VOTES] Vote check unavailable:', err)
       setHasVoted(false)
     }
   }
@@ -85,36 +72,29 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
     setIsVoting(true)
 
     try {
-      if (hasVoted) {
-        // Remove vote
-        const { error } = await supabase
-          .from("votes")
-          .delete()
-          .eq("token_address", tokenAddress)
-          .eq("wallet_address", activeWallet.public_key)
+      const response = await fetch('/api/votes', {
+        method: hasVoted ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tokenAddress,
+          walletAddress: activeWallet.public_key,
+        }),
+      })
 
-        if (error) {
-          console.warn('[VOTES] Delete error:', error)
-        } else {
-          setHasVoted(false)
-          setVoteCount((prev) => Math.max(0, prev - 1))
-        }
-      } else {
-        // Add vote
-        const { error } = await supabase.from("votes").insert({
-          token_address: tokenAddress,
-          wallet_address: activeWallet.public_key,
-        })
-
-        if (error) {
-          console.warn('[VOTES] Insert error:', error)
-        } else {
-          setHasVoted(true)
-          setVoteCount((prev) => prev + 1)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          if (hasVoted) {
+            setHasVoted(false)
+            setVoteCount((prev) => Math.max(0, prev - 1))
+          } else {
+            setHasVoted(true)
+            setVoteCount((prev) => prev + 1)
+          }
         }
       }
     } catch (err) {
-      console.warn('[VOTES] Vote operation failed:', err)
+      console.debug('[VOTES] Vote operation failed:', err)
     }
 
     setIsVoting(false)

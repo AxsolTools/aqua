@@ -2,88 +2,59 @@
 
 import { useEffect, useState, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
-import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/providers/auth-provider"
-import type { TideHarvest } from "@/lib/types/database"
 
 interface TideHarvestCardProps {
   tokenId: string
   creatorId: string
-  tokenAddress?: string // Optional mint address for on-chain queries
+  tokenAddress?: string // Mint address for on-chain queries
 }
 
 export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarvestCardProps) {
-  const { userId } = useAuth()
-  const [harvest, setHarvest] = useState<TideHarvest | null>(null)
-  const [onChainBalance, setOnChainBalance] = useState<number>(0)
+  const { userId, activeWallet, mainWallet } = useAuth()
+  const [rewardsBalance, setRewardsBalance] = useState<number>(0)
+  const [vaultAddress, setVaultAddress] = useState<string>("")
   const [isLoading, setIsLoading] = useState(true)
   const [isClaiming, setIsClaiming] = useState(false)
+  const [claimError, setClaimError] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  const isCreator = userId === creatorId
+  const walletAddress = activeWallet?.public_key || mainWallet?.public_key
+  const isCreator = userId === creatorId || walletAddress === tokenAddress
 
-  // Fetch on-chain vault balance from metrics API
-  const fetchOnChainBalance = useCallback(async () => {
-    if (!tokenAddress) return
+  // Fetch creator rewards from on-chain
+  const fetchRewards = useCallback(async () => {
+    if (!tokenAddress || !walletAddress) {
+      setIsLoading(false)
+      return
+    }
 
     try {
-      const response = await fetch(`/api/token/${tokenAddress}/metrics`)
-      const data = await response.json()
-      if (data.success && data.data.tideHarvest !== undefined) {
-        setOnChainBalance(data.data.tideHarvest)
-        console.log(`[TIDE-HARVEST] On-chain balance: ${data.data.tideHarvest} SOL`)
+      const response = await fetch(
+        `/api/creator-rewards?tokenMint=${tokenAddress}&creatorWallet=${walletAddress}`
+      )
+      
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          setRewardsBalance(data.data.balance || 0)
+          setVaultAddress(data.data.vaultAddress || "")
+        }
       }
     } catch (error) {
-      console.warn('[TIDE-HARVEST] Failed to fetch on-chain balance:', error)
-    }
-  }, [tokenAddress])
-
-  useEffect(() => {
-    const fetchHarvest = async () => {
-      try {
-        // Fetch on-chain balance (priority source)
-        fetchOnChainBalance()
-
-        // Also fetch database harvest records for history
-        const response = await fetch(`/api/tide-harvest/claim?token_address=${tokenId}`)
-        const data = await response.json()
-
-        if (data.success && data.data.harvests?.length > 0) {
-          setHarvest(data.data.harvests[0] as TideHarvest)
-        } else {
-          // Fallback to direct query
-          const supabase = createClient()
-          const { data: dbData } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
-          if (dbData) {
-            setHarvest(dbData as TideHarvest)
-          }
-        }
-      } catch (err) {
-        // Fallback to direct query on error
-        console.warn('[TIDE-HARVEST] API failed, trying direct query:', err)
-        try {
-          const supabase = createClient()
-          const { data, error } = await supabase.from("tide_harvests").select("*").eq("token_id", tokenId).single()
-          if (error) {
-            console.warn('[TIDE-HARVEST] Direct query error:', error)
-          } else if (data) {
-            setHarvest(data as TideHarvest)
-          }
-        } catch {
-          // Silently fail - no tide harvest data available
-          console.warn('[TIDE-HARVEST] All queries failed')
-        }
-      }
-
+      console.debug("[TIDE-HARVEST] Failed to fetch rewards:", error)
+    } finally {
       setIsLoading(false)
     }
+  }, [tokenAddress, walletAddress])
 
-    fetchHarvest()
+  useEffect(() => {
+    fetchRewards()
 
-    // Poll on-chain balance every 30 seconds
-    const interval = setInterval(fetchOnChainBalance, 30_000)
+    // Poll every 30 seconds
+    const interval = setInterval(fetchRewards, 30_000)
     return () => clearInterval(interval)
-  }, [tokenId, fetchOnChainBalance])
+  }, [fetchRewards])
 
   // Wave animation
   useEffect(() => {
@@ -140,37 +111,33 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     return () => cancelAnimationFrame(animationId)
   }, [])
 
-  // Use on-chain balance as primary source, fallback to database
-  const claimable = onChainBalance > 0 
-    ? onChainBalance 
-    : (harvest ? harvest.total_accumulated - harvest.total_claimed : 0)
-
   const handleClaim = async () => {
-    if (!isCreator || claimable <= 0 || !harvest) return
+    if (!isCreator || rewardsBalance <= 0 || !tokenAddress || !walletAddress) return
 
     setIsClaiming(true)
+    setClaimError(null)
 
     try {
-      const response = await fetch("/api/tide-harvest/claim", {
+      const response = await fetch("/api/creator-rewards", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          token_address: harvest.token_address || tokenId,
-          creator_wallet: harvest.creator_wallet,
-          claim_amount: claimable,
+          tokenMint: tokenAddress,
+          walletAddress,
         }),
       })
 
       const data = await response.json()
+      
       if (data.success) {
-        // Update local state with new values
-        setHarvest({
-          ...harvest,
-          total_claimed: harvest.total_claimed + claimable,
-        })
+        // Refresh balance after claim
+        await fetchRewards()
+      } else {
+        setClaimError(data.error || "Failed to claim rewards")
       }
     } catch (error) {
       console.error("[TIDE-HARVEST] Claim failed:", error)
+      setClaimError("Failed to claim rewards")
     }
 
     setIsClaiming(false)
@@ -194,18 +161,24 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
       <div className="relative z-10 flex flex-col items-center justify-center h-full">
         <div className="flex items-baseline gap-1 mb-1">
           <motion.span
-            key={claimable}
+            key={rewardsBalance}
             initial={{ scale: 1.2, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="text-2xl font-bold text-[var(--aqua-primary)] font-mono aqua-text-glow"
           >
-            {formatSol(claimable)}
+            {formatSol(rewardsBalance)}
           </motion.span>
           <span className="text-sm text-[var(--text-secondary)]">SOL</span>
         </div>
-        <p className="text-xs text-[var(--text-muted)] mb-3">available to harvest</p>
+        <p className="text-xs text-[var(--text-muted)] mb-3">
+          {rewardsBalance > 0 ? "available to harvest" : "creator rewards"}
+        </p>
 
-        {isCreator && claimable > 0 ? (
+        {claimError && (
+          <p className="text-[10px] text-[var(--red)] mb-2 text-center max-w-[200px]">{claimError}</p>
+        )}
+
+        {isCreator && rewardsBalance > 0 ? (
           <motion.button
             onClick={handleClaim}
             disabled={isClaiming}
@@ -224,7 +197,9 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
           </motion.button>
         ) : (
           <div className="px-3 py-1.5 rounded-full bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)]">
-            <span className="text-xs text-[var(--text-muted)]">{isCreator ? "No rewards yet" : "Creator rewards"}</span>
+            <span className="text-xs text-[var(--text-muted)]">
+              {isCreator ? "No rewards yet" : "Creator rewards"}
+            </span>
           </div>
         )}
       </div>

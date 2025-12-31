@@ -152,19 +152,21 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       {/* Token Header - Compact */}
       <TokenHeader token={token} />
 
-      {/* Main Grid: Chart + Trade Panel + Chat + Live Feed (3 columns on XL) */}
+      {/* Main Grid: Chart + Trade Panel + Chat (3 columns on XL) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
-        {/* Chart - Takes most space */}
-        <div className="lg:col-span-7 xl:col-span-8">
+        {/* Left Side: Chart + Recent Trades stacked */}
+        <div className="lg:col-span-7 xl:col-span-8 space-y-3">
           <TokenChart mintAddress={token.mint_address} tokenSymbol={token.symbol} />
+          {/* Recent Trades moved under chart */}
+          <TransactionHistory tokenAddress={token.mint_address} tokenId={token.id} />
         </div>
 
         {/* Right Side: Trade Panel + Live Chat + Live Feed stacked */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-3">
           <TradePanel token={token} />
-          {/* Live Chat moved up here for better visibility */}
+          {/* Live Chat */}
           <TokenChat tokenAddress={token.mint_address} />
-          {/* Live Feed (Recent Trades) - fills the space below chat */}
+          {/* Live Feed (Recent Activity) */}
           <LiveFeed trades={trades} tokenSymbol={token.symbol} />
         </div>
       </div>
@@ -190,9 +192,6 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
         <TokenComments tokenAddress={token.mint_address} />
         <BoostSection tokenAddress={token.mint_address} />
       </div>
-
-      {/* Transaction History - at the bottom */}
-      <TransactionHistory tokenAddress={token.mint_address} tokenId={token.id} />
     </div>
   )
 }

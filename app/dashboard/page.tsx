@@ -116,22 +116,44 @@ export default function DashboardPage() {
         const tokensWithHarvest = await Promise.all(
           tokens.map(async (token) => {
             let harvest = null
+            let liveMarketCap = token.market_cap || 0
+            
+            // Fetch live market cap
             try {
-              const { data, error } = await supabase.from("tide_harvests").select("*").eq("token_id", token.id).single()
-              if (error && error.code !== 'PGRST116') {
-                console.warn('[DASHBOARD] Tide harvest query error:', error)
-              } else if (data) {
-                harvest = data
-                rewards += (harvest.total_accumulated || 0) - (harvest.total_claimed || 0)
+              const priceResponse = await fetch(`/api/price/token?mint=${token.mint_address}&supply=${token.total_supply}&decimals=${token.decimals || 6}`)
+              if (priceResponse.ok) {
+                const priceData = await priceResponse.json()
+                if (priceData.success && priceData.data?.marketCap) {
+                  liveMarketCap = priceData.data.marketCap
+                }
+              }
+            } catch {
+              // Use DB market cap as fallback
+            }
+            
+            // Fetch creator rewards from on-chain
+            try {
+              const rewardsResponse = await fetch(`/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${mainWallet.public_key}`)
+              if (rewardsResponse.ok) {
+                const rewardsData = await rewardsResponse.json()
+                if (rewardsData.success && rewardsData.data?.balance > 0) {
+                  rewards += rewardsData.data.balance
+                  harvest = { 
+                    total_accumulated: rewardsData.data.balance, 
+                    total_claimed: 0,
+                    vault_address: rewardsData.data.vaultAddress
+                  }
+                }
               }
             } catch (err) {
-              console.warn('[DASHBOARD] Failed to fetch tide harvest:', err)
+              console.debug('[DASHBOARD] Failed to fetch creator rewards:', err)
             }
 
             // Merge token_parameters metrics into token for easy access
             return { 
               ...token, 
               harvest,
+              market_cap: liveMarketCap,
               pour_rate: token.token_parameters?.pour_rate_percent ?? 0,
               evaporation_rate: token.token_parameters?.evaporation_rate_percent ?? 0,
               total_evaporated: token.token_parameters?.total_evaporated ?? 0,

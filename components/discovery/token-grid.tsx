@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { motion } from "framer-motion"
@@ -13,11 +13,43 @@ interface TokenWithCreator extends Token {
     username: string | null
     avatar_url: string | null
   } | null
+  live_market_cap?: number // Live market cap from API
 }
 
 export function TokenGrid() {
   const [tokens, setTokens] = useState<TokenWithCreator[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  // Fetch live market caps for all tokens
+  const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithCreator[]) => {
+    if (tokenList.length === 0) return
+
+    try {
+      // Batch fetch prices for all tokens
+      const mintAddresses = tokenList.map(t => t.mint_address).filter(Boolean)
+      
+      const response = await fetch('/api/price/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mints: mintAddresses }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          setTokens(prev => prev.map(token => {
+            const priceData = data.data[token.mint_address]
+            if (priceData && priceData.marketCap > 0) {
+              return { ...token, live_market_cap: priceData.marketCap }
+            }
+            return token
+          }))
+        }
+      }
+    } catch (error) {
+      console.debug('[TOKEN-GRID] Failed to fetch live market caps:', error)
+    }
+  }, [])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,7 +69,10 @@ export function TokenGrid() {
         .limit(32)
 
       if (tokenData) {
-        setTokens(tokenData as TokenWithCreator[])
+        const typedTokens = tokenData as TokenWithCreator[]
+        setTokens(typedTokens)
+        // Fetch live market caps after initial load
+        fetchLiveMarketCaps(typedTokens)
       }
       setIsLoading(false)
     }
@@ -60,7 +95,18 @@ export function TokenGrid() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [])
+  }, [fetchLiveMarketCaps])
+
+  // Refresh market caps every 30 seconds
+  useEffect(() => {
+    if (tokens.length === 0) return
+    
+    const interval = setInterval(() => {
+      fetchLiveMarketCaps(tokens)
+    }, 30000)
+
+    return () => clearInterval(interval)
+  }, [tokens.length, fetchLiveMarketCaps])
 
   const formatMarketCap = (mc: number | null | undefined) => {
     const m = mc || 0
@@ -77,10 +123,14 @@ export function TokenGrid() {
 
   const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
 
-  const getMigrationProgress = (token: Token) => {
+  const getMigrationProgress = (token: TokenWithCreator) => {
     const threshold = token.migration_threshold || 69000
-    const current = token.market_cap_usd || token.market_cap || 0
+    const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
     return Math.min((current / threshold) * 100, 100)
+  }
+
+  const getMarketCap = (token: TokenWithCreator) => {
+    return token.live_market_cap || token.market_cap_usd || token.market_cap || 0
   }
 
   const getCreatorDisplay = (token: TokenWithCreator) => {
@@ -208,7 +258,7 @@ export function TokenGrid() {
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-[var(--text-muted)]">MC</span>
                       <span className="text-sm font-bold text-[var(--aqua-primary)]">
-                        {formatMarketCap(token.market_cap_usd || token.market_cap)}
+                        {formatMarketCap(getMarketCap(token))}
                       </span>
                       
                       {/* Progress Bar */}

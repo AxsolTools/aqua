@@ -182,7 +182,26 @@ export default function ProfilePage() {
         .eq("creator_wallet", activeWallet.public_key)
         .order("created_at", { ascending: false })
 
-      if (created) setCreatedTokens(created)
+      if (created) {
+        // Fetch live market caps for created tokens
+        const tokensWithLiveData = await Promise.all(
+          created.map(async (token) => {
+            try {
+              const priceResponse = await fetch(`/api/price/token?mint=${token.mint_address}&supply=${token.total_supply}&decimals=${token.decimals || 6}`)
+              if (priceResponse.ok) {
+                const priceData = await priceResponse.json()
+                if (priceData.success && priceData.data?.marketCap) {
+                  return { ...token, market_cap: priceData.data.marketCap }
+                }
+              }
+            } catch {
+              // Use DB market cap as fallback
+            }
+            return token
+          })
+        )
+        setCreatedTokens(tokensWithLiveData)
+      }
 
       const { data: tradeHistory } = await supabase
         .from("trades")

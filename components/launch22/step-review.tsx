@@ -35,9 +35,10 @@ export function Step22Review({ formData, onBack, onDeploy, isDeploying, error, m
   const pricePerToken = lpTokens > 0 ? solAmount / lpTokens : 0
 
   // Estimate costs
-  const baseCost = 0.02 // Token creation
+  const platformFee = 0.2 // Token-2022 platform fee
+  const rentAndFees = 0.03 // Rent + transaction fees
   const poolCost = formData.autoCreatePool ? 0.01 + solAmount : 0 // Pool creation + SOL
-  const totalCost = baseCost + poolCost
+  const totalCost = platformFee + rentAndFees + poolCost
 
   return (
     <div className="space-y-6">
@@ -217,7 +218,28 @@ export function Step22Review({ formData, onBack, onDeploy, isDeploying, error, m
 
       {/* Cost Estimate */}
       <div className="p-5 rounded-xl bg-white/5 border border-white/10">
-        <div className="flex items-center justify-between">
+        <h3 className="text-sm font-medium text-white mb-4">Cost Breakdown</h3>
+        <div className="space-y-2 mb-4">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-white/50">Platform Fee</span>
+            <span className="text-sm font-medium text-[var(--aqua-primary)]">{platformFee.toFixed(2)} SOL</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-white/50">Rent & Tx Fees</span>
+            <span className="text-sm text-white/70">~{rentAndFees.toFixed(3)} SOL</span>
+          </div>
+          {formData.autoCreatePool && (
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-white/50">Raydium Pool + SOL</span>
+              <span className="text-sm text-white/70">{poolCost.toFixed(3)} SOL</span>
+            </div>
+          )}
+          <div className="pt-2 border-t border-white/10 flex items-center justify-between">
+            <span className="text-sm font-medium text-white">Total Required</span>
+            <span className="text-sm font-bold text-white">~{totalCost.toFixed(3)} SOL</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-3 border-t border-white/10">
           <div>
             <p className="text-xs text-white/40 mb-1">Deploying from</p>
             <p className="text-sm font-mono text-white">
@@ -226,14 +248,10 @@ export function Step22Review({ formData, onBack, onDeploy, isDeploying, error, m
                 : "No wallet connected"}
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-white/40 mb-1">Total Cost</p>
-            <p className="text-sm font-medium text-white">~{totalCost.toFixed(3)} SOL</p>
-            <p className="text-xs text-white/40">
-              {baseCost.toFixed(3)} token + {poolCost.toFixed(3)} pool
-            </p>
-          </div>
         </div>
+        <p className="text-[10px] text-white/40 mt-3">
+          Platform fee is charged only after successful token creation.
+        </p>
       </div>
 
       {/* Error */}
