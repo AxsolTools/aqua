@@ -45,14 +45,18 @@ const BASE_NETWORK_FEE = 0.000005; // ~5000 lamports
 // ============================================================================
 
 function formatSol(sol: number): string {
-  if (sol >= 1) return sol.toFixed(4);
-  if (sol >= 0.001) return sol.toFixed(6);
-  return sol.toFixed(9);
+  // Guard against NaN, undefined, or non-finite values
+  const safeSol = typeof sol === 'number' && isFinite(sol) ? sol : 0;
+  if (safeSol >= 1) return safeSol.toFixed(4);
+  if (safeSol >= 0.001) return safeSol.toFixed(6);
+  return safeSol.toFixed(9);
 }
 
 function formatUsd(usd: number): string {
-  if (usd < 0.01) return '<$0.01';
-  return `$${usd.toFixed(2)}`;
+  // Guard against NaN, undefined, or non-finite values
+  const safeUsd = typeof usd === 'number' && isFinite(usd) ? usd : 0;
+  if (safeUsd < 0.01) return '<$0.01';
+  return `$${safeUsd.toFixed(2)}`;
 }
 
 // ============================================================================
@@ -69,14 +73,19 @@ export function FeeBreakdown({
   showSufficiencyCheck = true,
   compact = false,
 }: FeeBreakdownProps) {
+  // Ensure operationAmount is a valid number
+  const safeAmount = typeof operationAmount === 'number' && !isNaN(operationAmount) && isFinite(operationAmount) 
+    ? operationAmount 
+    : 0;
+  
   // Calculate fees
   const fees = useMemo(() => {
-    const platformFee = operationAmount * (platformFeePercent / 100);
-    const safetyBuffer = (operationAmount + platformFee + priorityFee + networkFee) * 0.001; // 0.1%
-    const total = operationAmount + platformFee + priorityFee + networkFee + safetyBuffer;
+    const platformFee = safeAmount * (platformFeePercent / 100);
+    const safetyBuffer = (safeAmount + platformFee + priorityFee + networkFee) * 0.001; // 0.1%
+    const total = safeAmount + platformFee + priorityFee + networkFee + safetyBuffer;
     
     return {
-      operation: operationAmount,
+      operation: safeAmount,
       platformFee,
       platformFeePercent,
       priorityFee,
@@ -84,7 +93,7 @@ export function FeeBreakdown({
       safetyBuffer,
       total,
     };
-  }, [operationAmount, platformFeePercent, priorityFee, networkFee]);
+  }, [safeAmount, platformFeePercent, priorityFee, networkFee]);
   
   // Check balance sufficiency
   const balanceStatus = useMemo(() => {

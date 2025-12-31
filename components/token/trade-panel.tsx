@@ -513,9 +513,9 @@ export function TradePanel({ token }: TradePanelProps) {
       {amount && parseFloat(amount) > 0 && (
         <div className="mt-4">
           <FeeBreakdown
-            operationType={mode}
-            amount={mode === "buy" ? parseFloat(amount) : estimatedSol}
-            tokenSymbol={token.symbol}
+            operationAmount={mode === "buy" ? parseFloat(amount) : estimatedSol}
+            currentBalance={balanceSol}
+            compact={true}
           />
         </div>
       )}
