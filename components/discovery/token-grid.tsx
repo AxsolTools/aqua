@@ -68,9 +68,9 @@ export function TokenGrid() {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {[...Array(8)].map((_, i) => (
-          <div key={i} className="h-[280px] skeleton rounded-lg" />
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
+        {[...Array(16)].map((_, i) => (
+          <div key={i} className="h-[160px] skeleton rounded-lg" />
         ))}
       </div>
     )
@@ -100,7 +100,7 @@ export function TokenGrid() {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
       {tokens.map((token, index) => {
         const progress = getMigrationProgress(token)
         const isLive = token.stage === "bonding"
@@ -110,69 +110,58 @@ export function TokenGrid() {
         return (
           <motion.div
             key={token.id}
-            initial={{ opacity: 0, y: 10 }}
+            initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: index * 0.02 }}
+            transition={{ duration: 0.2, delay: index * 0.01 }}
           >
             <Link href={`/token/${token.mint_address}`}>
-              <div className="card-interactive overflow-hidden">
-                {/* Token Image */}
-                <div className="relative aspect-square bg-[var(--bg-secondary)]">
+              <div className="card-interactive overflow-hidden group">
+                {/* Token Image - Compact */}
+                <div className="relative aspect-[4/3] bg-[var(--bg-secondary)]">
                   {token.image_url ? (
                     <Image src={token.image_url || "/placeholder.svg"} alt={token.name} fill className="object-cover" />
                   ) : (
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="text-4xl font-bold text-[var(--text-dim)]">{token.symbol?.slice(0, 2)}</span>
+                      <span className="text-2xl font-bold text-[var(--text-dim)]">{token.symbol?.slice(0, 2)}</span>
                     </div>
                   )}
 
-                  {/* Badges */}
-                  {isLive && <div className="absolute top-2 left-2 badge badge-live">LIVE</div>}
-                  {isMigrated && <div className="absolute top-2 left-2 badge badge-migrated">MIGRATED</div>}
+                  {/* Badges - Smaller */}
+                  {isLive && <div className="absolute top-1 left-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-[var(--green)] text-white">LIVE</div>}
+                  {isMigrated && <div className="absolute top-1 left-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-[var(--aqua-primary)] text-white">DEX</div>}
+                  
+                  {/* Change Badge on Image */}
+                  <div className={cn(
+                    "absolute top-1 right-1 px-1.5 py-0.5 text-[9px] font-bold rounded",
+                    isPositive ? "bg-[var(--green)]/90 text-white" : "bg-[var(--red)]/90 text-white"
+                  )}>
+                    {formatChange(token.change_24h || 0)}
+                  </div>
                 </div>
 
-                {/* Token Info */}
-                <div className="p-3">
-                  {/* Name & Symbol */}
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="font-semibold text-sm text-[var(--text-primary)] truncate">{token.name}</h3>
-                      <p className="text-xs text-[var(--text-muted)]">{token.symbol}</p>
-                    </div>
-                  </div>
-
-                  {/* Creator & Time */}
-                  <div className="flex items-center gap-1.5 text-xs text-[var(--text-muted)] mb-2">
-                    <span className="text-[var(--green)]">●</span>
-                    <span className="font-mono">{formatAddress(token.creator_wallet || "")}</span>
-                    <span>·</span>
-                    <span>{formatTimeAgo(token.created_at)}</span>
-                  </div>
-
-                  {/* Market Cap Row */}
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">
-                      MC {formatMarketCap(token.market_cap_usd || 0)}
-                    </span>
-                    <span
-                      className={cn("text-xs font-medium", isPositive ? "text-[var(--green)]" : "text-[var(--red)]")}
-                    >
-                      {formatChange(token.change_24h || 0)}
+                {/* Token Info - Compact */}
+                <div className="p-2">
+                  {/* Name & Market Cap */}
+                  <div className="flex items-center justify-between gap-1 mb-0.5">
+                    <h3 className="font-semibold text-xs text-[var(--text-primary)] truncate flex-1">{token.name}</h3>
+                    <span className="text-[10px] font-medium text-[var(--aqua-primary)] whitespace-nowrap">
+                      {formatMarketCap(token.market_cap_usd || 0)}
                     </span>
                   </div>
 
-                  {/* Progress Bar */}
-                  <div className="progress-bar">
+                  {/* Symbol & Creator */}
+                  <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
+                    <span className="font-medium">${token.symbol}</span>
+                    <span className="font-mono opacity-70">{formatAddress(token.creator_wallet || "")}</span>
+                  </div>
+
+                  {/* Progress Bar - Thinner */}
+                  <div className="mt-1.5 h-0.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
                     <div
-                      className={cn("progress-fill", isPositive ? "bg-[var(--green)]" : "bg-[var(--red)]")}
+                      className={cn("h-full transition-all", isPositive ? "bg-[var(--green)]" : "bg-[var(--red)]")}
                       style={{ width: `${progress}%` }}
                     />
                   </div>
-
-                  {/* Description */}
-                  {token.description && (
-                    <p className="text-xs text-[var(--text-muted)] mt-2 line-clamp-2">{token.description}</p>
-                  )}
                 </div>
               </div>
             </Link>

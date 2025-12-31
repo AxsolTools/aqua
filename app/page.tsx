@@ -10,8 +10,8 @@ export default function HomePage() {
       <Header />
 
       {/* Main Content - No hero, straight to tokens like pump.fun */}
-      <section className="px-4 sm:px-6 py-6">
-        <div className="max-w-7xl mx-auto">
+      <section className="px-3 sm:px-4 lg:px-6 py-4">
+        <div className="max-w-[1920px] mx-auto">
           <TokenFilters />
           <TokenGrid />
         </div>

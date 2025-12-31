@@ -17,59 +17,57 @@ export function TokenInfo({ token }: TokenInfoProps) {
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr)
-    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
   }
 
   const migrationProgress = token.migration_threshold
     ? Math.min(100, ((token.current_liquidity || 0) / token.migration_threshold) * 100)
     : 0
 
-  const infoItems = [
-    { label: "Total Supply", value: formatNumber(token.total_supply || 0) },
-    { label: "Holders", value: formatNumber(token.holders || 0) },
-    { label: "Decimals", value: token.decimals?.toString() || "9" },
-    { label: "Created", value: formatDate(token.created_at) },
-    { label: "Liquidity", value: `$${formatNumber(token.current_liquidity || 0)}` },
-    { label: "Bonding Curve", value: token.bonding_curve_type || "Linear" },
-  ]
-
   return (
-    <GlassPanel className="p-6">
-      <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-4">Token Information</h3>
+    <GlassPanel className="p-4 h-full">
+      <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-3">Token Info</h3>
 
-      <div className="space-y-3">
-        {infoItems.map((item, index) => (
-          <div key={index} className="flex items-center justify-between">
-            <span className="text-sm text-[var(--text-muted)]">{item.label}</span>
-            <span className="text-sm font-medium text-[var(--text-primary)]">{item.value}</span>
-          </div>
-        ))}
+      {/* Compact grid layout */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+        <div className="flex justify-between">
+          <span className="text-[var(--text-muted)]">Supply</span>
+          <span className="font-medium text-[var(--text-primary)]">{formatNumber(token.total_supply || 0)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[var(--text-muted)]">Holders</span>
+          <span className="font-medium text-[var(--aqua-primary)]">{formatNumber(token.holders || 0)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[var(--text-muted)]">Liquidity</span>
+          <span className="font-medium text-[var(--text-primary)]">${formatNumber(token.current_liquidity || 0)}</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-[var(--text-muted)]">Created</span>
+          <span className="font-medium text-[var(--text-primary)]">{formatDate(token.created_at)}</span>
+        </div>
       </div>
 
-      {/* Migration Progress (if bonding stage) */}
+      {/* Migration Progress (if bonding stage) - compact */}
       {token.stage === "bonding" && (
-        <div className="mt-6 pt-4 border-t border-[var(--glass-border)]">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-[var(--text-secondary)]">Migration Progress</span>
-            <span className="text-sm font-medium text-[var(--aqua-primary)]">{migrationProgress.toFixed(1)}%</span>
+        <div className="mt-3 pt-3 border-t border-[var(--glass-border)]">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-[var(--text-secondary)]">Migration</span>
+            <span className="text-xs font-medium text-[var(--aqua-primary)]">{migrationProgress.toFixed(0)}%</span>
           </div>
-          <div className="h-2 bg-[var(--ocean-surface)] rounded-full overflow-hidden">
+          <div className="h-1.5 bg-[var(--ocean-surface)] rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--warm-pink)] transition-all duration-500"
               style={{ width: `${migrationProgress}%` }}
             />
           </div>
-          <p className="text-xs text-[var(--text-muted)] mt-2">
-            {formatNumber(token.current_liquidity || 0)} / {formatNumber(token.migration_threshold || 0)} SOL to migrate
-          </p>
         </div>
       )}
 
-      {/* Description */}
+      {/* Description - truncated */}
       {token.description && (
-        <div className="mt-6 pt-4 border-t border-[var(--glass-border)]">
-          <h4 className="text-sm text-[var(--text-secondary)] mb-2">About</h4>
-          <p className="text-sm text-[var(--text-primary)] leading-relaxed">{token.description}</p>
+        <div className="mt-3 pt-3 border-t border-[var(--glass-border)]">
+          <p className="text-xs text-[var(--text-primary)] leading-relaxed line-clamp-3">{token.description}</p>
         </div>
       )}
     </GlassPanel>

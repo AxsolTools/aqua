@@ -87,52 +87,56 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
   }
 
   return (
-    <div className="glass-panel rounded-2xl p-5">
-      <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Community</h3>
+    <div className="glass-panel rounded-xl p-4 h-full">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Community</h3>
+        <span className="text-[10px] text-[var(--text-muted)]">Show your support</span>
+      </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        {/* Vote Button */}
+      {/* Horizontal layout for wider space */}
+      <div className="flex items-center gap-4">
+        {/* Vote Button - Compact horizontal */}
         <motion.button
           onClick={handleVote}
           disabled={isVoting}
           whileTap={{ scale: 0.95 }}
           className={cn(
-            "relative p-4 rounded-xl border transition-all overflow-hidden",
+            "flex-1 flex items-center justify-center gap-3 p-3 rounded-xl border transition-all",
             hasVoted
               ? "border-[var(--warm-coral)] bg-[var(--warm-coral)]/10"
               : "border-[var(--glass-border)] hover:border-[var(--warm-coral)]/50",
           )}
         >
-          <div className="flex flex-col items-center gap-2">
-            <motion.div animate={hasVoted ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill={hasVoted ? "var(--warm-coral)" : "none"}
-                stroke="var(--warm-coral)"
-                strokeWidth="2"
-              >
-                <path d="M12 2l2.5 5 5.5.8-4 3.9.9 5.3-4.9-2.6-4.9 2.6.9-5.3-4-3.9 5.5-.8L12 2z" />
-              </svg>
-            </motion.div>
-            <span className="text-2xl font-bold text-[var(--text-primary)] font-mono">{voteCount}</span>
-            <span className="text-xs text-[var(--text-muted)]">{hasVoted ? "Voted" : "Vote"}</span>
+          <motion.div animate={hasVoted ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill={hasVoted ? "var(--warm-coral)" : "none"}
+              stroke="var(--warm-coral)"
+              strokeWidth="2"
+            >
+              <path d="M12 2l2.5 5 5.5.8-4 3.9.9 5.3-4.9-2.6-4.9 2.6.9-5.3-4-3.9 5.5-.8L12 2z" />
+            </svg>
+          </motion.div>
+          <div className="text-left">
+            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{voteCount}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{hasVoted ? "Voted!" : "Vote"}</span>
           </div>
         </motion.button>
 
-        {/* Boost Button */}
+        {/* Boost Button - Compact horizontal */}
         <motion.button
           onClick={() => setShowBoostModal(true)}
           whileTap={{ scale: 0.95 }}
-          className="relative p-4 rounded-xl border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-all overflow-hidden"
+          className="flex-1 flex items-center justify-center gap-3 p-3 rounded-xl border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-all"
         >
-          <div className="flex flex-col items-center gap-2">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--aqua-primary)" strokeWidth="2">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span className="text-2xl font-bold text-[var(--text-primary)] font-mono">{boostCount}</span>
-            <span className="text-xs text-[var(--text-muted)]">Boost</span>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--aqua-primary)" strokeWidth="2">
+            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <div className="text-left">
+            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{boostCount}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">Boost</span>
           </div>
         </motion.button>
       </div>

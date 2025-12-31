@@ -55,8 +55,8 @@ export default function TrendingPage() {
       <div className="relative z-10">
         <Header />
 
-        <div className="pt-28 pb-12 px-4 sm:px-6">
-          <div className="max-w-6xl mx-auto">
+        <div className="pt-20 pb-12 px-3 sm:px-4 lg:px-6">
+          <div className="max-w-[1920px] mx-auto">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
               <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">Rising Tides</h1>
               <p className="text-[var(--text-secondary)]">Featured and trending tokens in the Aquarius ecosystem</p>

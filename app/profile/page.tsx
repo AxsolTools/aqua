@@ -9,10 +9,12 @@ import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import type { Token, Trade } from "@/lib/types/database"
 import Link from "next/link"
+import Image from "next/image"
 import { motion } from "framer-motion"
 import { ReferralPanel } from "@/components/profile/referral-panel"
+import { PnLPanel } from "@/components/profile/pnl-panel"
 
-type TabType = "portfolio" | "created" | "activity" | "referrals" | "settings"
+type TabType = "portfolio" | "pnl" | "created" | "activity" | "referrals" | "settings"
 
 export default function ProfilePage() {
   const { isAuthenticated, isLoading, wallets, mainWallet, activeWallet, setIsOnboarding } = useAuth()
@@ -220,8 +222,8 @@ export default function ProfilePage() {
       <div className="relative z-10">
         <Header />
 
-        <div className="pt-28 pb-12 px-4 sm:px-6">
-          <div className="max-w-6xl mx-auto">
+        <div className="pt-20 pb-12 px-3 sm:px-4 lg:px-6">
+          <div className="max-w-[1920px] mx-auto">
             {/* Profile Header */}
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
               <div className="flex items-start justify-between flex-wrap gap-4">
@@ -258,7 +260,7 @@ export default function ProfilePage() {
                   transition={{ delay: 0.1 }}
                   className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide"
                 >
-                  {(["portfolio", "created", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
+                  {(["portfolio", "pnl", "created", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -269,7 +271,7 @@ export default function ProfilePage() {
                           : "glass-panel text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
                       )}
                     >
-                      {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      {tab === "pnl" ? "P&L" : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
                 </motion.div>
@@ -281,6 +283,10 @@ export default function ProfilePage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2 }}
                 >
+                  {activeTab === "pnl" && (
+                    <PnLPanel />
+                  )}
+
                   {activeTab === "portfolio" && (
                     <div className="space-y-6">
                       {/* Wallet Overview */}
@@ -411,12 +417,31 @@ export default function ProfilePage() {
                             <GlassPanel className="p-5 hover:border-[var(--aqua-primary)]/50 transition-all cursor-pointer">
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
-                                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center text-[var(--ocean-deep)] font-bold">
-                                    {token.symbol.slice(0, 2)}
+                                  <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] overflow-hidden">
+                                    {token.image_url ? (
+                                      <Image
+                                        src={token.image_url}
+                                        alt={token.name}
+                                        fill
+                                        className="object-cover"
+                                      />
+                                    ) : (
+                                      <div className="absolute inset-0 flex items-center justify-center">
+                                        <span className="text-[var(--ocean-deep)] font-bold">
+                                          {token.symbol.slice(0, 2)}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                   <div>
                                     <h3 className="font-semibold text-[var(--text-primary)]">{token.name}</h3>
-                                    <p className="text-sm text-[var(--text-secondary)]">${token.symbol}</p>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm text-[var(--text-secondary)]">${token.symbol}</p>
+                                      <span className="text-[10px] text-[var(--text-muted)]">•</span>
+                                      <p className="text-[10px] text-[var(--aqua-primary)]">
+                                        MCap: ${formatNumber(token.market_cap || 0)}
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
                                 <div className="text-right">
@@ -426,11 +451,11 @@ export default function ProfilePage() {
                                   <p
                                     className={cn(
                                       "text-xs",
-                                      token.change_24h >= 0 ? "text-[var(--success)]" : "text-[var(--error)]",
+                                      (token.change_24h || 0) >= 0 ? "text-[var(--success)]" : "text-[var(--error)]",
                                     )}
                                   >
-                                    {token.change_24h >= 0 ? "+" : ""}
-                                    {token.change_24h.toFixed(2)}%
+                                    {(token.change_24h || 0) >= 0 ? "+" : ""}
+                                    {(token.change_24h || 0).toFixed(2)}%
                                   </p>
                                 </div>
                               </div>

@@ -99,33 +99,6 @@ export function TokenChart({ mintAddress, tokenSymbol }: TokenChartProps) {
         />
       </div>
 
-      {/* Footer with quick links */}
-      <div className="flex items-center justify-between p-3 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]/30">
-        <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
-          <span>🕐 Real-time data</span>
-          <span>📊 All timeframes</span>
-          <span>🔧 Drawing tools</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={`https://birdeye.so/token/${mintAddress}?chain=solana`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Birdeye
-          </a>
-          <span className="text-[var(--text-dim)]">•</span>
-          <a
-            href={`https://solscan.io/token/${mintAddress}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Solscan
-          </a>
-        </div>
-      </div>
     </div>
   )
 }

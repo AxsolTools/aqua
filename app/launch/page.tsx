@@ -51,7 +51,7 @@ export default function LaunchPage() {
       
       <Header />
 
-      <div className="relative z-10 px-4 sm:px-6 py-8 max-w-6xl mx-auto">
+      <div className="relative z-10 px-3 sm:px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
         {/* Page Header */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }} 

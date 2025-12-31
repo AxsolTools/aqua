@@ -5,6 +5,7 @@ import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
 import { FeeBreakdown } from "@/components/ui/fee-breakdown"
+import { useBalance } from "@/hooks/use-balance"
 import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
@@ -15,6 +16,7 @@ interface TradePanelProps {
 const ERROR_MESSAGES: Record<number, string> = {
   1001: "Please connect your wallet first",
   1002: "Session expired - please reconnect wallet",
+  1003: "Wallet not found - please reconnect",
   2001: "Not enough SOL in your wallet",
   2002: "Not enough tokens to sell",
   2003: "Invalid amount entered",
@@ -23,6 +25,8 @@ const ERROR_MESSAGES: Record<number, string> = {
   3003: "Slippage too high - increase tolerance",
   4001: "Token not found or delisted",
   4002: "Bonding curve locked",
+  5001: "Trading service temporarily unavailable",
+  5002: "Backup trading service also failed",
 }
 
 export function TradePanel({ token }: TradePanelProps) {
@@ -35,9 +39,19 @@ export function TradePanel({ token }: TradePanelProps) {
   const [success, setSuccess] = useState<string | null>(null)
   const [showWalletSelector, setShowWalletSelector] = useState(false)
   const selectorRef = useRef<HTMLDivElement>(null)
+  
+  // Fetch wallet balance
+  const { balanceSol, isLoading: balanceLoading, refresh: refreshBalance } = useBalance(
+    activeWallet?.public_key || null,
+    { refreshInterval: 15000, enabled: !!activeWallet }
+  )
 
   const estimatedTokens = amount ? Number(amount) / (token.price_sol || 0.0001) : 0
   const estimatedSol = amount ? Number(amount) * (token.price_sol || 0.0001) : 0
+  
+  // Check if user has sufficient balance for buy
+  const parsedAmount = parseFloat(amount) || 0
+  const insufficientBalance = mode === "buy" && parsedAmount > 0 && balanceSol < parsedAmount + 0.01 // 0.01 SOL buffer for fees
 
   // Close wallet selector when clicking outside
   useEffect(() => {
@@ -51,7 +65,38 @@ export function TradePanel({ token }: TradePanelProps) {
   }, [])
 
   const handleTrade = async () => {
-    if (!isAuthenticated || !activeWallet || !amount) return
+    // Validate prerequisites
+    if (!isAuthenticated) {
+      setError("Please connect your wallet first")
+      return
+    }
+    
+    if (!activeWallet?.public_key) {
+      setError("No wallet selected. Please select a wallet.")
+      return
+    }
+    
+    if (!amount || parseFloat(amount) <= 0) {
+      setError("Please enter a valid amount")
+      return
+    }
+    
+    if (!token.mint_address) {
+      setError("Token mint address not found")
+      return
+    }
+    
+    const effectiveSessionId = sessionId || userId
+    if (!effectiveSessionId) {
+      setError("Session expired. Please refresh and try again.")
+      return
+    }
+
+    // Check balance for buy mode
+    if (mode === "buy" && balanceSol < parseFloat(amount) + 0.01) {
+      setError(`Insufficient balance. You have ${balanceSol.toFixed(4)} SOL.`)
+      return
+    }
 
     setIsLoading(true)
     setError(null)
@@ -63,6 +108,8 @@ export function TradePanel({ token }: TradePanelProps) {
       amount,
       slippage,
       wallet: activeWallet.public_key?.slice(0, 8),
+      sessionId: effectiveSessionId?.slice(0, 8),
+      balance: balanceSol,
     })
 
     try {
@@ -94,6 +141,8 @@ export function TradePanel({ token }: TradePanelProps) {
 
       setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}! 🎉`)
       setAmount("")
+      // Refresh balance after successful trade
+      setTimeout(() => refreshBalance(), 2000)
     } catch (err) {
       console.error('[TRADE] Error:', err)
       setError(err instanceof Error ? err.message : "Trade failed - please try again")
@@ -110,30 +159,50 @@ export function TradePanel({ token }: TradePanelProps) {
 
   return (
     <div className="glass-panel-elevated p-4 rounded-lg">
-      {/* Active Wallet Indicator */}
+      {/* Active Wallet Selector */}
       {isAuthenticated && activeWallet && (
         <div className="mb-4 relative" ref={selectorRef}>
           <div 
-            onClick={() => wallets.length > 1 && setShowWalletSelector(!showWalletSelector)}
+            onClick={() => setShowWalletSelector(!showWalletSelector)}
             className={cn(
-              "flex items-center justify-between p-3 rounded-lg border transition-all",
+              "flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer",
               "bg-[var(--bg-secondary)] border-[var(--border-subtle)]",
-              wallets.length > 1 && "cursor-pointer hover:border-[var(--aqua-primary)]"
+              "hover:border-[var(--aqua-primary)]",
+              showWalletSelector && "border-[var(--aqua-primary)] ring-1 ring-[var(--aqua-primary)]/20"
             )}
           >
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
-              <span className="text-xs text-[var(--text-muted)]">Trading with:</span>
-              <span className="text-sm font-mono font-medium text-[var(--text-primary)]">
-                {activeWallet.label || truncateAddress(activeWallet.public_key)}
-              </span>
-              {activeWallet.is_primary && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">
-                  Main
-                </span>
-              )}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/20 border border-[var(--aqua-primary)]/30 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4 text-[var(--aqua-primary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-3" strokeLinecap="round" />
+                  <path d="M19 7h-8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+                  <circle cx="16" cy="12" r="1" fill="currentColor" />
+                </svg>
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Trading with</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-mono font-medium text-[var(--text-primary)] truncate">
+                    {activeWallet.label || truncateAddress(activeWallet.public_key)}
+                  </span>
+                  {activeWallet.is_primary && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium flex-shrink-0">
+                      Main
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            {wallets.length > 1 && (
+            <div className="flex items-center gap-3 flex-shrink-0">
+              <div className="text-right">
+                <p className={cn(
+                  "text-sm font-mono font-semibold",
+                  balanceLoading ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
+                )}>
+                  {balanceLoading ? "..." : `${balanceSol.toFixed(4)} SOL`}
+                </p>
+              </div>
+              <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
               <svg 
                 className={cn("w-4 h-4 text-[var(--text-muted)] transition-transform", showWalletSelector && "rotate-180")} 
                 fill="none" 
@@ -142,45 +211,81 @@ export function TradePanel({ token }: TradePanelProps) {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
-            )}
+            </div>
           </div>
 
           {/* Wallet Selector Dropdown */}
-          {showWalletSelector && wallets.length > 1 && (
+          {showWalletSelector && (
             <div className="absolute top-full left-0 right-0 mt-1 z-20 bg-[var(--bg-elevated)] border border-[var(--border-default)] rounded-lg shadow-xl overflow-hidden">
-              <div className="p-2 border-b border-[var(--border-subtle)]">
+              <div className="p-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
                 <span className="text-xs text-[var(--text-muted)]">Select wallet for trading</span>
+                <span className="text-[10px] text-[var(--aqua-primary)] font-medium">{wallets.length} wallet{wallets.length !== 1 ? 's' : ''}</span>
               </div>
-              {wallets.map((wallet) => (
-                <button
-                  key={wallet.id}
-                  onClick={() => {
-                    setActiveWallet(wallet)
-                    setShowWalletSelector(false)
-                  }}
-                  className={cn(
-                    "w-full flex items-center justify-between p-3 text-left transition-all",
-                    "hover:bg-[var(--bg-secondary)]",
-                    wallet.id === activeWallet.id && "bg-[var(--aqua-primary)]/10"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-mono text-[var(--text-primary)]">
-                      {wallet.label || truncateAddress(wallet.public_key)}
-                    </span>
-                    {wallet.is_primary && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">
-                        Main
-                      </span>
+              
+              {/* Wallet List */}
+              <div className="max-h-48 overflow-y-auto">
+                {wallets.map((wallet) => (
+                  <button
+                    key={wallet.id}
+                    onClick={() => {
+                      setActiveWallet(wallet)
+                      setShowWalletSelector(false)
+                    }}
+                    className={cn(
+                      "w-full flex items-center justify-between p-3 text-left transition-all",
+                      "hover:bg-[var(--bg-secondary)]",
+                      wallet.id === activeWallet.id && "bg-[var(--aqua-primary)]/10"
                     )}
-                  </div>
-                  {wallet.id === activeWallet.id && (
-                    <svg className="w-4 h-4 text-[var(--aqua-primary)]" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                    </svg>
-                  )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold",
+                        wallet.id === activeWallet.id 
+                          ? "bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]" 
+                          : "bg-[var(--bg-secondary)] text-[var(--text-muted)]"
+                      )}>
+                        {(wallet.label || wallet.public_key.slice(0, 2)).slice(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex flex-col">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-mono text-[var(--text-primary)]">
+                            {wallet.label || truncateAddress(wallet.public_key)}
+                          </span>
+                          {wallet.is_primary && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]">
+                              Main
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-[var(--text-muted)]">
+                          {truncateAddress(wallet.public_key)}
+                        </span>
+                      </div>
+                    </div>
+                    {wallet.id === activeWallet.id && (
+                      <svg className="w-5 h-5 text-[var(--aqua-primary)]" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Add New Wallet Button */}
+              <div className="p-2 border-t border-[var(--border-subtle)]">
+                <button
+                  onClick={() => {
+                    setShowWalletSelector(false)
+                    setIsOnboarding(true)
+                  }}
+                  className="w-full flex items-center justify-center gap-2 p-2 rounded-lg text-xs font-medium text-[var(--aqua-primary)] hover:bg-[var(--aqua-primary)]/10 transition-all"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Add Another Wallet
                 </button>
-              ))}
+              </div>
             </div>
           )}
         </div>
@@ -289,6 +394,23 @@ export function TradePanel({ token }: TradePanelProps) {
         </div>
       </div>
 
+      {/* Insufficient Balance Warning */}
+      {insufficientBalance && mode === "buy" && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+          <div className="flex items-start gap-2">
+            <svg className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <div className="text-amber-400 text-sm">
+              <p className="font-medium">Insufficient balance</p>
+              <p className="text-xs opacity-80">
+                You have {balanceSol.toFixed(4)} SOL, need ~{(parsedAmount + 0.01).toFixed(4)} SOL (incl. fees)
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Error/Success messages */}
       {error && (
         <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -319,7 +441,7 @@ export function TradePanel({ token }: TradePanelProps) {
       ) : (
         <button
           onClick={handleTrade}
-          disabled={!amount || isLoading}
+          disabled={!amount || isLoading || insufficientBalance}
           className={cn(
             "w-full py-3 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed",
             mode === "buy"
@@ -332,6 +454,8 @@ export function TradePanel({ token }: TradePanelProps) {
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               Processing...
             </span>
+          ) : insufficientBalance ? (
+            "Insufficient Balance"
           ) : (
             `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}`
           )}

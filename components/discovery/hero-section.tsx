@@ -17,7 +17,7 @@ export function HeroSection() {
         />
       </div>
 
-      <div className="max-w-7xl mx-auto relative">
+      <div className="max-w-[1920px] mx-auto relative">
         <div className="max-w-4xl mx-auto text-center">
           {/* Animated Logo */}
           <motion.div

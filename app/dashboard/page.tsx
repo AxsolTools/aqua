@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/components/providers/auth-provider"
 import { Header } from "@/components/layout/header"
@@ -169,8 +170,8 @@ export default function DashboardPage() {
 
       <Header />
 
-      <div className="relative z-10 pt-24 pb-12 px-4 sm:px-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="relative z-10 pt-20 pb-12 px-3 sm:px-4 lg:px-6">
+        <div className="max-w-[1920px] mx-auto">
           {/* Dashboard Header */}
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -201,7 +202,7 @@ export default function DashboardPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
-                className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8"
+                className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8"
               >
                 <MetricCard
                   label="Tokens Created"
@@ -209,15 +210,20 @@ export default function DashboardPage() {
                   icon={<Coins className="w-4 h-4" />}
                 />
                 <MetricCard
-                  label="Total Liquidity"
-                  value={formatNumber(createdTokens.reduce((sum, t) => sum + t.current_liquidity, 0))}
-                  suffix="SOL"
+                  label="Total Market Cap"
+                  value={`$${formatNumber(createdTokens.reduce((sum, t) => sum + (t.market_cap || 0), 0))}`}
                   color="teal"
+                  icon={<TrendingUp className="w-4 h-4" />}
+                />
+                <MetricCard
+                  label="Total Liquidity"
+                  value={formatNumber(createdTokens.reduce((sum, t) => sum + (t.current_liquidity || 0), 0))}
+                  suffix="SOL"
                   icon={<Droplets className="w-4 h-4" />}
                 />
                 <MetricCard
                   label="24h Volume"
-                  value={formatNumber(createdTokens.reduce((sum, t) => sum + t.volume_24h, 0))}
+                  value={formatNumber(createdTokens.reduce((sum, t) => sum + (t.volume_24h || 0), 0))}
                   suffix="SOL"
                   icon={<Activity className="w-4 h-4" />}
                 />
@@ -357,10 +363,21 @@ export default function DashboardPage() {
                         {/* Token Header */}
                         <div className="flex items-start justify-between mb-5">
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 flex items-center justify-center">
-                              <span className="text-lg font-bold text-teal-400">
-                                {token.symbol.slice(0, 2)}
-                              </span>
+                            <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden">
+                              {token.image_url ? (
+                                <Image
+                                  src={token.image_url}
+                                  alt={token.name}
+                                  fill
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="text-lg font-bold text-teal-400">
+                                    {token.symbol.slice(0, 2)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                             <div>
                               <h3 className="font-semibold text-zinc-100">{token.name}</h3>
@@ -383,15 +400,15 @@ export default function DashboardPage() {
                         <div className="grid grid-cols-3 gap-3 mb-5">
                           <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
                             <p className="text-xs text-zinc-500 mb-1">Market Cap</p>
-                            <p className="font-semibold text-zinc-200">{formatNumber(token.market_cap)}</p>
+                            <p className="font-semibold text-teal-400">${formatNumber(token.market_cap || 0)}</p>
                           </div>
                           <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
                             <p className="text-xs text-zinc-500 mb-1">24h Volume</p>
-                            <p className="font-semibold text-zinc-200">{formatNumber(token.volume_24h)}</p>
+                            <p className="font-semibold text-zinc-200">{formatNumber(token.volume_24h || 0)} SOL</p>
                           </div>
                           <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
                             <p className="text-xs text-zinc-500 mb-1">Holders</p>
-                            <p className="font-semibold text-zinc-200">{token.holders}</p>
+                            <p className="font-semibold text-zinc-200">{token.holders || 0}</p>
                           </div>
                         </div>
 

@@ -15,8 +15,8 @@ export default async function TokenPage({ params }: TokenPageProps) {
       <GlobalPourEffect />
       <Header />
 
-      <div className="px-4 sm:px-6 py-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="px-3 sm:px-4 lg:px-6 py-4">
+        <div className="max-w-[1920px] mx-auto">
           <Suspense
             fallback={
               <div className="flex items-center justify-center min-h-[60vh]">

@@ -138,9 +138,10 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
         </div>
 
         {/* Price & Stats */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6 flex-wrap">
+          {/* Price */}
           <div>
-            <p className="text-3xl font-bold text-[var(--text-primary)]">{formatPrice(token.price_usd || 0)}</p>
+            <p className="text-2xl md:text-3xl font-bold text-[var(--text-primary)]">{formatPrice(token.price_usd || 0)}</p>
             <p
               className={cn("text-sm font-medium", (token.change_24h || 0) >= 0 ? "text-emerald-400" : "text-red-400")}
             >
@@ -149,19 +150,32 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
             </p>
           </div>
 
-          <div className="h-12 w-px bg-[var(--glass-border)]" />
+          <div className="h-10 w-px bg-[var(--glass-border)] hidden md:block" />
 
-          <div className="grid grid-cols-2 gap-6">
+          {/* Key Stats Grid */}
+          <div className="grid grid-cols-4 gap-4 md:gap-6">
             <div>
-              <p className="text-xs text-[var(--text-muted)] mb-1">Market Cap</p>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">
+              <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Market Cap</p>
+              <p className="text-sm md:text-base font-bold text-[var(--aqua-primary)]">
                 {formatMarketCap(token.market_cap || 0)}
               </p>
             </div>
             <div>
-              <p className="text-xs text-[var(--text-muted)] mb-1">24h Volume</p>
-              <p className="text-sm font-semibold text-[var(--text-primary)]">
+              <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Holders</p>
+              <p className="text-sm md:text-base font-bold text-[var(--warm-pink)]">
+                {(token.holders || 0).toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Volume 24h</p>
+              <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
                 {formatMarketCap(token.volume_24h || 0)}
+              </p>
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Liquidity</p>
+              <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
+                {formatMarketCap(token.current_liquidity || 0)}
               </p>
             </div>
           </div>

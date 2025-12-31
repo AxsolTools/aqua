@@ -56,8 +56,8 @@ export function StatsOverview() {
   ]
 
   return (
-    <section className="px-4 sm:px-6 mb-16">
-      <div className="max-w-7xl mx-auto">
+    <section className="px-3 sm:px-4 lg:px-6 mb-12">
+      <div className="max-w-[1920px] mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
