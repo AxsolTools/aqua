@@ -9,6 +9,8 @@ import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
+import { collectPlatformFee } from '@/lib/fees';
+import { solToLamports, lamportsToSol, calculatePlatformFee } from '@/lib/precision';
 import { removeLiquidity } from '@/lib/blockchain/raydium-cpmm';
 
 // ============================================================================
@@ -107,6 +109,31 @@ export async function POST(request: NextRequest) {
 
     console.log(`[LIQUIDITY] Removed successfully: ${result.txSignature}`);
 
+    // ========== COLLECT PLATFORM FEE (2%) ==========
+    // Fee based on the SOL amount received from removing liquidity
+    const solReceived = parseFloat(result.solAmount || '0');
+    const platformFeeLamports = calculatePlatformFee(solToLamports(solReceived));
+    
+    const feeResult = await collectPlatformFee(
+      connection,
+      ownerKeypair,
+      platformFeeLamports
+    );
+
+    if (feeResult.success) {
+      console.log(`[LIQUIDITY] Platform fee collected: ${lamportsToSol(platformFeeLamports)} SOL`);
+      
+      // Record fee in database
+      await adminClient.from('platform_fees').insert({
+        session_id: sessionId,
+        wallet_address: walletAddress,
+        operation_type: 'remove_liquidity',
+        transaction_signature: result.txSignature,
+        fee_amount_lamports: Number(platformFeeLamports),
+        fee_amount_sol: lamportsToSol(platformFeeLamports),
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
@@ -114,6 +141,7 @@ export async function POST(request: NextRequest) {
         lpTokenAmount: result.lpTokenAmount,
         tokenAmount: result.tokenAmount,
         solAmount: result.solAmount,
+        platformFee: lamportsToSol(platformFeeLamports),
       },
     });
 
