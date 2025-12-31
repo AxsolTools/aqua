@@ -5,7 +5,7 @@ import type { Token } from "@/lib/types/database"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
 import { FeeBreakdown } from "@/components/ui/fee-breakdown"
-import { useBalance } from "@/hooks/use-balance"
+import { useBalance, useTokenBalance } from "@/hooks/use-balance"
 import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
@@ -40,14 +40,42 @@ export function TradePanel({ token }: TradePanelProps) {
   const [showWalletSelector, setShowWalletSelector] = useState(false)
   const selectorRef = useRef<HTMLDivElement>(null)
   
-  // Fetch wallet balance
+  // Fetch wallet balance (SOL)
   const { balanceSol, isLoading: balanceLoading, refresh: refreshBalance } = useBalance(
     activeWallet?.public_key || null,
     { refreshInterval: 15000, enabled: !!activeWallet }
   )
+  
+  // Fetch token balance for sell mode
+  const { 
+    balance: tokenBalance, 
+    isLoading: tokenBalanceLoading, 
+    refresh: refreshTokenBalance 
+  } = useTokenBalance(
+    activeWallet?.public_key || null,
+    token.mint_address || null,
+    { refreshInterval: 15000, enabled: !!activeWallet && !!token.mint_address }
+  )
 
   const estimatedTokens = amount ? Number(amount) / (token.price_sol || 0.0001) : 0
   const estimatedSol = amount ? Number(amount) * (token.price_sol || 0.0001) : 0
+  
+  // Handle percentage button clicks for sell mode
+  const handleQuickAmount = (amt: string) => {
+    if (mode === "sell") {
+      // For sell mode, amt is a percentage (25, 50, 75, 100)
+      const percentage = parseFloat(amt)
+      if (tokenBalance > 0) {
+        const calculatedAmount = (tokenBalance * percentage) / 100
+        setAmount(calculatedAmount.toString())
+      } else {
+        setAmount("0")
+      }
+    } else {
+      // For buy mode, amt is the actual SOL amount
+      setAmount(amt)
+    }
+  }
   
   // Check if user has sufficient balance for buy
   const parsedAmount = parseFloat(amount) || 0
@@ -141,8 +169,11 @@ export function TradePanel({ token }: TradePanelProps) {
 
       setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}! 🎉`)
       setAmount("")
-      // Refresh balance after successful trade
-      setTimeout(() => refreshBalance(), 2000)
+      // Refresh balances after successful trade
+      setTimeout(() => {
+        refreshBalance()
+        refreshTokenBalance()
+      }, 2000)
     } catch (err) {
       console.error('[TRADE] Error:', err)
       setError(err instanceof Error ? err.message : "Trade failed - please try again")
@@ -342,13 +373,29 @@ export function TradePanel({ token }: TradePanelProps) {
           {quickAmounts.map((amt) => (
             <button
               key={amt}
-              onClick={() => setAmount(amt)}
+              onClick={() => handleQuickAmount(amt)}
               className="flex-1 px-2 py-1.5 rounded text-xs font-medium border border-[var(--border-default)] text-[var(--text-muted)] hover:border-[var(--aqua-primary)] hover:text-[var(--aqua-primary)] transition-all"
             >
               {mode === "buy" ? amt : `${amt}%`}
             </button>
           ))}
         </div>
+        
+        {/* Token Balance Display for Sell Mode */}
+        {mode === "sell" && activeWallet && (
+          <div className="mt-2 flex items-center justify-between text-xs">
+            <span className="text-[var(--text-muted)]">Your {token.symbol} balance:</span>
+            <span className={cn(
+              "font-mono font-medium",
+              tokenBalanceLoading ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
+            )}>
+              {tokenBalanceLoading ? "..." : tokenBalance > 0 
+                ? tokenBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                : "0"
+              } {token.symbol}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Arrow separator */}

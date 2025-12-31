@@ -148,3 +148,69 @@ export function useBalanceCheck(
   }
 }
 
+// Hook for token balance (SPL tokens)
+interface TokenBalanceData {
+  wallet: string
+  mint: string
+  balance: number
+  uiBalance: number
+  decimals: number
+  tokenAccount: string | null
+  hasBalance: boolean
+}
+
+export function useTokenBalance(
+  walletAddress: string | null,
+  tokenMint: string | null,
+  options: UseBalanceOptions = {}
+) {
+  const { refreshInterval = 10000, enabled = true } = options
+  const [data, setData] = useState<TokenBalanceData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const fetchTokenBalance = useCallback(async () => {
+    if (!enabled || !walletAddress || !tokenMint) {
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `/api/wallet/token-balance?wallet=${walletAddress}&mint=${tokenMint}`
+      )
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        setData(result.data)
+        setError(null)
+      } else {
+        setError(result.error || "Failed to fetch token balance")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to fetch token balance")
+    }
+    setIsLoading(false)
+  }, [walletAddress, tokenMint, enabled])
+
+  useEffect(() => {
+    fetchTokenBalance()
+
+    if (enabled && refreshInterval > 0 && walletAddress && tokenMint) {
+      const interval = setInterval(fetchTokenBalance, refreshInterval)
+      return () => clearInterval(interval)
+    }
+  }, [fetchTokenBalance, enabled, refreshInterval, walletAddress, tokenMint])
+
+  return {
+    data,
+    balance: data?.uiBalance || 0,
+    rawBalance: data?.balance || 0,
+    decimals: data?.decimals || 9,
+    hasBalance: data?.hasBalance || false,
+    isLoading,
+    error,
+    refresh: fetchTokenBalance,
+  }
+}
+

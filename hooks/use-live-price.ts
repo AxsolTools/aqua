@@ -40,6 +40,7 @@ const POLL_INTERVAL = 30_000 // 30 seconds
 
 /**
  * Hook for fetching real-time token prices with 30-second polling
+ * Uses server-side API to avoid CORS and auth issues
  * 
  * @param mintAddress - Token mint address
  * @param totalSupply - Total supply for market cap calculation
@@ -67,86 +68,67 @@ export function useLivePrice(
     }
 
     try {
-      // Fetch SOL price and token price in parallel
-      const [solResponse, tokenResponse] = await Promise.all([
-        fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`),
-        fetch(`${JUPITER_PRICE_API}?ids=${mintAddress}`),
-      ])
-
-      // Parse SOL price
-      let fetchedSolPrice = 0
-      if (solResponse.ok) {
-        const solData: JupiterPriceResponse = await solResponse.json()
-        fetchedSolPrice = solData.data?.[SOL_MINT]?.price || 0
-        setSolPriceUsd(fetchedSolPrice)
-      }
-
-      // If Jupiter SOL price failed, try our internal API
-      if (fetchedSolPrice === 0) {
-        try {
-          const fallbackResponse = await fetch("/api/price/sol")
-          const fallbackData = await fallbackResponse.json()
-          fetchedSolPrice = fallbackData.data?.price || 150 // Fallback
-          setSolPriceUsd(fetchedSolPrice)
-        } catch {
-          fetchedSolPrice = 150 // Ultimate fallback
-          setSolPriceUsd(fetchedSolPrice)
-        }
-      }
-
-      // Parse token price (in USD)
-      let tokenPriceUsd = 0
-      let priceSource = "jupiter"
+      // Use our server-side API to fetch prices (avoids CORS/auth issues)
+      const params = new URLSearchParams({ mint: mintAddress })
+      if (totalSupply) params.append("supply", totalSupply.toString())
+      if (decimals) params.append("decimals", decimals.toString())
       
-      if (tokenResponse.ok) {
-        const tokenData: JupiterPriceResponse = await tokenResponse.json()
-        tokenPriceUsd = tokenData.data?.[mintAddress]?.price || 0
-      }
-
-      // Fallback to DexScreener if Jupiter fails
-      if (tokenPriceUsd === 0) {
-        try {
-          const dexResponse = await fetch(
-            `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`
-          )
-          if (dexResponse.ok) {
-            const dexData = await dexResponse.json()
-            const pair = dexData.pairs?.find(
-              (p: { priceUsd?: string }) => p.priceUsd && parseFloat(p.priceUsd) > 0
-            )
-            if (pair) {
-              tokenPriceUsd = parseFloat(pair.priceUsd)
-              priceSource = "dexscreener"
-            }
-          }
-        } catch {
-          // Silently fail
+      const response = await fetch(`/api/price/token?${params}`)
+      
+      if (response.ok) {
+        const result = await response.json()
+        
+        if (result.success && result.data) {
+          setPriceUsd(result.data.priceUsd || 0)
+          setPriceSol(result.data.priceSol || 0)
+          setMarketCap(result.data.marketCap || 0)
+          setSource(result.data.source || "none")
+          setSolPriceUsd(result.solPriceUsd || 0)
+          setLastUpdated(Date.now())
+          setError(null)
+          return
         }
       }
 
-      // Calculate token price in SOL
-      const tokenPriceSol = fetchedSolPrice > 0 ? tokenPriceUsd / fetchedSolPrice : 0
-
-      // Calculate market cap
-      const circulatingSupply = totalSupply
-        ? totalSupply / Math.pow(10, decimals)
-        : 0
-      const calculatedMarketCap = tokenPriceUsd * circulatingSupply
-
-      // Update state
-      setPriceSol(tokenPriceSol)
-      setPriceUsd(tokenPriceUsd)
-      setMarketCap(calculatedMarketCap)
-      setSource(priceSource)
-      setLastUpdated(Date.now())
-      setError(null)
+      // Fallback to direct DexScreener (usually no CORS issues)
+      try {
+        const dexResponse = await fetch(
+          `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`
+        )
+        if (dexResponse.ok) {
+          const dexData = await dexResponse.json()
+          const pair = dexData.pairs?.find(
+            (p: { priceUsd?: string }) => p.priceUsd && parseFloat(p.priceUsd) > 0
+          )
+          if (pair) {
+            const tokenPriceUsd = parseFloat(pair.priceUsd)
+            const fetchedSolPrice = solPriceUsd > 0 ? solPriceUsd : 150
+            const tokenPriceSol = tokenPriceUsd / fetchedSolPrice
+            
+            // Calculate market cap
+            const circulatingSupply = totalSupply
+              ? totalSupply / Math.pow(10, decimals)
+              : 0
+            const calculatedMarketCap = tokenPriceUsd * circulatingSupply
+            
+            setPriceUsd(tokenPriceUsd)
+            setPriceSol(tokenPriceSol)
+            setMarketCap(calculatedMarketCap)
+            setSource("dexscreener")
+            setLastUpdated(Date.now())
+            setError(null)
+          }
+        }
+      } catch {
+        // Silently fail
+      }
     } catch (err) {
       console.warn("[useLivePrice] Failed to fetch prices:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch prices")
     } finally {
       setIsLoading(false)
     }
-  }, [mintAddress, totalSupply, decimals])
+  }, [mintAddress, totalSupply, decimals, solPriceUsd])
 
   // Initial fetch and polling
   useEffect(() => {
@@ -183,6 +165,7 @@ interface BatchPriceResult {
 /**
  * Hook for fetching live prices for multiple tokens at once
  * Useful for P&L calculations across holdings
+ * Uses server-side API to avoid CORS/auth issues
  * 
  * @param mintAddresses - Array of token mint addresses
  * @returns BatchPriceResult with prices map
@@ -203,67 +186,68 @@ export function useBatchLivePrices(mintAddresses: string[]): BatchPriceResult {
     }
 
     try {
-      // Fetch SOL price first
-      const solResponse = await fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`)
-      let fetchedSolPrice = 0
-      
-      if (solResponse.ok) {
-        const solData: JupiterPriceResponse = await solResponse.json()
-        fetchedSolPrice = solData.data?.[SOL_MINT]?.price || 0
-      }
+      // Use our server-side batch API
+      const response = await fetch("/api/price/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mints: mintAddresses }),
+      })
 
-      // Fallback for SOL price
-      if (fetchedSolPrice === 0) {
-        try {
-          const fallbackResponse = await fetch("/api/price/sol")
-          const fallbackData = await fallbackResponse.json()
-          fetchedSolPrice = fallbackData.data?.price || 150
-        } catch {
-          fetchedSolPrice = 150
+      if (response.ok) {
+        const result = await response.json()
+        
+        if (result.success && result.data) {
+          const priceMap = new Map<string, { priceSol: number; priceUsd: number }>()
+          
+          for (const [mint, priceData] of Object.entries(result.data)) {
+            const data = priceData as { priceSol: number; priceUsd: number }
+            priceMap.set(mint, { priceSol: data.priceSol, priceUsd: data.priceUsd })
+          }
+          
+          setPrices(priceMap)
+          setSolPriceUsd(result.solPriceUsd || 0)
+          setLastUpdated(Date.now())
+          setError(null)
+          return
         }
       }
-      
-      setSolPriceUsd(fetchedSolPrice)
 
-      // Batch fetch token prices (max 100 per request)
-      const batchSize = 100
+      // Fallback to DexScreener (one by one)
       const priceMap = new Map<string, { priceSol: number; priceUsd: number }>()
+      const fetchedSolPrice = solPriceUsd > 0 ? solPriceUsd : 150
 
-      for (let i = 0; i < mintAddresses.length; i += batchSize) {
-        const batch = mintAddresses.slice(i, i + batchSize)
-        const ids = batch.join(",")
-        
+      for (const mint of mintAddresses.slice(0, 10)) { // Limit fallback to 10
         try {
-          const response = await fetch(`${JUPITER_PRICE_API}?ids=${ids}`)
-          
-          if (response.ok) {
-            const data: JupiterPriceResponse = await response.json()
-            
-            for (const mint of batch) {
-              const priceUsd = data.data?.[mint]?.price || 0
-              const priceSol = fetchedSolPrice > 0 ? priceUsd / fetchedSolPrice : 0
+          const dexResponse = await fetch(
+            `https://api.dexscreener.com/latest/dex/tokens/${mint}`
+          )
+          if (dexResponse.ok) {
+            const dexData = await dexResponse.json()
+            const pair = dexData.pairs?.find(
+              (p: { priceUsd?: string }) => p.priceUsd && parseFloat(p.priceUsd) > 0
+            )
+            if (pair) {
+              const priceUsd = parseFloat(pair.priceUsd)
+              const priceSol = priceUsd / fetchedSolPrice
               priceMap.set(mint, { priceSol, priceUsd })
+            } else {
+              priceMap.set(mint, { priceSol: 0, priceUsd: 0 })
             }
           }
-        } catch (err) {
-          console.warn("[useBatchLivePrices] Batch fetch failed:", err)
-          // Set zeros for failed batch
-          for (const mint of batch) {
-            priceMap.set(mint, { priceSol: 0, priceUsd: 0 })
-          }
+        } catch {
+          priceMap.set(mint, { priceSol: 0, priceUsd: 0 })
         }
       }
 
       setPrices(priceMap)
       setLastUpdated(Date.now())
-      setError(null)
     } catch (err) {
       console.warn("[useBatchLivePrices] Failed:", err)
       setError(err instanceof Error ? err.message : "Failed to fetch prices")
     } finally {
       setIsLoading(false)
     }
-  }, [mintAddresses])
+  }, [mintAddresses, solPriceUsd])
 
   // Fetch on mount and when addresses change
   useEffect(() => {
