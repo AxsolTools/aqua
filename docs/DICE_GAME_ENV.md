@@ -1,126 +1,119 @@
-# Dice Game Environment Variables
+# AQUA Dice Game - Environment Configuration
 
-Add these environment variables to your `.env.local` file to configure the dice game.
+Copy the configuration below to your `.env` or `.env.local` file and fill in your values.
 
-## Required for Dice Game
+**Never commit your actual `.env` file to version control!**
 
 ```bash
 # ===========================================
-# DICE GAME SERVER CONFIGURATION
+# AQUA DICE GAME - Environment Configuration
 # ===========================================
 
-# Server port for the dice game backend
+# ===========================================
+# Server Configuration
+# ===========================================
 DICE_SERVER_PORT=5001
+NODE_ENV=production
 
-# URL for Next.js to proxy to dice server
-DICE_SERVER_URL=http://localhost:5001
+# ===========================================
+# Solana Network Configuration
+# ===========================================
+# Comma-separated list of RPC endpoints for failover support
+SOLANA_RPC_URLS=https://api.mainnet-beta.solana.com,https://solana-api.projectserum.com
 
+# Optional: WebSocket URL for real-time updates
+SOLANA_WS_URL=wss://api.mainnet-beta.solana.com
+
+# ===========================================
+# House Wallet Configuration (CRITICAL)
+# ===========================================
+# The house wallet holds funds for payouts and receives deposits
+# Format: Base58 encoded secret key
+# SECURITY WARNING: Keep this secret! Never share or commit!
+HOUSE_WALLET_SECRET=your_base58_secret_key_here
+
+# ===========================================
+# Token Configuration
+# ===========================================
+# The SPL token mint address
+LOCKED_TOKEN_MINT=your_token_mint_address
+
+# Token decimals
+TOKEN_DECIMALS=6
+
+# Token symbol for display (rebranded for Aqua)
+LOCKED_TOKEN_SYMBOL=AQUA
+
+# Token name for display
+LOCKED_TOKEN_NAME=AQUA Token
+
+# ===========================================
+# Dice Game Configuration
+# ===========================================
 # Enable/disable the dice game
 DICE_ENABLED=true
 
-# ===========================================
-# HOUSE WALLET (CRITICAL - KEEP SECRET!)
-# ===========================================
-# The house wallet holds funds for payouts and receives lost bets
-# Format: Base58 encoded secret key
-# Generate a new wallet: solana-keygen new --no-outfile
-HOUSE_WALLET_SECRET=your_base58_encoded_secret_key_here
-
-# House wallet public address (for reference)
-HOUSE_WALLET_ADDRESS=your_house_wallet_public_address
-
-# ===========================================
-# BETTING TOKEN CONFIGURATION
-# ===========================================
-# The SPL token mint address for betting
-DICE_TOKEN_MINT=your_spl_token_mint_address
-
-# Token decimals (standard is 9 for most SPL tokens)
-DICE_TOKEN_DECIMALS=9
-
-# Token symbol for display in UI
-NEXT_PUBLIC_DICE_TOKEN_SYMBOL=AQUA
-
-# Token name
-DICE_TOKEN_NAME=AQUA Token
-
-# ===========================================
-# GAME SETTINGS
-# ===========================================
-# House edge percentage (1.5 = 1.5% house advantage)
-HOUSE_EDGE=1.5
+# House edge percentage (e.g., 3.5 = 3.5% house edge)
+HOUSE_EDGE=3.5
 
 # Minimum bet amount in tokens
-MIN_BET_AMOUNT=1
+MIN_BET_AMOUNT=100000
 
-# Maximum bet amount in tokens  
-MAX_BET_AMOUNT=10000
+# Maximum bet amount in tokens
+MAX_BET_AMOUNT=20000000
 
-# Maximum profit per bet (caps winnings to protect house bankroll)
-MAX_PROFIT=5000
-
-# ===========================================
-# RATE LIMITING (Abuse Prevention)
-# ===========================================
-# Maximum bets per minute per user
-MAX_BETS_PER_MINUTE=10
-
-# Minimum time between bets in milliseconds
-MIN_BET_INTERVAL_MS=3000
+# Maximum profit per bet in tokens
+MAX_PROFIT=500000000
 
 # ===========================================
-# SECURITY
+# Fee Configuration
 # ===========================================
-# Wallet encryption key for dice game's wallet storage
-# Must be a 64-character hex string (32 bytes)
-# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-WALLET_ENCRYPTION_KEY=your_64_char_hex_key_here
+# Wallet address to receive platform fees
+FEE_WALLET_ADDRESS=97eZABzDSGLc148oBjVRxcogduFCmZN8pofo23hpWWXw
 
 # ===========================================
-# FEES
+# Admin Configuration
 # ===========================================
-# Wallet address to receive platform fees (optional)
-FEE_WALLET_ADDRESS=your_fee_wallet_address
+# Admin wallet addresses (comma-separated for multiple admins)
+ADMIN_WALLET_ADDRESSES=97eZABzDSGLc148oBjVRxcogduFCmZN8pofo23hpWWXw
 
 # ===========================================
-# ADMIN
+# Security Configuration
 # ===========================================
-# Admin wallet addresses (comma-separated)
-ADMIN_WALLET_ADDRESSES=admin_wallet_1,admin_wallet_2
+# Rate limiting window in milliseconds
+RATE_LIMIT_WINDOW_MS=60000
+
+# Maximum requests per window
+RATE_LIMIT_MAX_REQUESTS=100
+
+# ===========================================
+# Logging Configuration
+# ===========================================
+# Log level: debug, info, warn, error
+LOG_LEVEL=info
+
+# ===========================================
+# Vesting Configuration
+# ===========================================
+MIN_VESTING_DAYS=1
+MAX_VESTING_DAYS=3650
+
+# ===========================================
+# Development Only
+# ===========================================
+DEBUG_MODE=false
 ```
 
-## How to Configure
+## Required Environment Variables
 
-1. Copy the variables above to your `.env.local` file
-2. Fill in your actual values
-3. Restart both servers (`pnpm dev:all`)
-
-## Running the Dice Game
-
-```bash
-# Run both Next.js and Dice Server together
-pnpm dev:all
-
-# Or run separately:
-pnpm dev          # Next.js frontend
-pnpm dice:dev     # Dice game backend
-```
+| Variable | Description |
+|----------|-------------|
+| `SOLANA_RPC_URLS` | At least one Solana RPC endpoint |
+| `HOUSE_WALLET_SECRET` | Base58 encoded secret key for the house wallet |
+| `LOCKED_TOKEN_MINT` | SPL token mint address for the game token |
 
 ## Security Notes
 
-- **NEVER commit your `.env` file** - It contains secrets
-- **Secure your HOUSE_WALLET_SECRET** - This wallet controls all payouts
-- **Use a dedicated house wallet** - Don't use your personal wallet
-- **Fund the house wallet** - It needs tokens to pay out winners
-- **Monitor the house balance** - Ensure it can cover max potential payouts
-
-## Understanding the Settings
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `HOUSE_EDGE` | Your profit margin on all bets | 1.5 = 1.5% edge |
-| `MIN_BET_AMOUNT` | Smallest allowed bet | 1 token |
-| `MAX_BET_AMOUNT` | Largest allowed bet | 10000 tokens |
-| `MAX_PROFIT` | Cap on winnings per bet | 5000 tokens |
-| `MAX_BETS_PER_MINUTE` | Rate limit per user | 10 bets/min |
-
+1. **Never commit your `.env` file** - It contains sensitive credentials
+2. **Use strong RPC providers in production** - Free public endpoints have rate limits
+3. **Secure your house wallet secret** - This wallet controls all payouts
