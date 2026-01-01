@@ -197,13 +197,14 @@ export async function uploadToken22Metadata(metadata: Token22Metadata): Promise<
 }
 
 /**
- * Upload data to Arweave/IPFS via multiple providers with fallback
+ * Upload data to IPFS via free public APIs (no signup required)
  * 
  * Priority order:
- * 1. ArDrive Turbo - FREE for files under 100 KiB, no API keys needed
- * 2. PumpPortal IPFS - Free fallback
- * 3. Pinata - Requires API keys
- * 4. Data URI - Last resort for images
+ * 1. PumpPortal IPFS - Free public API, no signup needed
+ * 2. Pinata - Only if API keys are configured (optional)
+ * 3. Data URI - Last resort for images
+ * 
+ * Note: PumpPortal IPFS is the same free public API used for Pump.fun tokens
  */
 async function uploadToIPFSProvider(
   data: Buffer,
@@ -212,66 +213,12 @@ async function uploadToIPFSProvider(
   const FormDataLib = (await import('form-data')).default;
   const axios = (await import('axios')).default;
 
-  // Check file size for Turbo free tier (100 KiB = 102,400 bytes)
-  const MAX_FREE_SIZE = 102400;
-  const isEligibleForFreeTurbo = data.length <= MAX_FREE_SIZE;
+  console.log(`[TOKEN22] Uploading ${data.length} bytes (${contentType})`);
 
-  // Try ArDrive Turbo first - FREE uploads under 100 KiB, no wallet/credits needed
-  if (isEligibleForFreeTurbo) {
-    try {
-      console.log(`[TOKEN22] Attempting ArDrive Turbo upload (${data.length} bytes, free tier eligible)`);
-      
-      // Use Turbo's unauthenticated upload for small files
-      // This uses the public upload endpoint which is free for small files
-      const { TurboFactory } = await import('@ardrive/turbo-sdk');
-      
-      // Create unauthenticated turbo client for free uploads
-      const turbo = TurboFactory.unauthenticated();
-      
-      // Upload using the turbo SDK
-      const result = await turbo.uploadSignedDataItem({
-        dataItemStreamFactory: () => {
-          // Create a simple signed data item
-          const { Readable } = require('stream');
-          return Readable.from(data);
-        },
-        dataItemSizeFactory: () => data.length,
-      });
-
-      if (result?.id) {
-        const arweaveUri = `https://arweave.net/${result.id}`;
-        console.log(`[TOKEN22] ArDrive Turbo upload success: ${arweaveUri}`);
-        return { success: true, uri: arweaveUri };
-      }
-    } catch (turboError) {
-      console.warn('[TOKEN22] ArDrive Turbo upload failed, trying alternatives...', turboError);
-    }
-  } else {
-    console.log(`[TOKEN22] File too large for free Turbo tier (${data.length} bytes > ${MAX_FREE_SIZE})`);
-  }
-
-  // Fallback 1: Try direct Arweave gateway upload via fetch (no SDK needed)
-  // arweave.net accepts direct POST for small files
+  // Primary: PumpPortal IPFS - FREE public API, no signup/API key needed
+  // This is the same endpoint used for Pump.fun token uploads
   try {
-    console.log('[TOKEN22] Attempting direct Arweave gateway upload...');
-    const response = await axios.post('https://up.arweave.net/tx', data, {
-      headers: {
-        'Content-Type': contentType,
-      },
-      timeout: 60000,
-    });
-    
-    if (response.data?.id) {
-      const arweaveUri = `https://arweave.net/${response.data.id}`;
-      console.log(`[TOKEN22] Direct Arweave upload success: ${arweaveUri}`);
-      return { success: true, uri: arweaveUri };
-    }
-  } catch (arweaveError) {
-    console.warn('[TOKEN22] Direct Arweave upload failed, trying IPFS...');
-  }
-
-  // Fallback 2: Try PumpPortal IPFS (works well and is free)
-  try {
+    console.log('[TOKEN22] Attempting PumpPortal IPFS upload...');
     const form = new FormDataLib();
     form.append('file', data, {
       filename: contentType.includes('json') ? 'metadata.json' : 'image.png',
@@ -287,16 +234,18 @@ async function uploadToIPFSProvider(
       console.log(`[TOKEN22] PumpPortal IPFS upload success: ${response.data.metadataUri}`);
       return { success: true, uri: response.data.metadataUri };
     }
-  } catch (e) {
-    console.warn('[TOKEN22] PumpPortal IPFS failed, trying Pinata...');
+  } catch (pumpError) {
+    console.warn('[TOKEN22] PumpPortal IPFS failed:', 
+      pumpError instanceof Error ? pumpError.message : 'Unknown error');
   }
 
-  // Fallback 3: Try Pinata if available
+  // Fallback: Pinata - only if API keys are configured
   const pinataKey = process.env.PINATA_API_KEY;
   const pinataSecret = process.env.PINATA_SECRET_KEY;
   
   if (pinataKey && pinataSecret) {
     try {
+      console.log('[TOKEN22] Attempting Pinata IPFS upload...');
       const form = new FormDataLib();
       form.append('file', data, {
         filename: contentType.includes('json') ? 'metadata.json' : 'image.png',
@@ -317,19 +266,19 @@ async function uploadToIPFSProvider(
         console.log(`[TOKEN22] Pinata IPFS upload success: ${pinataUri}`);
         return { success: true, uri: pinataUri };
       }
-    } catch (e) {
+    } catch (pinataError) {
       console.warn('[TOKEN22] Pinata IPFS failed');
     }
   }
 
-  // Last resort: If image, use data URI (not ideal but works for display)
+  // Last resort: If image, use data URI (works for display but not ideal for on-chain)
   if (contentType.startsWith('image/')) {
-    console.warn('[TOKEN22] All upload providers failed, using data URI as fallback');
+    console.warn('[TOKEN22] All IPFS providers failed, using data URI as fallback');
     const base64 = data.toString('base64');
     return { success: true, uri: `data:${contentType};base64,${base64}` };
   }
 
-  return { success: false, error: 'All upload providers failed' };
+  return { success: false, error: 'All IPFS upload providers failed' };
 }
 
 // ============================================================================
