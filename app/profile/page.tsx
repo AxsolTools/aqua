@@ -25,13 +25,16 @@ export default function ProfilePage() {
   const [walletBalances, setWalletBalances] = useState<Record<string, number>>({})
   const [balancesLoading, setBalancesLoading] = useState(false)
   
-  // Settings state
+  // Trading settings state
   const [slippage, setSlippage] = useState<number>(1)
   const [customSlippage, setCustomSlippage] = useState<string>("")
   const [isCustomSlippage, setIsCustomSlippage] = useState(false)
-  const [priorityFee, setPriorityFee] = useState<string>("medium")
+  const [priorityFee, setPriorityFee] = useState<number>(0.0005)
   const [customPriorityFee, setCustomPriorityFee] = useState<string>("")
   const [isCustomPriorityFee, setIsCustomPriorityFee] = useState(false)
+  const [jitoTip, setJitoTip] = useState<number>(0.0001)
+  const [customJitoTip, setCustomJitoTip] = useState<string>("")
+  const [isCustomJitoTip, setIsCustomJitoTip] = useState(false)
 
   const supabase = createClient()
   
@@ -39,12 +42,11 @@ export default function ProfilePage() {
   useEffect(() => {
     const savedSlippage = localStorage.getItem("aqua_slippage")
     const savedPriorityFee = localStorage.getItem("aqua_priority_fee")
-    const savedCustomSlippage = localStorage.getItem("aqua_custom_slippage")
-    const savedCustomPriorityFee = localStorage.getItem("aqua_custom_priority_fee")
+    const savedJitoTip = localStorage.getItem("aqua_jito_tip")
     
     if (savedSlippage) {
       const slippageValue = parseFloat(savedSlippage)
-      if ([0.5, 1, 2, 5].includes(slippageValue)) {
+      if ([0.1, 0.5, 1, 2, 3, 5, 10].includes(slippageValue)) {
         setSlippage(slippageValue)
         setIsCustomSlippage(false)
       } else {
@@ -55,21 +57,27 @@ export default function ProfilePage() {
     }
     
     if (savedPriorityFee) {
-      if (["low", "medium", "high"].includes(savedPriorityFee)) {
-        setPriorityFee(savedPriorityFee)
+      const feeValue = parseFloat(savedPriorityFee)
+      if ([0.00005, 0.0001, 0.0005, 0.001, 0.005].includes(feeValue)) {
+        setPriorityFee(feeValue)
         setIsCustomPriorityFee(false)
-        setCustomPriorityFee("")
-      } else {
-        setPriorityFee("custom")
+      } else if (!isNaN(feeValue)) {
+        setPriorityFee(feeValue)
         setCustomPriorityFee(savedPriorityFee)
         setIsCustomPriorityFee(true)
       }
     }
     
-    if (savedCustomPriorityFee) {
-      setCustomPriorityFee(savedCustomPriorityFee)
-      setIsCustomPriorityFee(true)
-      setPriorityFee("custom")
+    if (savedJitoTip) {
+      const tipValue = parseFloat(savedJitoTip)
+      if ([0, 0.00005, 0.0001, 0.0005, 0.001].includes(tipValue)) {
+        setJitoTip(tipValue)
+        setIsCustomJitoTip(false)
+      } else if (!isNaN(tipValue)) {
+        setJitoTip(tipValue)
+        setCustomJitoTip(savedJitoTip)
+        setIsCustomJitoTip(true)
+      }
     }
   }, [])
   
@@ -79,7 +87,6 @@ export default function ProfilePage() {
     setIsCustomSlippage(false)
     setCustomSlippage("")
     localStorage.setItem("aqua_slippage", value.toString())
-    localStorage.removeItem("aqua_custom_slippage")
   }
   
   // Save custom slippage to localStorage
@@ -90,36 +97,44 @@ export default function ProfilePage() {
       setSlippage(numValue)
       setIsCustomSlippage(true)
       localStorage.setItem("aqua_slippage", numValue.toString())
-      localStorage.setItem("aqua_custom_slippage", value)
     }
   }
   
   // Save priority fee to localStorage
-  const handlePriorityFeeChange = (value: string) => {
-    if (value === "custom") {
-      setPriorityFee("custom")
-      setIsCustomPriorityFee(true)
-      // Keep existing custom value if available
-      if (!customPriorityFee) {
-        setCustomPriorityFee("")
-      }
-    } else {
-      setPriorityFee(value)
-      setIsCustomPriorityFee(false)
-      setCustomPriorityFee("")
-      localStorage.setItem("aqua_priority_fee", value)
-      localStorage.removeItem("aqua_custom_priority_fee")
-    }
+  const handlePriorityFeeChange = (value: number) => {
+    setPriorityFee(value)
+    setIsCustomPriorityFee(false)
+    setCustomPriorityFee("")
+    localStorage.setItem("aqua_priority_fee", value.toString())
   }
   
   // Save custom priority fee to localStorage
   const handleCustomPriorityFeeChange = (value: string) => {
     setCustomPriorityFee(value)
     if (value && !isNaN(parseFloat(value)) && parseFloat(value) >= 0) {
+      const numValue = parseFloat(value)
+      setPriorityFee(numValue)
       setIsCustomPriorityFee(true)
-      setPriorityFee("custom")
       localStorage.setItem("aqua_priority_fee", value)
-      localStorage.setItem("aqua_custom_priority_fee", value)
+    }
+  }
+  
+  // Save Jito tip to localStorage
+  const handleJitoTipChange = (value: number) => {
+    setJitoTip(value)
+    setIsCustomJitoTip(false)
+    setCustomJitoTip("")
+    localStorage.setItem("aqua_jito_tip", value.toString())
+  }
+  
+  // Save custom Jito tip to localStorage
+  const handleCustomJitoTipChange = (value: string) => {
+    setCustomJitoTip(value)
+    if (value && !isNaN(parseFloat(value)) && parseFloat(value) >= 0) {
+      const numValue = parseFloat(value)
+      setJitoTip(numValue)
+      setIsCustomJitoTip(true)
+      localStorage.setItem("aqua_jito_tip", value)
     }
   }
 
@@ -552,23 +567,30 @@ export default function ProfilePage() {
                   )}
 
                   {activeTab === "settings" && (
-                    <GlassPanel className="p-6">
-                      <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-6">Settings</h2>
-                      <div className="space-y-6">
-                        <div>
-                          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                            Default Slippage
-                          </label>
-                          <div className="flex gap-2 mb-3">
-                            {[0.5, 1, 2, 5].map((value) => (
+                    <div className="space-y-4">
+                      {/* Trading Settings */}
+                      <GlassPanel className="p-5">
+                        <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-sm font-semibold text-[var(--text-primary)] uppercase tracking-wide">Trading Settings</h3>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium">Auto-saved</span>
+                        </div>
+                        
+                        {/* Slippage */}
+                        <div className="mb-5">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Slippage Tolerance</span>
+                            <span className="text-xs font-mono text-[var(--aqua-primary)]">{slippage}%</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {[0.1, 0.5, 1, 2, 3, 5, 10].map((value) => (
                               <button
                                 key={value}
                                 onClick={() => handleSlippageChange(value)}
                                 className={cn(
-                                  "px-4 py-2 rounded-lg border text-sm transition-colors",
+                                  "px-3 py-1.5 rounded text-xs font-medium transition-all",
                                   !isCustomSlippage && slippage === value
-                                    ? "border-[var(--aqua-primary)] bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]"
-                                    : "border-[var(--glass-border)] text-[var(--text-primary)] hover:border-[var(--aqua-primary)]/50"
+                                    ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                                    : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:bg-[var(--aqua-primary)]/20 hover:text-[var(--aqua-primary)]"
                                 )}
                               >
                                 {value}%
@@ -584,50 +606,122 @@ export default function ProfilePage() {
                               value={isCustomSlippage ? customSlippage : ""}
                               onChange={(e) => handleCustomSlippageChange(e.target.value)}
                               onFocus={() => setIsCustomSlippage(true)}
-                              placeholder="Custom %"
-                              className="flex-1 px-4 py-2 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+                              placeholder="Custom"
+                              className="w-24 px-3 py-1.5 rounded bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
                             />
-                            <span className="text-sm text-[var(--text-secondary)]">%</span>
+                            <span className="text-xs text-[var(--text-muted)]">%</span>
                           </div>
-                          {isCustomSlippage && customSlippage && (
-                            <p className="text-xs text-[var(--text-muted)] mt-1">
-                              Current: {parseFloat(customSlippage) || slippage}%
-                            </p>
-                          )}
                         </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
-                            Priority Fee
-                          </label>
-                          <select
-                            value={priorityFee}
-                            onChange={(e) => handlePriorityFeeChange(e.target.value)}
-                            className="w-full px-4 py-3 rounded-xl bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)] mb-3"
-                          >
-                            <option value="low">Low (0.0001 SOL)</option>
-                            <option value="medium">Medium (0.0005 SOL)</option>
-                            <option value="high">High (0.001 SOL)</option>
-                            <option value="custom">Custom</option>
-                          </select>
-                          {priorityFee === "custom" && (
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.0001"
-                                value={isCustomPriorityFee ? customPriorityFee : ""}
-                                onChange={(e) => handleCustomPriorityFeeChange(e.target.value)}
-                                onFocus={() => setIsCustomPriorityFee(true)}
-                                placeholder="0.0001"
-                                className="flex-1 px-4 py-2 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
-                              />
-                              <span className="text-sm text-[var(--text-secondary)]">SOL</span>
-                            </div>
-                          )}
+                        
+                        {/* Priority Fee */}
+                        <div className="mb-5 pt-4 border-t border-[var(--glass-border)]">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Priority Fee</span>
+                            <span className="text-xs font-mono text-[var(--aqua-primary)]">{priorityFee} SOL</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {[
+                              { value: 0.00005, label: "0.00005" },
+                              { value: 0.0001, label: "0.0001" },
+                              { value: 0.0005, label: "0.0005" },
+                              { value: 0.001, label: "0.001" },
+                              { value: 0.005, label: "0.005" },
+                            ].map(({ value, label }) => (
+                              <button
+                                key={value}
+                                onClick={() => handlePriorityFeeChange(value)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded text-xs font-mono transition-all",
+                                  !isCustomPriorityFee && priorityFee === value
+                                    ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                                    : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:bg-[var(--aqua-primary)]/20 hover:text-[var(--aqua-primary)]"
+                                )}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.00001"
+                              value={isCustomPriorityFee ? customPriorityFee : ""}
+                              onChange={(e) => handleCustomPriorityFeeChange(e.target.value)}
+                              onFocus={() => setIsCustomPriorityFee(true)}
+                              placeholder="Custom"
+                              className="w-28 px-3 py-1.5 rounded bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+                            />
+                            <span className="text-xs text-[var(--text-muted)]">SOL</span>
+                          </div>
                         </div>
-                      </div>
-                    </GlassPanel>
+                        
+                        {/* Jito Tip */}
+                        <div className="pt-4 border-t border-[var(--glass-border)]">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Jito Bundle Tip</span>
+                            <span className="text-xs font-mono text-[var(--aqua-primary)]">{jitoTip} SOL</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {[
+                              { value: 0, label: "Off" },
+                              { value: 0.00005, label: "0.00005" },
+                              { value: 0.0001, label: "0.0001" },
+                              { value: 0.0005, label: "0.0005" },
+                              { value: 0.001, label: "0.001" },
+                            ].map(({ value, label }) => (
+                              <button
+                                key={value}
+                                onClick={() => handleJitoTipChange(value)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded text-xs font-mono transition-all",
+                                  !isCustomJitoTip && jitoTip === value
+                                    ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                                    : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:bg-[var(--aqua-primary)]/20 hover:text-[var(--aqua-primary)]"
+                                )}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.00001"
+                              value={isCustomJitoTip ? customJitoTip : ""}
+                              onChange={(e) => handleCustomJitoTipChange(e.target.value)}
+                              onFocus={() => setIsCustomJitoTip(true)}
+                              placeholder="Custom"
+                              className="w-28 px-3 py-1.5 rounded bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+                            />
+                            <span className="text-xs text-[var(--text-muted)]">SOL</span>
+                          </div>
+                          <p className="text-[10px] text-[var(--text-muted)] mt-2">
+                            Jito tips prioritize your transactions in the block. Higher tips = faster execution.
+                          </p>
+                        </div>
+                      </GlassPanel>
+                      
+                      {/* Current Active Settings Summary */}
+                      <GlassPanel className="p-4">
+                        <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">Active Configuration</h4>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center p-3 rounded-lg bg-[var(--ocean-surface)]">
+                            <p className="text-lg font-bold font-mono text-[var(--aqua-primary)]">{slippage}%</p>
+                            <p className="text-[10px] text-[var(--text-muted)] uppercase">Slippage</p>
+                          </div>
+                          <div className="text-center p-3 rounded-lg bg-[var(--ocean-surface)]">
+                            <p className="text-lg font-bold font-mono text-[var(--aqua-primary)]">{priorityFee}</p>
+                            <p className="text-[10px] text-[var(--text-muted)] uppercase">Priority</p>
+                          </div>
+                          <div className="text-center p-3 rounded-lg bg-[var(--ocean-surface)]">
+                            <p className="text-lg font-bold font-mono text-[var(--aqua-primary)]">{jitoTip}</p>
+                            <p className="text-[10px] text-[var(--text-muted)] uppercase">Jito Tip</p>
+                          </div>
+                        </div>
+                      </GlassPanel>
+                    </div>
                   )}
                 </motion.div>
               </>

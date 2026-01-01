@@ -91,6 +91,13 @@ export async function POST(request: NextRequest) {
       // Pre-generated mint keypair from frontend
       mintSecretKey,
       mintAddress: preGeneratedMintAddress,
+      
+      // Anti-sniper configuration
+      antiSniper,
+      
+      // Bundle configuration
+      launchWithBundle = false,
+      bundleWallets = [],
     } = body;
 
     // ========== VALIDATION ==========
@@ -387,6 +394,61 @@ export async function POST(request: NextRequest) {
 
     console.log(`[TOKEN22] Created successfully: ${createResult.mintAddress}`);
 
+    // ========== ANTI-SNIPER MONITORING ==========
+    let antiSniperMonitor = null;
+    
+    if (antiSniper?.enabled && launchWithBundle && bundleWallets?.length > 0) {
+      console.log(`[TOKEN22] Starting anti-sniper monitoring for ${createResult.mintAddress}`);
+      
+      try {
+        // Get current slot for monitoring window
+        const currentSlot = await connection.getSlot('confirmed');
+        
+        // Get all user wallet addresses for ignore list
+        const { data: userWallets } = await adminClient
+          .from('wallets')
+          .select('public_key')
+          .eq('session_id', sessionId);
+        
+        const userWalletAddresses = (userWallets || []).map(w => w.public_key);
+        
+        // Store anti-sniper config in database
+        await adminClient.from('anti_sniper_monitors').insert({
+          token_mint: createResult.mintAddress,
+          session_id: sessionId,
+          config: antiSniper,
+          launch_slot: currentSlot,
+          user_wallets: userWalletAddresses,
+          total_supply: parseFloat(totalSupply),
+          decimals,
+          status: 'active',
+          triggered: false,
+          started_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + (antiSniper.monitorBlocksWindow + 5) * 400).toISOString(),
+        });
+        
+        antiSniperMonitor = {
+          enabled: true,
+          status: 'active',
+          launchSlot: currentSlot,
+          windowBlocks: antiSniper.monitorBlocksWindow,
+          maxSupplyPercent: antiSniper.maxSupplyPercentThreshold,
+          maxSolAmount: antiSniper.maxSolAmountThreshold,
+          autoSellWallets: antiSniper.autoSellWalletIds?.length || 0,
+          sellPercentage: antiSniper.sellPercentage,
+        };
+        
+        console.log(`[TOKEN22] Anti-sniper monitor started:`, antiSniperMonitor);
+      } catch (antiSniperError) {
+        console.error(`[TOKEN22] Failed to start anti-sniper monitor:`, antiSniperError);
+        antiSniperMonitor = {
+          enabled: true,
+          status: 'error',
+          error: antiSniperError instanceof Error ? antiSniperError.message : 'Failed to start',
+        };
+      }
+    }
+
     // ========== RESPONSE ==========
     return NextResponse.json({
       success: true,
@@ -408,6 +470,8 @@ export async function POST(request: NextRequest) {
         // Next steps
         needsLiquidityPool: !autoCreatePool,
         poolCreationUrl: `/api/token22/pool/create`,
+        // Anti-sniper status
+        antiSniper: antiSniperMonitor,
       },
     });
 

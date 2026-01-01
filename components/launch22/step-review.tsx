@@ -179,6 +179,40 @@ export function Step22Review({ formData, onBack, onDeploy, isDeploying, error, m
         </div>
       )}
 
+      {/* Anti-Sniper Protection */}
+      {formData.antiSniper?.enabled && (
+        <div className="p-4 rounded-xl bg-gradient-to-r from-red-500/10 to-orange-500/10 border border-red-500/30">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold text-white/70 uppercase tracking-wider">Anti-Sniper</h3>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 uppercase">Active</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="flex justify-between">
+              <span className="text-white/50">Window</span>
+              <span className="font-mono text-white">{Math.min(formData.antiSniper.monitorBlocksWindow, 8)} blocks</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Max Supply</span>
+              <span className="font-mono text-purple-400">{formData.antiSniper.maxSupplyPercentThreshold}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Max SOL</span>
+              <span className="font-mono text-cyan-400">{formData.antiSniper.maxSolAmountThreshold}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Auto-Sell</span>
+              <span className="font-mono text-blue-400">{formData.antiSniper.autoSellWalletIds.length}w @ {formData.antiSniper.sellPercentage}%</span>
+            </div>
+          </div>
+          {formData.antiSniper.takeProfitEnabled && (
+            <div className="mt-2 pt-2 border-t border-white/10 flex justify-between text-xs">
+              <span className="text-white/50">Take Profit</span>
+              <span className="font-mono text-green-400">{formData.antiSniper.takeProfitMultiplier}x</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Pre-generated Mint Address */}
       {mintAddress && (
         <div className="p-5 rounded-xl bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border border-cyan-500/30">

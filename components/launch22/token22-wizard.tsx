@@ -10,6 +10,7 @@ import { Step22Basics } from "@/components/launch22/step-basics"
 import { Step22Extensions } from "@/components/launch22/step-extensions"
 import { Step22Distribution } from "@/components/launch22/step-distribution"
 import { Step22Liquidity } from "@/components/launch22/step-liquidity"
+import { Step22AntiSniper } from "@/components/launch22/step-anti-sniper"
 import { Step22Review } from "@/components/launch22/step-review"
 import { Token22Preview } from "@/components/launch22/token22-preview"
 import { StepBundle } from "@/components/launch/step-bundle"
@@ -23,6 +24,22 @@ export interface BundleWalletConfig {
   buyAmount: number
   balance: number
   selected: boolean
+}
+
+export interface AntiSniperSettings {
+  enabled: boolean
+  // Threshold triggers - if ANY condition is met, auto-sell triggers
+  maxSupplyPercentThreshold: number // e.g., 5 = 5% of supply
+  maxSolAmountThreshold: number // e.g., 10 = 10 SOL max buy
+  // Monitoring window (blocks from launch)
+  monitorBlocksWindow: number // 0-6 blocks (default 6)
+  // Take profit trigger (optional - sell when price hits target)
+  takeProfitEnabled: boolean
+  takeProfitMultiplier: number // e.g., 2 = 2x from entry
+  // Which wallets to auto-sell (excludes dev wallet by default)
+  autoSellWalletIds: string[]
+  // Sell percentage when triggered
+  sellPercentage: number // 0-100, how much of holdings to sell
 }
 
 export interface Token22FormData {
@@ -63,6 +80,20 @@ export interface Token22FormData {
   // Bundle Launch Options
   launchWithBundle: boolean
   bundleWallets: BundleWalletConfig[]
+  
+  // Anti-Sniper Protection
+  antiSniper: AntiSniperSettings
+}
+
+export const initialAntiSniperSettings: AntiSniperSettings = {
+  enabled: false,
+  maxSupplyPercentThreshold: 3, // Trigger if buy > 3% of supply
+  maxSolAmountThreshold: 5, // Trigger if buy > 5 SOL
+  monitorBlocksWindow: 6, // Monitor first 6 blocks
+  takeProfitEnabled: false,
+  takeProfitMultiplier: 2, // 2x take profit
+  autoSellWalletIds: [], // Will be populated with bundle wallet IDs
+  sellPercentage: 100, // Sell 100% by default
 }
 
 export const initialToken22FormData: Token22FormData = {
@@ -103,6 +134,9 @@ export const initialToken22FormData: Token22FormData = {
   // Bundle defaults
   launchWithBundle: false,
   bundleWallets: [],
+  
+  // Anti-sniper defaults
+  antiSniper: initialAntiSniperSettings,
 }
 
 const steps = [
@@ -111,7 +145,8 @@ const steps = [
   { id: 3, name: "Distribution", description: "Supply allocation" },
   { id: 4, name: "Liquidity", description: "Raydium pool" },
   { id: 5, name: "Bundle", description: "Launch options" },
-  { id: 6, name: "Review", description: "Deploy token" },
+  { id: 6, name: "Anti-Sniper", description: "Protection settings" },
+  { id: 7, name: "Review", description: "Deploy token" },
 ]
 
 interface Token22WizardProps {
@@ -147,11 +182,11 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
   }
 
   const nextStep = () => {
-    if (currentStep < 6) {
+    if (currentStep < 7) {
       const newStep = currentStep + 1
       setCurrentStep(newStep)
       // Generate mint keypair when entering review step
-      if (newStep === 6 && !mintKeypair) {
+      if (newStep === 7 && !mintKeypair) {
         generateMintKeypair()
       }
     }
@@ -243,6 +278,18 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
           
           // Bundle configuration
           ...bundleConfig,
+          
+          // Anti-sniper configuration
+          antiSniper: formData.antiSniper.enabled ? {
+            enabled: true,
+            maxSupplyPercentThreshold: formData.antiSniper.maxSupplyPercentThreshold,
+            maxSolAmountThreshold: formData.antiSniper.maxSolAmountThreshold,
+            monitorBlocksWindow: formData.antiSniper.monitorBlocksWindow,
+            takeProfitEnabled: formData.antiSniper.takeProfitEnabled,
+            takeProfitMultiplier: formData.antiSniper.takeProfitMultiplier,
+            autoSellWalletIds: formData.antiSniper.autoSellWalletIds,
+            sellPercentage: formData.antiSniper.sellPercentage,
+          } : { enabled: false },
         }),
       })
 
@@ -356,6 +403,14 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
                 </div>
               )}
               {currentStep === 6 && (
+                <Step22AntiSniper
+                  formData={formData}
+                  updateFormData={updateFormData}
+                  onNext={nextStep}
+                  onBack={prevStep}
+                />
+              )}
+              {currentStep === 7 && (
                 <Step22Review
                   formData={formData}
                   onBack={prevStep}
