@@ -6,6 +6,7 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
 import { FeeBreakdown } from "@/components/ui/fee-breakdown"
 import { useBalance, useTokenBalance } from "@/hooks/use-balance"
+import { useMultiWalletPNL, formatPnlPercent, formatTokenBalance, formatSolBalance } from "@/hooks/use-multi-wallet-pnl"
 import { cn } from "@/lib/utils"
 
 interface TradePanelProps {
@@ -71,7 +72,22 @@ const ERROR_MESSAGES: Record<number, string> = {
 }
 
 export function TradePanel({ token }: TradePanelProps) {
-  const { isAuthenticated, wallets, activeWallet, setActiveWallet, sessionId, userId, setIsOnboarding } = useAuth()
+  const { 
+    isAuthenticated, 
+    wallets, 
+    activeWallet, 
+    setActiveWallet, 
+    sessionId, 
+    userId, 
+    setIsOnboarding,
+    // Multi-wallet state
+    toggledWallets,
+    isMultiWalletMode,
+    toggleWallet,
+    setMultiWalletMode,
+    getToggledWalletAddresses,
+  } = useAuth()
+  
   const [mode, setMode] = useState<"buy" | "sell">("buy")
   const [amount, setAmount] = useState("")
   const [slippage, setSlippage] = useState("1")
@@ -79,6 +95,7 @@ export function TradePanel({ token }: TradePanelProps) {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [showWalletSelector, setShowWalletSelector] = useState(false)
+  const [batchResults, setBatchResults] = useState<{ walletAddress: string; success: boolean; error?: string }[] | null>(null)
   const selectorRef = useRef<HTMLDivElement>(null)
   
   // Fetch LIVE token price (not from database)
@@ -91,6 +108,23 @@ export function TradePanel({ token }: TradePanelProps) {
   
   // Use live price if available, fallback to database price
   const effectivePriceSol = livePriceSol > 0 ? livePriceSol : (token.price_sol || 0)
+  
+  // Multi-wallet PNL data
+  const { 
+    data: walletPNLData, 
+    isLoading: pnlLoading,
+    refresh: refreshPNL,
+    totalTokenBalance,
+    totalValueSol,
+    totalSolBalance,
+  } = useMultiWalletPNL(
+    wallets,
+    token.mint_address || null,
+    effectivePriceSol,
+    livePriceUsd,
+    toggledWallets,
+    { enabled: isAuthenticated && wallets.length > 1, refreshInterval: 15000 }
+  )
   
   // Fetch wallet balance (SOL)
   const { balanceSol, isLoading: balanceLoading, refresh: refreshBalance } = useBalance(
@@ -118,8 +152,9 @@ export function TradePanel({ token }: TradePanelProps) {
     if (mode === "sell") {
       // For sell mode, amt is a percentage (25, 50, 75, 100)
       const percentage = parseFloat(amt)
-      if (tokenBalance > 0) {
-        const calculatedAmount = (tokenBalance * percentage) / 100
+      const balanceToUse = isMultiWalletMode ? totalTokenBalance : tokenBalance
+      if (balanceToUse > 0) {
+        const calculatedAmount = (balanceToUse * percentage) / 100
         setAmount(calculatedAmount.toString())
       } else {
         setAmount("0")
@@ -152,11 +187,6 @@ export function TradePanel({ token }: TradePanelProps) {
       return
     }
     
-    if (!activeWallet?.public_key) {
-      setError("No wallet selected. Please select a wallet.")
-      return
-    }
-    
     if (!amount || parseFloat(amount) <= 0) {
       setError("Please enter a valid amount")
       return
@@ -170,6 +200,83 @@ export function TradePanel({ token }: TradePanelProps) {
     const effectiveSessionId = sessionId || userId
     if (!effectiveSessionId) {
       setError("Session expired. Please refresh and try again.")
+      return
+    }
+
+    // Multi-wallet batch trading
+    if (isMultiWalletMode && toggledWallets.size > 0) {
+      const walletAddresses = getToggledWalletAddresses()
+      
+      if (walletAddresses.length === 0) {
+        setError("Please select at least one wallet for batch trading")
+        return
+      }
+
+      setIsLoading(true)
+      setError(null)
+      setSuccess(null)
+      setBatchResults(null)
+
+      console.log('[BATCH-TRADE] Executing batch trade:', {
+        action: mode,
+        token: token.mint_address?.slice(0, 8),
+        amount,
+        walletCount: walletAddresses.length,
+        slippage,
+      })
+
+      try {
+        const response = await fetch("/api/trade/batch", {
+          method: "POST",
+          headers: getAuthHeaders({
+            sessionId: effectiveSessionId,
+            walletAddress: activeWallet?.public_key || walletAddresses[0],
+            userId: userId,
+          }),
+          body: JSON.stringify({
+            walletAddresses,
+            action: mode,
+            tokenMint: token.mint_address,
+            amountPerWallet: parseFloat(amount),
+            slippageBps: parseFloat(slippage) * 100,
+            tokenDecimals: token.decimals || 6,
+          }),
+        })
+
+        const data = await response.json()
+        console.log('[BATCH-TRADE] Response:', data)
+
+        if (!response.ok) {
+          throw new Error(data.error?.message || "Batch trade failed")
+        }
+
+        const { successCount, failureCount, results } = data.data
+        setBatchResults(results)
+        
+        if (successCount > 0) {
+          setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} with ${successCount}/${results.length} wallets`)
+          setAmount("")
+          setTimeout(() => {
+            refreshBalance()
+            refreshTokenBalance()
+            refreshPrice()
+            refreshPNL()
+          }, 2000)
+        } else {
+          setError(`All ${failureCount} trades failed`)
+        }
+      } catch (err) {
+        console.error('[BATCH-TRADE] Error:', err)
+        setError(err instanceof Error ? err.message : "Batch trade failed")
+      } finally {
+        setIsLoading(false)
+      }
+      return
+    }
+
+    // Single wallet trade
+    if (!activeWallet?.public_key) {
+      setError("No wallet selected. Please select a wallet.")
       return
     }
 
@@ -222,7 +329,7 @@ export function TradePanel({ token }: TradePanelProps) {
         throw new Error(friendlyMessage)
       }
 
-      setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}! 🎉`)
+      setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}!`)
       setAmount("")
       // Refresh balances and price after successful trade
       setTimeout(() => {
@@ -270,11 +377,16 @@ export function TradePanel({ token }: TradePanelProps) {
                 <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Trading with</span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-mono font-medium text-[var(--text-primary)] truncate">
-                    {activeWallet.label || truncateAddress(activeWallet.public_key)}
+                    {isMultiWalletMode ? `${toggledWallets.size} wallets` : (activeWallet.label || truncateAddress(activeWallet.public_key))}
                   </span>
-                  {activeWallet.is_primary && (
+                  {!isMultiWalletMode && activeWallet.is_primary && (
                     <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium flex-shrink-0">
                       Main
+                    </span>
+                  )}
+                  {isMultiWalletMode && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 font-medium flex-shrink-0">
+                      Batch
                     </span>
                   )}
                 </div>
@@ -378,6 +490,104 @@ export function TradePanel({ token }: TradePanelProps) {
         </div>
       )}
 
+      {/* Multi-Wallet Mode Section */}
+      {isAuthenticated && wallets.length > 1 && (
+        <div className="mb-4 border border-[var(--border-subtle)] rounded-lg overflow-hidden">
+          {/* Toggle Header */}
+          <div 
+            className={cn(
+              "flex items-center justify-between p-3 cursor-pointer transition-all",
+              isMultiWalletMode ? "bg-purple-500/10" : "bg-[var(--bg-secondary)]"
+            )}
+            onClick={() => setMultiWalletMode(!isMultiWalletMode)}
+          >
+            <div className="flex items-center gap-2">
+              <div className={cn(
+                "w-5 h-5 rounded border-2 flex items-center justify-center transition-all",
+                isMultiWalletMode 
+                  ? "bg-purple-500 border-purple-500" 
+                  : "border-[var(--border-default)]"
+              )}>
+                {isMultiWalletMode && (
+                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </div>
+              <span className="text-sm font-medium text-[var(--text-primary)]">Multi-Wallet Mode</span>
+            </div>
+            <span className="text-[10px] text-[var(--text-muted)]">Trade with multiple wallets</span>
+          </div>
+
+          {/* Wallet Cards (expanded when enabled) */}
+          {isMultiWalletMode && (
+            <div className="p-3 border-t border-[var(--border-subtle)]">
+              <div className="flex flex-wrap gap-2">
+                {walletPNLData.map((wallet) => {
+                  const pnl = formatPnlPercent(wallet.unrealizedPnlPercent)
+                  return (
+                    <div 
+                      key={wallet.walletId}
+                      onClick={() => toggleWallet(wallet.walletId)}
+                      className={cn(
+                        "flex flex-col p-2 rounded-lg border cursor-pointer transition-all min-w-[80px]",
+                        wallet.isToggled 
+                          ? "border-purple-500 bg-purple-500/10" 
+                          : "border-[var(--border-subtle)] bg-[var(--bg-secondary)] hover:border-[var(--border-default)]"
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className={cn(
+                          "w-3.5 h-3.5 rounded border flex items-center justify-center flex-shrink-0",
+                          wallet.isToggled 
+                            ? "bg-purple-500 border-purple-500" 
+                            : "border-[var(--border-default)]"
+                        )}>
+                          {wallet.isToggled && (
+                            <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-medium text-[var(--text-primary)] truncate max-w-[52px]">
+                          {wallet.label}
+                        </span>
+                      </div>
+                      {/* SOL Balance */}
+                      <div className="text-[9px] font-mono text-[var(--aqua-primary)] mb-0.5">
+                        {formatSolBalance(wallet.solBalance)} SOL
+                      </div>
+                      {/* Token Balance */}
+                      <div className="text-[10px] font-mono text-[var(--text-muted)]">
+                        {formatTokenBalance(wallet.tokenBalance)} {token.symbol?.slice(0, 4)}
+                      </div>
+                      {/* PNL */}
+                      <div className={cn(
+                        "text-[10px] font-semibold",
+                        pnl.color === "green" ? "text-[var(--green)]" : 
+                        pnl.color === "red" ? "text-[var(--red)]" : "text-[var(--text-muted)]"
+                      )}>
+                        {pnl.text}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              
+              {/* Summary */}
+              <div className="mt-2 flex items-center justify-between text-xs">
+                <span className="text-[var(--text-muted)]">
+                  {toggledWallets.size} wallet{toggledWallets.size !== 1 ? 's' : ''} • {formatSolBalance(totalSolBalance)} SOL
+                </span>
+                <span className="text-[var(--text-primary)] font-medium">
+                  {formatTokenBalance(totalTokenBalance)} {token.symbol}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Swap {token.symbol}</h3>
 
@@ -410,6 +620,9 @@ export function TradePanel({ token }: TradePanelProps) {
       <div className="mb-4">
         <label className="block text-xs font-medium text-[var(--text-muted)] uppercase mb-2 tracking-wide">
           {mode === "buy" ? "Amount in SOL" : "Amount in " + token.symbol}
+          {isMultiWalletMode && mode === "buy" && (
+            <span className="text-purple-400 ml-1">(per wallet)</span>
+          )}
         </label>
         <div className="relative">
           <input
@@ -445,9 +658,9 @@ export function TradePanel({ token }: TradePanelProps) {
               "font-mono font-medium",
               tokenBalanceLoading ? "text-[var(--text-muted)]" : "text-[var(--text-primary)]"
             )}>
-              {tokenBalanceLoading ? "..." : tokenBalance > 0 
+              {tokenBalanceLoading ? "..." : isMultiWalletMode ? formatTokenBalance(totalTokenBalance) : (tokenBalance > 0 
                 ? tokenBalance.toLocaleString(undefined, { maximumFractionDigits: 2 })
-                : "0"
+                : "0")
               } {token.symbol}
             </span>
           </div>
@@ -469,9 +682,17 @@ export function TradePanel({ token }: TradePanelProps) {
             {mode === "buy"
               ? (estimatedTokens || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })
               : (estimatedSol || 0).toFixed(6)}
+            {isMultiWalletMode && mode === "buy" && toggledWallets.size > 1 && (
+              <span className="text-xs text-[var(--text-muted)] ml-1">x {toggledWallets.size}</span>
+            )}
           </span>
           <span className="text-xs text-[var(--text-muted)] font-medium">{mode === "buy" ? token.symbol : "SOL"}</span>
         </div>
+        {isMultiWalletMode && toggledWallets.size > 1 && mode === "buy" && (
+          <div className="text-xs text-purple-400 mt-1">
+            Total: {(estimatedTokens * toggledWallets.size).toLocaleString(undefined, { maximumFractionDigits: 2 })} {token.symbol}
+          </div>
+        )}
       </div>
 
       {/* Slippage */}
@@ -498,7 +719,7 @@ export function TradePanel({ token }: TradePanelProps) {
       </div>
 
       {/* Insufficient Balance Warning */}
-      {insufficientBalance && mode === "buy" && (
+      {insufficientBalance && mode === "buy" && !isMultiWalletMode && (
         <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
           <div className="flex items-start gap-2">
             <svg className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -510,6 +731,27 @@ export function TradePanel({ token }: TradePanelProps) {
                 You have {(balanceSol || 0).toFixed(4)} SOL, need ~{((parsedAmount || 0) + 0.01).toFixed(4)} SOL (incl. fees)
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Results */}
+      {batchResults && (
+        <div className="mb-4 p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+          <div className="text-xs font-medium text-[var(--text-muted)] mb-2">Batch Results</div>
+          <div className="space-y-1 max-h-24 overflow-y-auto">
+            {batchResults.map((result, idx) => (
+              <div key={idx} className="flex items-center justify-between text-xs">
+                <span className="font-mono text-[var(--text-muted)]">
+                  {result.walletAddress.slice(0, 4)}...{result.walletAddress.slice(-4)}
+                </span>
+                {result.success ? (
+                  <span className="text-[var(--green)]">Success</span>
+                ) : (
+                  <span className="text-[var(--red)]" title={result.error}>Failed</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -544,7 +786,7 @@ export function TradePanel({ token }: TradePanelProps) {
       ) : (
         <button
           onClick={handleTrade}
-          disabled={!amount || isLoading || insufficientBalance}
+          disabled={!amount || isLoading || (insufficientBalance && !isMultiWalletMode) || (isMultiWalletMode && toggledWallets.size === 0)}
           className={cn(
             "w-full py-3 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed",
             mode === "buy"
@@ -555,10 +797,14 @@ export function TradePanel({ token }: TradePanelProps) {
           {isLoading ? (
             <span className="flex items-center justify-center gap-2">
               <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-              Processing...
+              {isMultiWalletMode ? "Processing Batch..." : "Processing..."}
             </span>
-          ) : insufficientBalance ? (
+          ) : insufficientBalance && !isMultiWalletMode ? (
             "Insufficient Balance"
+          ) : isMultiWalletMode && toggledWallets.size === 0 ? (
+            "Select Wallets"
+          ) : isMultiWalletMode ? (
+            `${mode === "buy" ? "Buy" : "Sell"} with ${toggledWallets.size} Wallet${toggledWallets.size !== 1 ? 's' : ''}`
           ) : (
             `${mode === "buy" ? "Buy" : "Sell"} ${token.symbol}`
           )}
@@ -569,7 +815,7 @@ export function TradePanel({ token }: TradePanelProps) {
       {amount && parseFloat(amount) > 0 && (
         <div className="mt-4">
           <FeeBreakdown
-            operationAmount={mode === "buy" ? parseFloat(amount) : estimatedSol}
+            operationAmount={mode === "buy" ? parseFloat(amount) * (isMultiWalletMode ? toggledWallets.size : 1) : estimatedSol * (isMultiWalletMode ? toggledWallets.size : 1)}
             currentBalance={balanceSol}
             compact={true}
           />

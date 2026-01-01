@@ -14,6 +14,15 @@ interface WalletAuthContextType {
   isOnboarding: boolean
   userId: string | null
   sessionId: string | null // Alias for userId (they are the same)
+  
+  // Multi-wallet trading
+  toggledWallets: Set<string>          // Wallet IDs toggled for batch trading
+  isMultiWalletMode: boolean           // Whether multi-wallet mode is enabled
+  toggleWallet: (walletId: string) => void
+  clearToggledWallets: () => void
+  setMultiWalletMode: (enabled: boolean) => void
+  getToggledWalletAddresses: () => string[]
+  
   setIsOnboarding: (value: boolean) => void
   refreshWallets: () => Promise<void>
   setActiveWallet: (wallet: Wallet) => Promise<void>
@@ -31,6 +40,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isOnboarding, setIsOnboarding] = useState(false)
   const [userId, setUserIdState] = useState<string | null>(null)
+  
+  // Multi-wallet trading state
+  const [toggledWallets, setToggledWallets] = useState<Set<string>>(new Set())
+  const [isMultiWalletMode, setIsMultiWalletMode] = useState(false)
 
   const supabase = createClient()
 
@@ -127,8 +140,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMainWalletState(null)
     setActiveWalletState(null)
     setUserIdState(null)
+    setToggledWallets(new Set())
+    setIsMultiWalletMode(false)
     window.location.reload()
   }
+
+  // Multi-wallet trading functions
+  const toggleWallet = useCallback((walletId: string) => {
+    setToggledWallets((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(walletId)) {
+        newSet.delete(walletId)
+      } else {
+        newSet.add(walletId)
+      }
+      console.log('[AUTH] Toggled wallets:', Array.from(newSet))
+      return newSet
+    })
+  }, [])
+
+  const clearToggledWallets = useCallback(() => {
+    setToggledWallets(new Set())
+    console.log('[AUTH] Cleared toggled wallets')
+  }, [])
+
+  const getToggledWalletAddresses = useCallback((): string[] => {
+    return wallets
+      .filter((w) => toggledWallets.has(w.id))
+      .map((w) => w.public_key)
+  }, [wallets, toggledWallets])
+
+  // Clear toggled wallets when multi-wallet mode is disabled
+  useEffect(() => {
+    if (!isMultiWalletMode) {
+      // Don't clear immediately, in case user toggles it back on
+    }
+  }, [isMultiWalletMode])
 
   const isAuthenticated = wallets.length > 0 && mainWallet !== null
   
@@ -139,9 +186,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       walletsCount: wallets.length, 
       hasMainWallet: !!mainWallet,
       userId: userId?.slice(0, 8),
-      isLoading 
+      isLoading,
+      isMultiWalletMode,
+      toggledWalletsCount: toggledWallets.size
     })
-  }, [isAuthenticated, wallets.length, mainWallet, userId, isLoading])
+  }, [isAuthenticated, wallets.length, mainWallet, userId, isLoading, isMultiWalletMode, toggledWallets.size])
 
   return (
     <WalletAuthContext.Provider
@@ -154,6 +203,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isOnboarding,
         userId,
         sessionId: userId, // Alias - sessionId and userId are the same
+        
+        // Multi-wallet trading
+        toggledWallets,
+        isMultiWalletMode,
+        toggleWallet,
+        clearToggledWallets,
+        setMultiWalletMode: setIsMultiWalletMode,
+        getToggledWalletAddresses,
+        
         setIsOnboarding,
         refreshWallets,
         setActiveWallet,

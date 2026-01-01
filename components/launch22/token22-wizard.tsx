@@ -12,8 +12,18 @@ import { Step22Distribution } from "@/components/launch22/step-distribution"
 import { Step22Liquidity } from "@/components/launch22/step-liquidity"
 import { Step22Review } from "@/components/launch22/step-review"
 import { Token22Preview } from "@/components/launch22/token22-preview"
+import { StepBundle } from "@/components/launch/step-bundle"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
+
+export interface BundleWalletConfig {
+  walletId: string
+  address: string
+  label: string
+  buyAmount: number
+  balance: number
+  selected: boolean
+}
 
 export interface Token22FormData {
   // Basics
@@ -49,6 +59,10 @@ export interface Token22FormData {
   poolSolAmount: string
   lockLpTokens: boolean
   lpLockDurationDays: number
+  
+  // Bundle Launch Options
+  launchWithBundle: boolean
+  bundleWallets: BundleWalletConfig[]
 }
 
 export const initialToken22FormData: Token22FormData = {
@@ -85,6 +99,10 @@ export const initialToken22FormData: Token22FormData = {
   poolSolAmount: "1",
   lockLpTokens: false,
   lpLockDurationDays: 180,
+  
+  // Bundle defaults
+  launchWithBundle: false,
+  bundleWallets: [],
 }
 
 const steps = [
@@ -92,7 +110,8 @@ const steps = [
   { id: 2, name: "Extensions", description: "Token-2022 features" },
   { id: 3, name: "Distribution", description: "Supply allocation" },
   { id: 4, name: "Liquidity", description: "Raydium pool" },
-  { id: 5, name: "Launch", description: "Review & deploy" },
+  { id: 5, name: "Bundle", description: "Launch options" },
+  { id: 6, name: "Review", description: "Deploy token" },
 ]
 
 interface Token22WizardProps {
@@ -101,7 +120,7 @@ interface Token22WizardProps {
 
 export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
   const router = useRouter()
-  const { userId, sessionId } = useAuth()
+  const { userId, sessionId, wallets } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<Token22FormData>(initialToken22FormData)
   const [isDeploying, setIsDeploying] = useState(false)
@@ -128,11 +147,11 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
   }
 
   const nextStep = () => {
-    if (currentStep < 5) {
+    if (currentStep < 6) {
       const newStep = currentStep + 1
       setCurrentStep(newStep)
       // Generate mint keypair when entering review step
-      if (newStep === 5 && !mintKeypair) {
+      if (newStep === 6 && !mintKeypair) {
         generateMintKeypair()
       }
     }
@@ -149,7 +168,9 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
     console.log('[TOKEN22] Deploying token...', { 
       sessionId: sessionId?.slice(0, 8), 
       wallet: creatorWallet?.slice(0, 8),
-      mintAddress: mintAddress?.slice(0, 8)
+      mintAddress: mintAddress?.slice(0, 8),
+      launchWithBundle: formData.launchWithBundle,
+      bundleWalletsCount: formData.bundleWallets.length
     })
 
     try {
@@ -163,6 +184,18 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
 
       // Encode the mint secret key to send to backend
       const mintSecretKey = bs58.encode(currentMintKeypair.secretKey)
+
+      // Prepare bundle wallets if enabled
+      const bundleConfig = formData.launchWithBundle && formData.bundleWallets.length > 0
+        ? {
+            launchWithBundle: true,
+            bundleWallets: formData.bundleWallets.map(w => ({
+              walletId: w.walletId,
+              address: w.address,
+              buyAmountSol: w.buyAmount,
+            }))
+          }
+        : { launchWithBundle: false }
 
       const response = await fetch("/api/token22/create", {
         method: "POST",
@@ -207,6 +240,9 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
           // Pre-generated mint keypair
           mintSecretKey: mintSecretKey,
           mintAddress: currentMintKeypair.publicKey.toBase58(),
+          
+          // Bundle configuration
+          ...bundleConfig,
         }),
       })
 
@@ -226,7 +262,8 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
       console.log('[TOKEN22] Token created successfully:', {
         mintAddress: finalMintAddress,
         tokenId: data.data?.tokenId,
-        txSignature: data.data?.txSignature
+        txSignature: data.data?.txSignature,
+        bundleId: data.data?.bundleId
       })
       
       // Small delay to ensure database is updated
@@ -292,6 +329,33 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
                 />
               )}
               {currentStep === 5 && (
+                <div className="space-y-4">
+                  <StepBundle
+                    launchWithBundle={formData.launchWithBundle}
+                    bundleWallets={formData.bundleWallets}
+                    onToggleBundle={(enabled) => updateFormData({ launchWithBundle: enabled })}
+                    onUpdateWallets={(wallets) => updateFormData({ bundleWallets: wallets })}
+                    initialBuySol={parseFloat(formData.poolSolAmount) || 0}
+                  />
+                  
+                  {/* Navigation */}
+                  <div className="flex justify-between pt-4 border-t border-[var(--border-subtle)]">
+                    <button
+                      onClick={prevStep}
+                      className="px-4 py-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      onClick={nextStep}
+                      className="px-6 py-2 rounded-lg bg-[var(--aqua-primary)] text-[var(--ocean-deep)] text-sm font-semibold hover:bg-[var(--aqua-secondary)] transition-colors"
+                    >
+                      Continue →
+                    </button>
+                  </div>
+                </div>
+              )}
+              {currentStep === 6 && (
                 <Step22Review
                   formData={formData}
                   onBack={prevStep}
@@ -316,4 +380,3 @@ export function Token22Wizard({ creatorWallet }: Token22WizardProps) {
     </div>
   )
 }
-

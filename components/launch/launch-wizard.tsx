@@ -9,11 +9,21 @@ import { GlassPanel, StepIndicator } from "@/components/ui/glass-panel"
 import { StepBasics } from "@/components/launch/step-basics"
 import { StepTokenomics } from "@/components/launch/step-tokenomics"
 import { StepAquaSettings } from "@/components/launch/step-aqua-settings"
+import { StepBundle } from "@/components/launch/step-bundle"
 import { StepReview } from "@/components/launch/step-review"
 import { TokenPreview } from "@/components/launch/token-preview"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api"
 import { cn } from "@/lib/utils"
+
+export interface BundleWalletConfig {
+  walletId: string
+  address: string
+  label: string
+  buyAmount: number
+  balance: number
+  selected: boolean
+}
 
 export interface TokenFormData {
   name: string
@@ -51,6 +61,10 @@ export interface TokenFormData {
   migrationTarget: 'raydium' | 'meteora' | 'orca' | 'pumpswap'
   treasuryWallet: string
   devWallet: string
+  
+  // Bundle Launch Options
+  launchWithBundle: boolean
+  bundleWallets: BundleWalletConfig[]
 }
 
 const initialFormData: TokenFormData = {
@@ -89,13 +103,18 @@ const initialFormData: TokenFormData = {
   migrationTarget: 'raydium',
   treasuryWallet: '',
   devWallet: '',
+  
+  // Bundle defaults
+  launchWithBundle: false,
+  bundleWallets: [],
 }
 
 const steps = [
   { id: 1, name: "Basics", description: "Token identity" },
   { id: 2, name: "Supply", description: "Tokenomics" },
   { id: 3, name: "Liquidity", description: "AQUA settings" },
-  { id: 4, name: "Launch", description: "Review & deploy" },
+  { id: 4, name: "Bundle", description: "Launch options" },
+  { id: 5, name: "Review", description: "Deploy token" },
 ]
 
 interface LaunchWizardProps {
@@ -104,7 +123,7 @@ interface LaunchWizardProps {
 
 export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   const router = useRouter()
-  const { userId, sessionId } = useAuth()
+  const { userId, sessionId, wallets } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState<TokenFormData>(initialFormData)
   const [isDeploying, setIsDeploying] = useState(false)
@@ -114,7 +133,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   const [mintKeypair, setMintKeypair] = useState<Keypair | null>(null)
   const [mintAddress, setMintAddress] = useState<string | null>(null)
 
-  // Generate mint keypair when entering step 4 (Review)
+  // Generate mint keypair when entering step 5 (Review)
   const generateMintKeypair = useCallback(() => {
     const keypair = Keypair.generate()
     setMintKeypair(keypair)
@@ -122,7 +141,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
     console.log('[LAUNCH] Pre-generated mint address:', keypair.publicKey.toBase58())
   }, [])
 
-  // Regenerate mint address if user goes back and comes to step 4 again
+  // Regenerate mint address if user goes back and comes to step 5 again
   const regenerateMint = useCallback(() => {
     generateMintKeypair()
   }, [generateMintKeypair])
@@ -132,11 +151,11 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   }
 
   const nextStep = () => {
-    if (currentStep < 4) {
+    if (currentStep < 5) {
       const newStep = currentStep + 1
       setCurrentStep(newStep)
       // Generate mint keypair when entering review step
-      if (newStep === 4 && !mintKeypair) {
+      if (newStep === 5 && !mintKeypair) {
         generateMintKeypair()
       }
     }
@@ -153,7 +172,9 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
     console.log('[LAUNCH] Deploying token...', { 
       sessionId: sessionId?.slice(0, 8), 
       wallet: creatorWallet?.slice(0, 8),
-      mintAddress: mintAddress?.slice(0, 8)
+      mintAddress: mintAddress?.slice(0, 8),
+      launchWithBundle: formData.launchWithBundle,
+      bundleWalletsCount: formData.bundleWallets.length
     })
 
     try {
@@ -168,8 +189,24 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
       // Encode the mint secret key to send to backend
       const mintSecretKey = bs58.encode(currentMintKeypair.secretKey)
 
+      // Prepare bundle wallets if enabled
+      const bundleConfig = formData.launchWithBundle && formData.bundleWallets.length > 0
+        ? {
+            bundleWallets: formData.bundleWallets.map(w => ({
+              walletId: w.walletId,
+              address: w.address,
+              buyAmountSol: w.buyAmount,
+            }))
+          }
+        : {}
+
+      // Choose API endpoint based on bundle option
+      const apiEndpoint = formData.launchWithBundle && formData.bundleWallets.length > 0
+        ? "/api/token/create-bundle"
+        : "/api/token/create"
+
       // CRITICAL: Include auth headers for API authentication
-      const response = await fetch("/api/token/create", {
+      const response = await fetch(apiEndpoint, {
         method: "POST",
         headers: getAuthHeaders({
           sessionId: sessionId || userId,
@@ -211,6 +248,9 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           // Send pre-generated mint keypair so backend uses the same address
           mintSecretKey: mintSecretKey,
           mintAddress: currentMintKeypair.publicKey.toBase58(),
+          
+          // Bundle configuration
+          ...bundleConfig,
         }),
       })
 
@@ -231,7 +271,8 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
       console.log('[LAUNCH] Token created successfully:', {
         mintAddress: finalMintAddress,
         tokenId: data.data?.tokenId,
-        txSignature: data.data?.txSignature
+        txSignature: data.data?.txSignature,
+        bundleId: data.data?.bundleId
       })
       
       // Small delay to ensure database is updated and propagated
@@ -289,6 +330,33 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                 />
               )}
               {currentStep === 4 && (
+                <div className="space-y-4">
+                  <StepBundle
+                    launchWithBundle={formData.launchWithBundle}
+                    bundleWallets={formData.bundleWallets}
+                    onToggleBundle={(enabled) => updateFormData({ launchWithBundle: enabled })}
+                    onUpdateWallets={(wallets) => updateFormData({ bundleWallets: wallets })}
+                    initialBuySol={parseFloat(formData.initialBuySol) || 0}
+                  />
+                  
+                  {/* Navigation */}
+                  <div className="flex justify-between pt-4 border-t border-[var(--border-subtle)]">
+                    <button
+                      onClick={prevStep}
+                      className="px-4 py-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      ← Back
+                    </button>
+                    <button
+                      onClick={nextStep}
+                      className="px-6 py-2 rounded-lg bg-[var(--aqua-primary)] text-[var(--ocean-deep)] text-sm font-semibold hover:bg-[var(--aqua-secondary)] transition-colors"
+                    >
+                      Continue →
+                    </button>
+                  </div>
+                </div>
+              )}
+              {currentStep === 5 && (
                 <StepReview
                   formData={formData}
                   onBack={prevStep}

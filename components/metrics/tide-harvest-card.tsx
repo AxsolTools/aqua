@@ -3,11 +3,13 @@
 import { useEffect, useState, useRef, useCallback } from "react"
 import { motion } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
+import { getAuthHeaders } from "@/lib/api"
 
 interface TideHarvestCardProps {
   tokenId: string
   creatorId: string | null
   tokenAddress?: string
+  creatorWallet?: string  // The token creator's wallet address
 }
 
 interface RewardsData {
@@ -18,11 +20,17 @@ interface RewardsData {
   hasRewards: boolean
   stage: string
   isCreator: boolean
+  canClaimViaPumpPortal?: boolean
   claimUrl?: string
 }
 
-export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarvestCardProps) {
-  const { userId, activeWallet, mainWallet } = useAuth()
+export function TideHarvestCard({ 
+  tokenId, 
+  creatorId, 
+  tokenAddress,
+  creatorWallet 
+}: TideHarvestCardProps) {
+  const { userId, sessionId, activeWallet, mainWallet } = useAuth()
   const [rewards, setRewards] = useState<RewardsData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isClaiming, setIsClaiming] = useState(false)
@@ -30,11 +38,18 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const walletAddress = activeWallet?.public_key || mainWallet?.public_key
-  const isCreator = userId === creatorId
+  
+  // User is the creator if their wallet matches the token's creator wallet
+  const isCreator = !!(
+    walletAddress && 
+    creatorWallet && 
+    walletAddress.toLowerCase() === creatorWallet.toLowerCase()
+  )
 
-  // Fetch creator rewards from API
+  // Fetch creator rewards from API (only if user is creator)
   const fetchRewards = useCallback(async () => {
-    if (!tokenAddress || !walletAddress) {
+    // Only fetch if user is the creator
+    if (!tokenAddress || !walletAddress || !isCreator) {
       setIsLoading(false)
       return
     }
@@ -55,15 +70,17 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     } finally {
       setIsLoading(false)
     }
-  }, [tokenAddress, walletAddress])
+  }, [tokenAddress, walletAddress, isCreator])
 
   useEffect(() => {
     fetchRewards()
 
-    // Poll every 30 seconds for real-time updates
-    const interval = setInterval(fetchRewards, 30_000)
-    return () => clearInterval(interval)
-  }, [fetchRewards])
+    // Poll every 30 seconds for real-time updates (only if creator)
+    if (isCreator) {
+      const interval = setInterval(fetchRewards, 30_000)
+      return () => clearInterval(interval)
+    }
+  }, [fetchRewards, isCreator])
 
   // Wave animation
   useEffect(() => {
@@ -120,7 +137,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
   }, [])
 
   const handleClaim = async () => {
-    if (!rewards?.hasRewards || !tokenAddress || !walletAddress) return
+    if (!rewards?.hasRewards || !tokenAddress || !walletAddress || !sessionId) return
 
     setIsClaiming(true)
     setClaimMessage(null)
@@ -128,7 +145,11 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     try {
       const response = await fetch("/api/creator-rewards", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders({
+          sessionId: sessionId || userId,
+          walletAddress,
+          userId,
+        }),
         body: JSON.stringify({
           tokenMint: tokenAddress,
           walletAddress,
@@ -138,7 +159,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
       const data = await response.json()
       
       if (data.success) {
-        setClaimMessage(`Successfully claimed ${rewards.balance.toFixed(6)} SOL!`)
+        setClaimMessage(`Successfully claimed ${data.data?.amountClaimed?.toFixed(6) || rewards.balance.toFixed(6)} SOL!`)
         await fetchRewards()
       } else {
         // If claiming failed but we have a claim URL, show that
@@ -170,6 +191,11 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     return amount.toFixed(8)
   }
 
+  // If user is not the creator, don't show the component
+  if (!isCreator) {
+    return null
+  }
+
   const balance = rewards?.balance || 0
   const hasRewards = balance > 0
 
@@ -185,6 +211,9 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     <div className="relative h-32 rounded-lg overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       <div className="relative z-10 flex flex-col items-center justify-center h-full">
+        <div className="flex items-center gap-1.5 mb-1">
+          <span className="text-[10px] uppercase tracking-wider text-[var(--aqua-primary)]/70">Creator Rewards</span>
+        </div>
         <div className="flex items-baseline gap-1 mb-1">
           <motion.span
             key={balance}
@@ -197,7 +226,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
           <span className="text-sm text-[var(--text-secondary)]">SOL</span>
         </div>
         <p className="text-xs text-[var(--text-muted)] mb-3">
-          {hasRewards ? "available to harvest" : "creator rewards"}
+          {hasRewards ? "available to harvest" : "no rewards yet"}
         </p>
 
         {claimMessage && (
@@ -206,7 +235,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
           </p>
         )}
 
-        {isCreator && hasRewards ? (
+        {hasRewards ? (
           <div className="flex items-center gap-2">
             <motion.button
               onClick={handleClaim}
@@ -221,27 +250,21 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
                   Claiming...
                 </span>
               ) : (
-                "Harvest"
+                "Harvest Rewards"
               )}
             </motion.button>
             <button
               onClick={openPumpFun}
               className="px-3 py-1.5 rounded-lg border border-[var(--aqua-primary)]/30 text-[var(--aqua-primary)] text-xs font-medium hover:bg-[var(--aqua-primary)]/10 transition-colors"
+              title="Claim directly on Pump.fun"
             >
               Pump.fun
             </button>
           </div>
-        ) : hasRewards ? (
-          <button
-            onClick={openPumpFun}
-            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] text-xs font-semibold hover:shadow-[0_0_20px_rgba(0,242,255,0.3)] transition-all"
-          >
-            Claim on Pump.fun
-          </button>
         ) : (
           <div className="px-3 py-1.5 rounded-full bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)]">
             <span className="text-xs text-[var(--text-muted)]">
-              {isCreator ? "No rewards yet" : "Creator rewards"}
+              Rewards accumulate from trading fees
             </span>
           </div>
         )}
