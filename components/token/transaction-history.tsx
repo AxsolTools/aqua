@@ -256,7 +256,10 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium text-[var(--text-primary)]">
+                      <span className={cn(
+                        "text-sm font-medium",
+                        tx.type === "buy" ? "text-[var(--success)]" : "text-[var(--error)]"
+                      )}>
                         {tx.type === "buy" ? "Buy" : "Sell"}
                       </span>
                       <svg 
