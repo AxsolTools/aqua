@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
@@ -22,12 +23,21 @@ interface TokenFiltersProps {
   onFilterChange?: (filters: { stage: string; sort: string; search: string }) => void
 }
 
+// Check if a string is a valid Solana address (base58, 32-44 chars)
+function isSolanaAddress(input: string): boolean {
+  const base58Regex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
+  return base58Regex.test(input.trim())
+}
+
 export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
+  const router = useRouter()
   const [stage, setStage] = useState("all")
   const [sort, setSort] = useState("newest")
   const [search, setSearch] = useState("")
+  const [isSearching, setIsSearching] = useState(false)
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (containerRef.current) {
@@ -58,9 +68,86 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
     onFilterChange?.({ stage, sort, search: value })
   }
 
+  const handleSearchSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    const trimmedSearch = search.trim()
+    if (!trimmedSearch) return
+
+    // If it looks like a Solana address, navigate to token page
+    if (isSolanaAddress(trimmedSearch)) {
+      setIsSearching(true)
+      // Navigate to the token page - it will handle loading from chain if not in DB
+      router.push(`/token/${trimmedSearch}`)
+      return
+    }
+
+    // Otherwise, just filter the grid
+    onFilterChange?.({ stage, sort, search: trimmedSearch })
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearchSubmit(e)
+    }
+  }
+
   return (
     <div className="mb-6">
-      {/* Top row: Tabs + Search + Sort */}
+      {/* Search Bar - Prominent at the top */}
+      <div className="mb-4">
+        <form onSubmit={handleSearchSubmit} className="relative">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="9" cy="9" r="6" />
+              <path d="M14 14l4 4" strokeLinecap="round" />
+            </svg>
+          </div>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={search}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search by token name, symbol, or paste contract address..."
+            disabled={isSearching}
+            className={cn(
+              "w-full pl-12 pr-28 py-4 rounded-xl text-base",
+              "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
+              "text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
+              "focus:outline-none focus:border-[var(--aqua-primary)] focus:ring-2 focus:ring-[var(--aqua-bg)]",
+              "transition-all duration-150",
+              isSearching && "opacity-70 cursor-not-allowed"
+            )}
+          />
+          <button
+            type="submit"
+            disabled={isSearching || !search.trim()}
+            className={cn(
+              "absolute right-2 top-1/2 -translate-y-1/2",
+              "px-5 py-2.5 rounded-lg font-medium text-sm transition-all",
+              search.trim() 
+                ? "bg-[var(--aqua-primary)] text-[var(--bg-primary)] hover:bg-[var(--aqua-secondary)]"
+                : "bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed"
+            )}
+          >
+            {isSearching ? (
+              <span className="flex items-center gap-2">
+                <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                Loading...
+              </span>
+            ) : (
+              "Search"
+            )}
+          </button>
+        </form>
+        {/* Hint text */}
+        <p className="text-xs text-[var(--text-muted)] mt-2 ml-1">
+          Tip: Paste any Solana token contract address to view its details
+        </p>
+      </div>
+
+      {/* Filters row: Tabs + Sort */}
       <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
         {/* Stage Tabs */}
         <div
@@ -94,43 +181,23 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
           ))}
         </div>
 
-        {/* Search + Sort */}
-        <div className="flex gap-2">
-          {/* Search */}
-          <div className="relative flex-1 lg:w-64">
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <circle cx="7" cy="7" r="5" />
-                <path d="M11 11l3 3" strokeLinecap="round" />
-              </svg>
-            </div>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search tokens..."
-              className="input pl-9 py-2 text-sm"
-            />
-          </div>
-
-          {/* Sort */}
-          <select
-            value={sort}
-            onChange={(e) => handleSortChange(e.target.value)}
-            className="input w-auto py-2 pr-8 text-sm appearance-none cursor-pointer"
-            style={{
-              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%236b7280' strokeWidth='1.5' strokeLinecap='round' strokeLinejoin='round'/%3E%3C/svg%3E")`,
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 0.75rem center",
-            }}
-          >
-            {sortOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Sort */}
+        <select
+          value={sort}
+          onChange={(e) => handleSortChange(e.target.value)}
+          className="input w-auto py-2 pr-8 text-sm appearance-none cursor-pointer"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%236b7280' strokeWidth='1.5' strokeLinecap='round' strokeLinejoin='round'/%3E%3C/svg%3E")`,
+            backgroundRepeat: "no-repeat",
+            backgroundPosition: "right 0.75rem center",
+          }}
+        >
+          {sortOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   )

@@ -131,7 +131,7 @@ export interface Token {
   holders: number;
   water_level: number;
   constellation_strength: number;
-  stage: 'bonding' | 'migrating' | 'migrated';
+  stage: 'bonding' | 'migrating' | 'migrated' | 'external';
   migration_threshold: number;
   bonding_curve_progress: number;
   migrated_at: string | null;
