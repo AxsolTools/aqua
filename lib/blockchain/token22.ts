@@ -583,12 +583,24 @@ export async function mintTokens(params: MintTokensParams): Promise<string> {
 
 /**
  * Validate token parameters
+ * 
+ * Note: Raydium CPMM pools do NOT support certain Token-2022 extensions:
+ * - Permanent Delegate
+ * - Non-Transferable Tokens
+ * - Default Account State
+ * - Confidential Transfers
+ * - Transfer Hook
+ * 
+ * These are blocked at the Raydium program level.
+ * Only Transfer Fee and Metadata Pointer are supported.
  */
 export function validateToken22Params(params: Partial<CreateToken22Params>): {
   valid: boolean;
   errors: string[];
+  warnings: string[];
 } {
   const errors: string[] = [];
+  const warnings: string[] = [];
   const { name, symbol, decimals, totalSupply, transferFeeBasisPoints } = params;
 
   if (!name || name.trim().length === 0) {
@@ -620,11 +632,15 @@ export function validateToken22Params(params: Partial<CreateToken22Params>): {
     if (transferFeeBasisPoints < 0 || transferFeeBasisPoints > 500) {
       errors.push('Transfer fee must be between 0 and 500 basis points (5%)');
     }
+    if (transferFeeBasisPoints > 0) {
+      warnings.push('Transfer Fee extension is supported by Raydium CPMM pools. Fees will apply to swaps.');
+    }
   }
 
   return {
     valid: errors.length === 0,
     errors,
+    warnings,
   };
 }
 

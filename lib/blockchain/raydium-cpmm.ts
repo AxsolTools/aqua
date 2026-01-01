@@ -281,19 +281,57 @@ export async function createCPMMPool(params: CreatePoolParams): Promise<CreatePo
 
     console.log(`[RAYDIUM] Pool created: ${txIds[0]}`);
 
-    // Extract pool address
-    let poolAddress = txIds[0];
+    // Extract pool address - handle multiple possible SDK response formats
+    let poolAddress = '';
     let lpMint: string | undefined;
 
     if (extInfo) {
-      if (extInfo.address) {
-        poolAddress = extInfo.address.toBase58 ? extInfo.address.toBase58() : String(extInfo.address);
-      } else if (extInfo.poolId) {
-        poolAddress = extInfo.poolId.toBase58 ? extInfo.poolId.toBase58() : String(extInfo.poolId);
+      console.log('[RAYDIUM] extInfo keys:', Object.keys(extInfo));
+      
+      // Try different possible locations for pool address
+      const addressCandidates = [
+        extInfo.address?.poolId,
+        extInfo.address?.id,
+        extInfo.address?.pool,
+        extInfo.poolId,
+        extInfo.address,
+      ];
+      
+      for (const candidate of addressCandidates) {
+        if (candidate) {
+          poolAddress = typeof candidate.toBase58 === 'function' 
+            ? candidate.toBase58() 
+            : String(candidate);
+          if (poolAddress && poolAddress.length >= 32) {
+            console.log('[RAYDIUM] Found pool address:', poolAddress);
+            break;
+          }
+        }
       }
-      if (extInfo.lpMint) {
-        lpMint = extInfo.lpMint.toBase58 ? extInfo.lpMint.toBase58() : String(extInfo.lpMint);
+
+      // Try different possible locations for LP mint
+      const lpMintCandidates = [
+        extInfo.address?.lpMint,
+        extInfo.lpMint,
+      ];
+      
+      for (const candidate of lpMintCandidates) {
+        if (candidate) {
+          lpMint = typeof candidate.toBase58 === 'function' 
+            ? candidate.toBase58() 
+            : String(candidate);
+          if (lpMint && lpMint.length >= 32) {
+            console.log('[RAYDIUM] Found LP mint:', lpMint);
+            break;
+          }
+        }
       }
+    }
+
+    // Fallback to transaction ID if no pool address found
+    if (!poolAddress) {
+      console.warn('[RAYDIUM] Could not extract pool address from extInfo, using tx signature');
+      poolAddress = txIds[0];
     }
 
     return {

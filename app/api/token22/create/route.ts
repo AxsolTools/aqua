@@ -109,6 +109,11 @@ export async function POST(request: NextRequest) {
       transferFeeBasisPoints: enableTransferFee ? transferFeeBasisPoints : 0,
     });
 
+    // Log warnings (non-blocking)
+    if (validation.warnings && validation.warnings.length > 0) {
+      console.log('[TOKEN22] Validation warnings:', validation.warnings);
+    }
+
     if (!validation.valid) {
       return NextResponse.json(
         { 
@@ -472,6 +477,8 @@ export async function POST(request: NextRequest) {
         poolCreationUrl: `/api/token22/pool/create`,
         // Anti-sniper status
         antiSniper: antiSniperMonitor,
+        // Validation warnings (e.g., transfer fee implications)
+        warnings: validation.warnings,
       },
     });
 
