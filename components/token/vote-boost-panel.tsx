@@ -10,13 +10,21 @@ interface VoteBoostPanelProps {
   tokenName: string
 }
 
+// Boost tier options: SOL amount = boost count
+const BOOST_TIERS = [
+  { sol: 0.1, boosts: 1, label: "1 Boost" },
+  { sol: 0.5, boosts: 5, label: "5 Boosts" },
+  { sol: 1, boosts: 10, label: "10 Boosts" },
+  { sol: 5, boosts: 50, label: "50 Boosts" },
+]
+
 export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps) {
   const { wallets, activeWallet, isAuthenticated, setIsOnboarding, sessionId } = useAuth()
-  const [voteCount, setVoteCount] = useState(0)
+  const [vouchCount, setVouchCount] = useState(0)
   const [boostCount, setBoostCount] = useState(0)
-  const [hasVoted, setHasVoted] = useState(false)
-  const [isVoting, setIsVoting] = useState(false)
-  const [boostAmount, setBoostAmount] = useState(1)
+  const [hasVouched, setHasVouched] = useState(false)
+  const [isVouching, setIsVouching] = useState(false)
+  const [selectedTier, setSelectedTier] = useState(0) // Index of selected tier
   const [showBoostModal, setShowBoostModal] = useState(false)
   const [selectedWalletId, setSelectedWalletId] = useState<string>("")
   const [isBoosting, setIsBoosting] = useState(false)
@@ -41,7 +49,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
   useEffect(() => {
     fetchCounts()
     if (activeWallet) {
-      checkUserVote()
+      checkUserVouch()
     }
   }, [tokenAddress, activeWallet])
 
@@ -75,7 +83,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
-          setVoteCount(data.votes || 0)
+          setVouchCount(data.vouches || data.votes || 0)
           setBoostCount(data.boosts || 0)
         }
       }
@@ -84,34 +92,34 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
     }
   }
 
-  const checkUserVote = async () => {
+  const checkUserVouch = async () => {
     if (!activeWallet) return
 
     try {
       const response = await fetch(`/api/votes?tokenAddress=${tokenAddress}&walletAddress=${activeWallet.public_key}`)
       if (response.ok) {
         const data = await response.json()
-        setHasVoted(data.hasVoted || false)
+        setHasVouched(data.hasVoted || data.hasVouched || false)
       }
     } catch (err) {
       console.debug('[VOTES] Vote check unavailable:', err)
-      setHasVoted(false)
+      setHasVouched(false)
     }
   }
 
-  const handleVote = async () => {
+  const handleVouch = async () => {
     if (!isAuthenticated) {
       setIsOnboarding(true)
       return
     }
 
-    if (!activeWallet || isVoting) return
+    if (!activeWallet || isVouching) return
 
-    setIsVoting(true)
+    setIsVouching(true)
 
     try {
       const response = await fetch('/api/votes', {
-        method: hasVoted ? 'DELETE' : 'POST',
+        method: hasVouched ? 'DELETE' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tokenAddress,
@@ -122,12 +130,12 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
       if (response.ok) {
         const data = await response.json()
         if (data.success) {
-          if (hasVoted) {
-            setHasVoted(false)
-            setVoteCount((prev) => Math.max(0, prev - 1))
+          if (hasVouched) {
+            setHasVouched(false)
+            setVouchCount((prev) => Math.max(0, prev - 1))
           } else {
-            setHasVoted(true)
-            setVoteCount((prev) => prev + 1)
+            setHasVouched(true)
+            setVouchCount((prev) => prev + 1)
           }
         }
       }
@@ -135,7 +143,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
       console.debug('[VOTES] Vote operation failed:', err)
     }
 
-    setIsVoting(false)
+    setIsVouching(false)
   }
 
   const handleBoost = async () => {
@@ -152,8 +160,10 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
       return
     }
 
+    const tier = BOOST_TIERS[selectedTier]
     const balance = walletBalances[selectedWalletId] || 0
-    if (balance < boostAmount) {
+    
+    if (balance < tier.sol) {
       setBoostError(`Insufficient balance. You have ${balance.toFixed(4)} SOL`)
       return
     }
@@ -172,7 +182,8 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
         body: JSON.stringify({
           tokenAddress,
           walletAddress: selectedWallet.public_key,
-          amount: boostAmount,
+          amount: tier.sol,
+          boostCount: tier.boosts, // Number of boosts to add
         }),
       })
 
@@ -180,7 +191,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
 
       if (data.success) {
         setBoostSuccess(true)
-        setBoostCount((prev) => prev + 1)
+        setBoostCount((prev) => prev + tier.boosts)
         // Refresh balances
         fetchWalletBalances()
         // Close modal after 2 seconds
@@ -206,8 +217,11 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
     }
     setBoostError(null)
     setBoostSuccess(false)
+    setSelectedTier(0)
     setShowBoostModal(true)
   }
+
+  const tier = BOOST_TIERS[selectedTier]
 
   return (
     <div className="glass-panel rounded-xl p-4 h-full">
@@ -216,50 +230,50 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
         <span className="text-[10px] text-[var(--text-muted)]">Show your support</span>
       </div>
 
-      {/* Horizontal layout for wider space */}
-      <div className="flex items-center gap-4">
-        {/* Vote Button */}
+      {/* Horizontal layout: Vouch + Boost */}
+      <div className="flex items-stretch gap-3">
+        {/* Vouch Button (Free) */}
         <motion.button
-          onClick={handleVote}
-          disabled={isVoting}
+          onClick={handleVouch}
+          disabled={isVouching}
           whileTap={{ scale: 0.95 }}
           className={cn(
-            "flex-1 flex items-center justify-center gap-3 p-3 rounded-xl border transition-all",
-            hasVoted
-              ? "border-[var(--warm-coral)] bg-[var(--warm-coral)]/10"
-              : "border-[var(--glass-border)] hover:border-[var(--warm-coral)]/50",
+            "flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all",
+            hasVouched
+              ? "border-[var(--aqua-primary)] bg-[var(--aqua-primary)]/10"
+              : "border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50",
           )}
         >
-          <motion.div animate={hasVoted ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
+          <motion.div animate={hasVouched ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
             <svg
-              width="20"
-              height="20"
+              width="24"
+              height="24"
               viewBox="0 0 24 24"
-              fill={hasVoted ? "var(--warm-coral)" : "none"}
-              stroke="var(--warm-coral)"
+              fill={hasVouched ? "var(--aqua-primary)" : "none"}
+              stroke="var(--aqua-primary)"
               strokeWidth="2"
             >
-              <path d="M12 2l2.5 5 5.5.8-4 3.9.9 5.3-4.9-2.6-4.9 2.6.9-5.3-4-3.9 5.5-.8L12 2z" />
+              <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
             </svg>
           </motion.div>
-          <div className="text-left">
-            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{voteCount}</span>
-            <span className="text-[10px] text-[var(--text-muted)]">{hasVoted ? "Voted!" : "Vote"}</span>
+          <div className="text-center">
+            <span className="text-xl font-bold text-[var(--text-primary)] font-mono block">{vouchCount}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{hasVouched ? "Vouched!" : "Vouch"}</span>
           </div>
         </motion.button>
 
-        {/* Boost Button */}
+        {/* Boost Button (Paid) */}
         <motion.button
           onClick={openBoostModal}
           whileTap={{ scale: 0.95 }}
-          className="flex-1 flex items-center justify-center gap-3 p-3 rounded-xl border border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50 transition-all"
+          className="flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-[var(--glass-border)] hover:border-[var(--warm-orange)]/50 bg-gradient-to-br from-[var(--warm-orange)]/5 to-transparent transition-all"
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--aqua-primary)" strokeWidth="2">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warm-orange)" strokeWidth="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <div className="text-left">
-            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{boostCount}</span>
-            <span className="text-[10px] text-[var(--text-muted)]">Boost</span>
+          <div className="text-center">
+            <span className="text-xl font-bold text-[var(--text-primary)] font-mono block">{boostCount}</span>
+            <span className="text-[10px] text-[var(--warm-orange)]">Boost ⚡</span>
           </div>
         </motion.button>
       </div>
@@ -290,33 +304,53 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                   </div>
                   <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Boost Successful!</h3>
                   <p className="text-sm text-[var(--text-secondary)]">
-                    You boosted {tokenName} with {boostAmount} SOL
+                    You added <span className="font-bold text-[var(--warm-orange)]">{tier.boosts} boosts</span> to {tokenName}
                   </p>
                 </div>
               ) : (
                 <>
-                  <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Boost {tokenName}</h3>
-                  <p className="text-sm text-[var(--text-secondary)] mb-6">
-                    Boost this token to increase its visibility and show your support.
-                  </p>
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--warm-orange)]/20 to-[var(--warm-coral)]/20 flex items-center justify-center">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warm-orange)" strokeWidth="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-xl font-bold text-[var(--text-primary)]">Boost {tokenName}</h3>
+                      <p className="text-sm text-[var(--text-muted)]">Pay SOL to boost this token&apos;s visibility</p>
+                    </div>
+                  </div>
 
                   <div className="space-y-4">
-                    {/* Boost Amount Selection */}
+                    {/* Boost Tier Selection */}
                     <div>
-                      <label className="text-sm text-[var(--text-muted)] mb-2 block">Boost Amount (SOL)</label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {[0.1, 0.5, 1, 5].map((amount) => (
+                      <label className="text-sm text-[var(--text-muted)] mb-3 block">Select Boost Package</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {BOOST_TIERS.map((t, i) => (
                           <button
-                            key={amount}
-                            onClick={() => setBoostAmount(amount)}
+                            key={i}
+                            onClick={() => setSelectedTier(i)}
                             className={cn(
-                              "py-3 rounded-xl text-sm font-medium transition-all",
-                              boostAmount === amount
-                                ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
-                                : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:bg-[var(--ocean-surface)]/80",
+                              "p-4 rounded-xl border-2 transition-all text-left",
+                              selectedTier === i
+                                ? "border-[var(--warm-orange)] bg-[var(--warm-orange)]/10"
+                                : "border-[var(--glass-border)] hover:border-[var(--warm-orange)]/50",
                             )}
                           >
-                            {amount} SOL
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-lg font-bold text-[var(--warm-orange)]">{t.sol} SOL</span>
+                              <svg 
+                                width="16" 
+                                height="16" 
+                                viewBox="0 0 24 24" 
+                                fill={selectedTier === i ? "var(--warm-orange)" : "none"} 
+                                stroke="var(--warm-orange)" 
+                                strokeWidth="2"
+                              >
+                                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </div>
+                            <span className="text-sm text-[var(--text-secondary)]">+{t.boosts} Boosts</span>
                           </button>
                         ))}
                       </div>
@@ -325,10 +359,10 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                     {/* Wallet Selection */}
                     <div>
                       <label className="text-sm text-[var(--text-muted)] mb-2 block">Pay from Wallet</label>
-                      <div className="space-y-2">
+                      <div className="space-y-2 max-h-40 overflow-y-auto">
                         {wallets.map((wallet) => {
                           const balance = walletBalances[wallet.id] || 0
-                          const hasEnough = balance >= boostAmount
+                          const hasEnough = balance >= tier.sol
                           return (
                             <button
                               key={wallet.id}
@@ -337,9 +371,9 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                               className={cn(
                                 "w-full flex items-center justify-between p-3 rounded-xl border transition-all",
                                 selectedWalletId === wallet.id
-                                  ? "border-[var(--aqua-primary)] bg-[var(--aqua-primary)]/10"
+                                  ? "border-[var(--warm-orange)] bg-[var(--warm-orange)]/10"
                                   : hasEnough
-                                    ? "border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50"
+                                    ? "border-[var(--glass-border)] hover:border-[var(--warm-orange)]/50"
                                     : "border-[var(--glass-border)] opacity-50 cursor-not-allowed",
                               )}
                             >
@@ -362,7 +396,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                                 </div>
                               </div>
                               {selectedWalletId === wallet.id && (
-                                <svg className="w-5 h-5 text-[var(--aqua-primary)]" fill="currentColor" viewBox="0 0 20 20">
+                                <svg className="w-5 h-5 text-[var(--warm-orange)]" fill="currentColor" viewBox="0 0 20 20">
                                   <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                 </svg>
                               )}
@@ -383,7 +417,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                     <button
                       onClick={handleBoost}
                       disabled={isBoosting || !selectedWalletId}
-                      className="w-full py-4 rounded-xl btn-primary text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="w-full py-4 rounded-xl bg-gradient-to-r from-[var(--warm-orange)] to-[var(--warm-coral)] text-white font-semibold text-base disabled:opacity-50 disabled:cursor-not-allowed hover:shadow-[0_0_30px_rgba(255,140,50,0.3)] transition-all"
                     >
                       {isBoosting ? (
                         <span className="flex items-center justify-center gap-2">
@@ -391,7 +425,12 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
                           Processing...
                         </span>
                       ) : (
-                        `Boost with ${boostAmount} SOL`
+                        <span className="flex items-center justify-center gap-2">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                          </svg>
+                          Boost with {tier.sol} SOL (+{tier.boosts} boosts)
+                        </span>
                       )}
                     </button>
                   </div>

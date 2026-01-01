@@ -35,11 +35,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { tokenAddress, amount } = body
+    const { tokenAddress, amount, boostCount = 1 } = body
 
     if (!tokenAddress || !amount || amount <= 0) {
       return NextResponse.json(
         { success: false, error: "Invalid boost parameters" },
+        { status: 400 }
+      )
+    }
+
+    // Validate boost count matches payment tier
+    const validTiers = [
+      { sol: 0.1, boosts: 1 },
+      { sol: 0.5, boosts: 5 },
+      { sol: 1, boosts: 10 },
+      { sol: 5, boosts: 50 },
+    ]
+    const matchingTier = validTiers.find(t => Math.abs(t.sol - amount) < 0.001 && t.boosts === boostCount)
+    if (!matchingTier) {
+      return NextResponse.json(
+        { success: false, error: "Invalid boost tier" },
         { status: 400 }
       )
     }
@@ -133,22 +148,38 @@ export async function POST(request: NextRequest) {
         token_address: tokenAddress,
         wallet_address: walletAddress,
         amount: amount,
+        boost_count: boostCount,
         tx_signature: signature,
         status: "confirmed",
       })
+
+      // Update token's total boost count
+      const { data: token } = await supabase
+        .from("tokens")
+        .select("boost_amount")
+        .eq("mint_address", tokenAddress)
+        .single()
+
+      if (token) {
+        await supabase
+          .from("tokens")
+          .update({ boost_amount: (token.boost_amount || 0) + boostCount })
+          .eq("mint_address", tokenAddress)
+      }
     } catch (dbError) {
       console.warn("[BOOSTS] Failed to record boost in DB:", dbError)
       // Continue - the payment was successful
     }
 
-    console.log(`[BOOSTS] Boost successful: ${amount} SOL for ${tokenAddress} - ${signature}`)
+    console.log(`[BOOSTS] Boost successful: ${amount} SOL (+${boostCount} boosts) for ${tokenAddress} - ${signature}`)
 
     return NextResponse.json({
       success: true,
       data: {
         txSignature: signature,
         amount: amount,
-        message: `Successfully boosted with ${amount} SOL`
+        boostCount: boostCount,
+        message: `Successfully added ${boostCount} boosts with ${amount} SOL`
       }
     })
   } catch (error) {
