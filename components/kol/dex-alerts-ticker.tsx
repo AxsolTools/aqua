@@ -299,7 +299,7 @@ function AlertChip({
       )}
 
       {/* Token Logo */}
-      <div className="relative w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-[var(--bg-secondary)]">
+      <div className="relative w-6 h-6 rounded-full overflow-hidden flex-shrink-0 bg-[var(--bg-secondary)] flex items-center justify-center">
         <Image
           src={alert.tokenLogo || alert.data.icon || `https://dd.dexscreener.com/ds-data/tokens/solana/${alert.data.tokenAddress}.png`}
           alt={alert.tokenSymbol || '?'}
@@ -307,10 +307,12 @@ function AlertChip({
           className="object-cover"
           unoptimized
           onError={(e) => {
-            (e.target as HTMLImageElement).src = 
-              `https://ui-avatars.com/api/?name=${alert.tokenSymbol || '?'}&background=0a0a0a&color=00d9ff&size=32`
+            (e.target as HTMLImageElement).style.display = 'none'
           }}
         />
+        <span className="text-[8px] font-bold text-[var(--text-muted)] absolute">
+          {(alert.tokenSymbol || '?').slice(0, 2).toUpperCase()}
+        </span>
       </div>
 
       {/* Token Symbol */}
@@ -375,7 +377,7 @@ function ExpandedAlertCard({
       </div>
 
       {/* Token Logo */}
-      <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[var(--bg-secondary)]">
+      <div className="relative w-8 h-8 rounded-full overflow-hidden flex-shrink-0 bg-[var(--bg-secondary)] flex items-center justify-center">
         <Image
           src={alert.tokenLogo || alert.data.icon || `https://dd.dexscreener.com/ds-data/tokens/solana/${alert.data.tokenAddress}.png`}
           alt={alert.tokenSymbol || '?'}
@@ -383,10 +385,12 @@ function ExpandedAlertCard({
           className="object-cover"
           unoptimized
           onError={(e) => {
-            (e.target as HTMLImageElement).src = 
-              `https://ui-avatars.com/api/?name=${alert.tokenSymbol || '?'}&background=0a0a0a&color=00d9ff&size=32`
+            (e.target as HTMLImageElement).style.display = 'none'
           }}
         />
+        <span className="text-[10px] font-bold text-[var(--text-muted)] absolute">
+          {(alert.tokenSymbol || '?').slice(0, 2).toUpperCase()}
+        </span>
       </div>
 
       {/* Token Info */}
