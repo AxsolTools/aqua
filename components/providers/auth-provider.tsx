@@ -41,9 +41,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isOnboarding, setIsOnboarding] = useState(false)
   const [userId, setUserIdState] = useState<string | null>(null)
   
-  // Multi-wallet trading state
-  const [toggledWallets, setToggledWallets] = useState<Set<string>>(new Set())
-  const [isMultiWalletMode, setIsMultiWalletMode] = useState(false)
+  // Multi-wallet trading state - persistent in localStorage
+  const [toggledWallets, setToggledWallets] = useState<Set<string>>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('aqua_toggled_wallets')
+      if (stored) {
+        try {
+          return new Set(JSON.parse(stored))
+        } catch {
+          return new Set()
+        }
+      }
+    }
+    return new Set()
+  })
+  const [isMultiWalletMode, setIsMultiWalletMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('aqua_multi_wallet_mode') === 'true'
+    }
+    return false
+  })
 
   const supabase = createClient()
 
@@ -157,7 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     window.location.reload()
   }
 
-  // Multi-wallet trading functions
+  // Multi-wallet trading functions - persist to localStorage
   const toggleWallet = useCallback((walletId: string) => {
     setToggledWallets((prev) => {
       const newSet = new Set(prev)
@@ -166,6 +183,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         newSet.add(walletId)
       }
+      // Persist to localStorage
+      localStorage.setItem('aqua_toggled_wallets', JSON.stringify(Array.from(newSet)))
       console.log('[AUTH] Toggled wallets:', Array.from(newSet))
       return newSet
     })
@@ -173,6 +192,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const clearToggledWallets = useCallback(() => {
     setToggledWallets(new Set())
+    localStorage.removeItem('aqua_toggled_wallets')
     console.log('[AUTH] Cleared toggled wallets')
   }, [])
 
@@ -182,11 +202,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .map((w) => w.public_key)
   }, [wallets, toggledWallets])
 
-  // Clear toggled wallets when multi-wallet mode is disabled
+  // Persist multi-wallet mode to localStorage
   useEffect(() => {
-    if (!isMultiWalletMode) {
-      // Don't clear immediately, in case user toggles it back on
-    }
+    localStorage.setItem('aqua_multi_wallet_mode', isMultiWalletMode ? 'true' : 'false')
   }, [isMultiWalletMode])
 
   const isAuthenticated = wallets.length > 0 && mainWallet !== null

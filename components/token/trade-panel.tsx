@@ -515,8 +515,16 @@ export function TradePanel({ token }: TradePanelProps) {
                 )}
               </div>
               <span className="text-sm font-medium text-[var(--text-primary)]">Multi-Wallet Mode</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">{wallets.length} wallets</span>
             </div>
-            <span className="text-[10px] text-[var(--text-muted)]">Trade with multiple wallets</span>
+            <svg 
+              className={cn("w-4 h-4 text-[var(--text-muted)] transition-transform", isMultiWalletMode && "rotate-180")} 
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
           </div>
 
           {/* Wallet Cards (expanded when enabled) */}
