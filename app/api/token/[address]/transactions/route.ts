@@ -161,8 +161,9 @@ async function fetchHeliusTransactions(
     console.log("[TOKEN-TRANSACTIONS] Found", signatures.length, "signatures, fetching enhanced data...")
 
     // Step 2: Use POST /v0/transactions to get enhanced parsed data
+    // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
     const enhancedResponse = await fetch(
-      `https://api.helius.xyz/v0/transactions?api-key=${HELIUS_API_KEY}`,
+      `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${HELIUS_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
