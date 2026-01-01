@@ -155,19 +155,18 @@ async function fetchHeliusTransactions(
     
     console.log("[TOKEN-TRANSACTIONS] Found", signatures.length, "signatures")
 
-    // Step 2: Get enhanced transaction data using POST /v0/transactions
-    // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
-    const enhancedResponse = await fetch(
-      `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${HELIUS_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactions: signatures.map(s => s.signature)
-        }),
-        signal: AbortSignal.timeout(15000)
-      }
-    )
+    // Step 2: Get enhanced transaction data using GET /v0/addresses/{address}/transactions
+    // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactionsbyaddress
+    const enhancedUrl = new URL(`https://api-mainnet.helius-rpc.com/v0/addresses/${tokenAddress}/transactions`)
+    enhancedUrl.searchParams.set("api-key", HELIUS_API_KEY)
+    if (beforeSignature) {
+      enhancedUrl.searchParams.set("before", beforeSignature)
+    }
+    
+    const enhancedResponse = await fetch(enhancedUrl.toString(), {
+      method: "GET",
+      signal: AbortSignal.timeout(15000)
+    })
 
     if (!enhancedResponse.ok) {
       console.warn("[TOKEN-TRANSACTIONS] Enhanced API error:", enhancedResponse.status)
