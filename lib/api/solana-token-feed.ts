@@ -299,72 +299,11 @@ function parseDexPair(pair: any, boostData?: { amount: number }, hasProfile?: bo
 // JUPITER FETCHER
 // ============================================================================
 
+// Jupiter API deprecated lite-api.jup.ag and now requires paid API key
+// Skipping Jupiter entirely - using DexScreener, Helius, Birdeye, PumpFun instead
 async function fetchFromJupiter(): Promise<TokenData[]> {
-  if (!canCallSource('jupiter')) return []
-  
-  const tokens: TokenData[] = []
-  
-  try {
-    const listRes = await fetchWithTimeout('https://lite-api.jup.ag/tokens/v2/all')
-    if (!listRes.ok) throw new Error('Jupiter list failed')
-    
-    const allTokens = await listRes.json()
-    const activeTokens = allTokens.filter((t: any) => t.address && t.symbol).slice(0, 300)
-    
-    // Get prices in batches
-    const priceData: Record<string, any> = {}
-    const addresses = activeTokens.map((t: any) => t.address)
-    
-    for (let i = 0; i < addresses.length; i += 100) {
-      const chunk = addresses.slice(i, i + 100)
-      try {
-        const priceRes = await fetchWithTimeout(`https://lite-api.jup.ag/price/v3?ids=${chunk.join(',')}`)
-        if (priceRes.ok) {
-          const data = await priceRes.json()
-          Object.assign(priceData, data.data || {})
-        }
-      } catch (e) {
-        continue
-      }
-    }
-    
-    for (const token of activeTokens) {
-      const price = priceData[token.address]?.price || 0
-      tokens.push({
-        address: token.address,
-        symbol: token.symbol,
-        name: token.name || token.symbol,
-        price,
-        priceChange24h: 0,
-        priceChange1h: 0,
-        priceChange5m: 0,
-        volume24h: 0,
-        volume6h: 0,
-        volume1h: 0,
-        volume5m: 0,
-        liquidity: 0,
-        marketCap: 0,
-        fdv: 0,
-        pairCreatedAt: Date.now(),
-        pairAddress: '',
-        logo: token.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`,
-        dexId: 'jupiter',
-        txns24h: { buys: 0, sells: 0 },
-        txns6h: { buys: 0, sells: 0 },
-        txns1h: { buys: 0, sells: 0 },
-        txns5m: { buys: 0, sells: 0 },
-        source: 'jupiter',
-        lastUpdated: Date.now(),
-      })
-    }
-    
-    recordSourceCall('jupiter', true)
-    return tokens
-  } catch (error) {
-    recordSourceCall('jupiter', false)
-    console.error('[FEED] Jupiter error:', error)
-    return []
-  }
+  // Jupiter API now requires API key signup - disabled
+  return []
 }
 
 // ============================================================================

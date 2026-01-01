@@ -73,33 +73,10 @@ async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): P
 }
 
 /**
- * Fetch from Jupiter Price API v2
- * Note: This API may require authentication for some tokens - use quote API as primary
+ * Jupiter Price API disabled - requires paid API key signup
  */
 async function fetchFromJupiterPriceV2(tokenMint: string): Promise<PriceResult> {
-  const response = await fetch(`https://lite-api.jup.ag/price/v3?ids=${tokenMint}`, {
-    headers: { 
-      "Accept": "application/json",
-      "User-Agent": "AQUA-Launchpad/1.0"
-    },
-    signal: AbortSignal.timeout(3000)
-  })
-
-  // Jupiter v2 may return 401 for unauthorized requests - skip to next source
-  if (response.status === 401) {
-    throw new Error("Jupiter price v2 requires authentication")
-  }
-
-  if (!response.ok) throw new Error(`Jupiter price v2 failed: ${response.status}`)
-
-  const data = await response.json()
-  const price = data.data?.[tokenMint]?.price
-
-  if (!Number.isFinite(price) || price <= 0) {
-    throw new Error("Jupiter price v2 returned invalid data")
-  }
-
-  return { price, source: "jupiter_price_v2" }
+  throw new Error("Jupiter API disabled - requires API key signup")
 }
 
 /**

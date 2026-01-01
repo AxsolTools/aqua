@@ -71,25 +71,9 @@ function getErrorMessage(error: unknown): string {
 }
 
 /**
- * Fetch token price from Jupiter (v2 API)
+ * Fetch token price from DexScreener (no auth required)
  */
 async function fetchPrice(mintAddress: string): Promise<number> {
-  try {
-    // Try Jupiter Price API v3
-    const response = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
-      { headers: { "Content-Type": "application/json" } }
-    );
-    
-    if (response.ok) {
-      const data = await response.json();
-      return data.data?.[mintAddress]?.price || 0;
-    }
-  } catch (error) {
-    console.warn(`[METRICS-UPDATER] Jupiter price fetch failed for ${mintAddress}:`, getErrorMessage(error));
-  }
-  
-  // Fallback to DexScreener
   try {
     const dexResponse = await fetch(
       `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,

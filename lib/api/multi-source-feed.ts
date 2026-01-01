@@ -175,64 +175,11 @@ export async function fetchDexScreenerTokens(limit = 40): Promise<TokenData[]> {
 }
 
 // ============== JUPITER ==============
+// Jupiter API deprecated lite-api.jup.ag and now requires paid API key signup
+// Disabled - using other sources instead
 export async function fetchJupiterTokens(limit = 30): Promise<TokenData[]> {
-  const cacheKey = `jup-tokens-${limit}`
-  const cached = getCached<TokenData[]>(cacheKey, 'jupiter')
-  if (cached) return cached
-
-  if (isRateLimited('jupiter')) {
-    return []
-  }
-
-  const tokens: TokenData[] = []
-
-  try {
-    // Get verified token list
-    const listRes = await fetchWithTimeout('https://lite-api.jup.ag/tokens/v2/strict')
-    if (!listRes.ok) throw new Error('Jupiter API error')
-    
-    const tokenList = await listRes.json()
-    const solanaTokens = tokenList.slice(0, 50)
-
-    // Get prices for these tokens
-    const addresses = solanaTokens.map((t: { address: string }) => t.address).join(',')
-    const pricesRes = await fetchWithTimeout(`https://lite-api.jup.ag/price/v3?ids=${addresses}`)
-    
-    if (pricesRes.ok) {
-      const priceData = await pricesRes.json()
-      
-      for (const token of solanaTokens.slice(0, limit)) {
-        const price = priceData.data?.[token.address]?.price || 0
-        
-        tokens.push({
-          address: token.address,
-          symbol: token.symbol || 'UNKNOWN',
-          name: token.name || 'Unknown',
-          price,
-          priceChange24h: 0, // Jupiter doesn't provide this
-          priceChange1h: 0,
-          volume24h: 0,
-          volume1h: 0,
-          liquidity: 0,
-          marketCap: 0,
-          fdv: 0,
-          pairCreatedAt: Date.now(),
-          logo: token.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`,
-          txns24h: { buys: 0, sells: 0 },
-          txns1h: { buys: 0, sells: 0 },
-          source: 'jupiter',
-        })
-      }
-    }
-  } catch (error) {
-    console.error('[FEED] Jupiter error:', error)
-    if (String(error).includes('429')) {
-      setRateLimited('jupiter')
-    }
-  }
-
-  setCache(cacheKey, tokens, 'jupiter')
-  return tokens
+  // Jupiter API now requires API key signup - disabled
+  return []
 }
 
 // ============== HELIUS (via RPC) ==============

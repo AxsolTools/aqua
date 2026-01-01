@@ -42,7 +42,7 @@ const HELIUS_API_KEY = process.env.HELIUS_API_KEY || '';
 // ============================================================================
 
 /**
- * Fetch token liquidity from multiple sources
+ * Fetch token liquidity from DexScreener or Birdeye
  */
 async function fetchLiquidity(mintAddress: string): Promise<number> {
   // Check cache first
@@ -51,26 +51,27 @@ async function fetchLiquidity(mintAddress: string): Promise<number> {
 
   let liquidity = 0;
 
+  // Try DexScreener first (no auth required)
   try {
-    // Try Jupiter Price API v3
-    const jupiterResponse = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
+    const dexResponse = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
       { next: { revalidate: 10 } }
     );
 
-    if (jupiterResponse.ok) {
-      const jupiterData = await jupiterResponse.json();
-      const tokenData = jupiterData.data?.[mintAddress];
-      if (tokenData?.extraInfo?.quotedPrice?.buyPrice) {
-        // Estimate liquidity from price depth
-        liquidity = tokenData.extraInfo?.depth?.buyPriceImpactRatio?.depth || 0;
+    if (dexResponse.ok) {
+      const dexData = await dexResponse.json();
+      const pair = dexData.pairs?.find((p: { liquidity?: { usd?: number } }) => 
+        p.liquidity?.usd && p.liquidity.usd > 0
+      );
+      if (pair) {
+        liquidity = pair.liquidity.usd;
       }
     }
   } catch (error) {
-    console.warn('[METRICS] Jupiter liquidity fetch failed:', error);
+    console.warn('[METRICS] DexScreener liquidity fetch failed:', error);
   }
 
-  // Fallback: Query DeFi Llama or Birdeye
+  // Fallback: Query Birdeye
   if (liquidity === 0) {
     try {
       const birdeyeResponse = await fetch(
@@ -96,27 +97,30 @@ async function fetchLiquidity(mintAddress: string): Promise<number> {
 }
 
 /**
- * Fetch SOL price in USD
+ * Fetch SOL price in USD from DexScreener or Binance
  */
 async function fetchSolPriceUsd(): Promise<number> {
   const SOL_MINT = 'So11111111111111111111111111111111111111112';
   
+  // DexScreener first (no auth required)
   try {
-    // Try Jupiter first
     const response = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`,
+      `https://api.dexscreener.com/latest/dex/tokens/${SOL_MINT}`,
       { next: { revalidate: 10 } }
     );
     
     if (response.ok) {
       const data = await response.json();
-      const price = data.data?.[SOL_MINT]?.price;
-      if (price && price > 0) {
-        return price;
+      const pair = data.pairs?.find((p: { priceUsd?: string; baseToken?: { symbol?: string } }) => 
+        p.priceUsd && parseFloat(p.priceUsd) > 0 && 
+        (p.baseToken?.symbol === 'SOL' || p.baseToken?.symbol === 'WSOL')
+      );
+      if (pair) {
+        return parseFloat(pair.priceUsd);
       }
     }
   } catch (error) {
-    console.warn('[METRICS] Jupiter SOL price failed:', error);
+    console.warn('[METRICS] DexScreener SOL price failed:', error);
   }
 
   // Fallback to Binance
@@ -162,55 +166,33 @@ async function fetchPriceAndMarketCap(
   // Fetch SOL price for conversions
   solPriceUsd = await fetchSolPriceUsd();
 
-  // Try Jupiter Price API v3
+  // Fetch price from DexScreener (no auth required)
   try {
-    const response = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
-      { next: { revalidate: 10 } }
+    const dexResponse = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
+      { next: { revalidate: 30 } }
     );
 
-    if (response.ok) {
-      const data = await response.json();
-      const tokenPrice = data.data?.[mintAddress];
-      if (tokenPrice?.price) {
-        priceUsd = tokenPrice.price;
-        // Calculate price in SOL
-        priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0;
+    if (dexResponse.ok) {
+      const dexData = await dexResponse.json();
+      const pair = dexData.pairs?.find((p: { priceUsd?: string; fdv?: number; priceNative?: string }) => 
+        p.priceUsd && parseFloat(p.priceUsd) > 0
+      );
+      if (pair) {
+        priceUsd = parseFloat(pair.priceUsd);
+        // DexScreener provides priceNative which is price in SOL
+        if (pair.priceNative) {
+          priceSol = parseFloat(pair.priceNative);
+        } else {
+          priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0;
+        }
+        if (pair.fdv) {
+          marketCap = pair.fdv;
+        }
       }
     }
   } catch (error) {
-    console.warn('[METRICS] Jupiter price fetch failed:', error);
-  }
-
-  // Fallback to DexScreener if Jupiter fails
-  if (priceUsd === 0) {
-    try {
-      const dexResponse = await fetch(
-        `https://api.dexscreener.com/latest/dex/tokens/${mintAddress}`,
-        { next: { revalidate: 30 } }
-      );
-
-      if (dexResponse.ok) {
-        const dexData = await dexResponse.json();
-        const pair = dexData.pairs?.find((p: { priceUsd?: string; fdv?: number; priceNative?: string }) => 
-          p.priceUsd && parseFloat(p.priceUsd) > 0
-        );
-        if (pair) {
-          priceUsd = parseFloat(pair.priceUsd);
-          // DexScreener provides priceNative which is price in SOL
-          if (pair.priceNative) {
-            priceSol = parseFloat(pair.priceNative);
-          } else {
-            priceSol = solPriceUsd > 0 ? priceUsd / solPriceUsd : 0;
-          }
-          if (pair.fdv) {
-            marketCap = pair.fdv;
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('[METRICS] DexScreener price fetch failed:', error);
-    }
+    console.warn('[METRICS] DexScreener price fetch failed:', error);
   }
 
   // Calculate market cap if not already set

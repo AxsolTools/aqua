@@ -188,50 +188,11 @@ async function fetchCoinGeckoSolPrice(): Promise<number> {
 }
 
 /**
- * Fetch SOL price from Jupiter (free public API)
- * Note: Jupiter v2 API may require auth - use quote API as fallback
+ * Jupiter API disabled - requires paid API key signup
+ * Using DexScreener, CoinGecko, Binance instead
  */
 async function fetchJupiterSolPrice(): Promise<number> {
-  // Create timeout manually for Node.js compatibility
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  
-  try {
-    const response = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`,
-      { 
-        next: { revalidate: 10 },
-        signal: controller.signal,
-        headers: { 'User-Agent': 'AQUA-Launchpad/1.0' }
-      }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    // Jupiter 401 = auth required, skip to next source
-    if (response.status === 401) {
-      throw new Error('Jupiter API requires authentication');
-    }
-    
-    if (!response.ok) {
-      throw new Error(`Jupiter API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const price = data.data?.[SOL_MINT]?.price;
-    
-    if (!Number.isFinite(price) || price <= 0) {
-      throw new Error('Invalid price from Jupiter');
-    }
-    
-    return price;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Jupiter API timeout');
-    }
-    throw error;
-  }
+  throw new Error('Jupiter API disabled - requires API key signup');
 }
 
 /**
@@ -389,50 +350,10 @@ export async function getSolPrice(): Promise<PriceResult> {
 // ============================================================================
 
 /**
- * Fetch token price from Jupiter
- * Note: Jupiter v2 API may require auth for some tokens
+ * Jupiter API disabled - requires paid API key signup
  */
 async function fetchJupiterTokenPrice(mint: string): Promise<number> {
-  // Create timeout manually for Node.js compatibility
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  
-  try {
-    const response = await fetch(
-      `https://lite-api.jup.ag/price/v3?ids=${mint}`,
-      { 
-        next: { revalidate: 10 },
-        signal: controller.signal,
-        headers: { 'User-Agent': 'AQUA-Launchpad/1.0' }
-      }
-    );
-    
-    clearTimeout(timeoutId);
-    
-    // Jupiter 401 = auth required, skip to next source
-    if (response.status === 401) {
-      throw new Error('Jupiter API requires authentication');
-    }
-    
-    if (!response.ok) {
-      throw new Error(`Jupiter API error: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    const price = data.data?.[mint]?.price;
-    
-    if (!Number.isFinite(price) || price <= 0) {
-      throw new Error('Token price not available');
-    }
-    
-    return price;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Jupiter API timeout');
-    }
-    throw error;
-  }
+  throw new Error('Jupiter API disabled - requires API key signup');
 }
 
 /**

@@ -1,4 +1,6 @@
-// Jupiter API - Solana DEX aggregator with token metadata
+// Jupiter API - Disabled as of Jan 2026 (requires paid API key signup)
+// Using DexScreener and other free sources instead
+
 export interface JupiterToken {
   address: string
   chainId: number
@@ -22,67 +24,22 @@ export interface JupiterPrice {
   price: number
 }
 
-const JUPITER_BASE = "https://lite-api.jup.ag/tokens/v2"
-const JUPITER_PRICE = "https://lite-api.jup.ag/price/v3"
-
-// Cache token list
+// Cache token list (empty - Jupiter disabled)
 let tokenListCache: JupiterToken[] | null = null
-let tokenListTimestamp = 0
-const CACHE_DURATION = 5 * 60 * 1000 // 5 minutes
 
+// Jupiter API disabled - returns empty results
 export async function getJupiterTokenList(): Promise<JupiterToken[]> {
-  const now = Date.now()
-  if (tokenListCache && now - tokenListTimestamp < CACHE_DURATION) {
-    return tokenListCache
-  }
-
-  try {
-    const res = await fetch(`${JUPITER_BASE}/strict`, {
-      next: { revalidate: 300 },
-    })
-    if (!res.ok) return tokenListCache || []
-    const data = await res.json()
-    tokenListCache = data
-    tokenListTimestamp = now
-    return data
-  } catch {
-    return tokenListCache || []
-  }
+  return tokenListCache || []
 }
 
 export async function getTokenMetadata(address: string): Promise<JupiterToken | null> {
-  const tokens = await getJupiterTokenList()
-  return tokens.find((t) => t.address === address) || null
+  return null
 }
 
 export async function getTokenPrice(address: string): Promise<number | null> {
-  try {
-    const res = await fetch(`${JUPITER_PRICE}/price?ids=${address}`, {
-      next: { revalidate: 30 },
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.data?.[address]?.price || null
-  } catch {
-    return null
-  }
+  return null
 }
 
 export async function getMultipleTokenPrices(addresses: string[]): Promise<Record<string, number>> {
-  try {
-    const res = await fetch(`${JUPITER_PRICE}/price?ids=${addresses.join(",")}`, {
-      next: { revalidate: 30 },
-    })
-    if (!res.ok) return {}
-    const data = await res.json()
-    const prices: Record<string, number> = {}
-    for (const addr of addresses) {
-      if (data.data?.[addr]?.price) {
-        prices[addr] = data.data[addr].price
-      }
-    }
-    return prices
-  } catch {
-    return {}
-  }
+  return {}
 }

@@ -267,21 +267,12 @@ export async function getBulkTokenPairs(tokenAddresses: string[]): Promise<Map<s
 }
 
 export async function getTokenLogo(tokenAddress: string): Promise<string | null> {
-  // Try Jupiter first (best for Solana tokens)
-  try {
-    const jupiterRes = await fetch(`https://lite-api.jup.ag/tokens/v2/strict`)
-    if (jupiterRes.ok) {
-      const tokens = await jupiterRes.json()
-      const token = tokens.find((t: { address: string }) => t.address === tokenAddress)
-      if (token?.logoURI) return token.logoURI
-    }
-  } catch {}
-
-  // Fallback to DexScreener pair info
+  // DexScreener is the primary source for logos (no auth required)
   const pairs = await getTokenPairs(tokenAddress)
   if (pairs[0]?.info?.imageUrl) return pairs[0].info.imageUrl
 
-  return null
+  // Fallback to DexScreener direct logo URL
+  return `https://dd.dexscreener.com/ds-data/tokens/solana/${tokenAddress}.png`
 }
 
 export function getDexScreenerLogoUrl(chainId: string, tokenAddress: string): string {

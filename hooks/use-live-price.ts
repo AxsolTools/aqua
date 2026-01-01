@@ -31,7 +31,9 @@ interface JupiterPriceResponse {
 // ============================================================================
 
 const SOL_MINT = "So11111111111111111111111111111111111111112"
-const JUPITER_PRICE_API = "https://lite-api.jup.ag/price/v3"
+// Jupiter API (requires API key as of Jan 2026)
+// Note: Direct client-side calls are deprecated. Use server-side API routes instead.
+const JUPITER_API_BASE = "https://api.jup.ag"
 const POLL_INTERVAL = 30_000 // 30 seconds
 
 // ============================================================================
@@ -311,14 +313,20 @@ export function useSolPrice(): SolPriceResult {
         }
       }
 
-      // Fallback to Jupiter direct
-      const jupResponse = await fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`)
-      if (jupResponse.ok) {
-        const jupData: JupiterPriceResponse = await jupResponse.json()
-        const jupPrice = jupData.data?.[SOL_MINT]?.price
-        if (jupPrice) {
-          setPrice(jupPrice)
-          setSource("jupiter")
+      // Fallback to DexScreener (no auth required, client-side friendly)
+      const dexResponse = await fetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${SOL_MINT}`
+      )
+      if (dexResponse.ok) {
+        const dexData = await dexResponse.json()
+        const pair = dexData.pairs?.find(
+          (p: { priceUsd?: string; baseToken?: { symbol?: string } }) => 
+            p.priceUsd && parseFloat(p.priceUsd) > 0 && 
+            (p.baseToken?.symbol === 'SOL' || p.baseToken?.symbol === 'WSOL')
+        )
+        if (pair) {
+          setPrice(parseFloat(pair.priceUsd))
+          setSource("dexscreener")
           setError(null)
           return
         }

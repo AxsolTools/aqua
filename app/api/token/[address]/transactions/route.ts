@@ -1,6 +1,5 @@
 /**
  * Token Transactions API - Fetch on-chain transaction history
- * Uses Helius Enhanced Transactions API for comprehensive transaction data
  */
 
 import { NextRequest, NextResponse } from "next/server"
@@ -161,12 +160,22 @@ async function fetchHeliusTransactions(
     }
 
     // Map enhanced transactions to our format
-    return transactions
+    const mappedTxs = transactions
       .slice(0, limit)
       .map((tx: EnhancedTransaction): Transaction => {
         const isBuy = isTokenBuy(tx, tokenAddress)
         const solAmount = extractSolAmount(tx)
         const tokenAmount = extractTokenAmount(tx, tokenAddress)
+        
+        // Debug log for first few transactions
+        if (transactions.indexOf(tx) < 3) {
+          console.log("[TOKEN-TRANSACTIONS] TX:", tx.signature?.slice(0, 12), 
+            "type:", tx.type,
+            "SOL:", solAmount.toFixed(6),
+            "hasSwap:", !!tx.events?.swap,
+            "nativeTransfers:", tx.nativeTransfers?.length || 0
+          )
+        }
         
         return {
           signature: tx.signature || "",
@@ -179,6 +188,8 @@ async function fetchHeliusTransactions(
         }
       })
       .filter((tx) => tx.signature) // Only include valid txs
+    
+    return mappedTxs
   } catch (error) {
     if (error instanceof Error && error.name !== 'AbortError') {
       console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
@@ -244,6 +255,7 @@ async function fetchHeliusTransactionsFallback(
 }
 
 // Enhanced Transaction format from Helius API
+// Supports multiple formats as Helius response can vary
 interface EnhancedTransaction {
   signature: string
   timestamp?: number
@@ -252,11 +264,13 @@ interface EnhancedTransaction {
   source?: string
   type?: string
   description?: string
+  // Native SOL transfers (lamports)
   nativeTransfers?: Array<{
-    amount: number
+    amount: number | string
     fromUserAccount: string
     toUserAccount: string
   }>
+  // Token transfers
   tokenTransfers?: Array<{
     mint: string
     tokenAmount: number
@@ -264,9 +278,10 @@ interface EnhancedTransaction {
     toUserAccount: string
     tokenStandard?: string
   }>
+  // Account balance changes
   accountData?: Array<{
     account: string
-    nativeBalanceChange: number
+    nativeBalanceChange: number | string
     tokenBalanceChanges?: Array<{
       mint: string
       rawTokenAmount: { tokenAmount: string; decimals: number }
@@ -276,8 +291,8 @@ interface EnhancedTransaction {
   // Swap events from Helius Enhanced API
   events?: {
     swap?: {
-      nativeInput?: { account: string; amount: string }
-      nativeOutput?: { account: string; amount: string }
+      nativeInput?: { account: string; amount: string | number }
+      nativeOutput?: { account: string; amount: string | number }
       tokenInputs?: Array<{
         mint: string
         rawTokenAmount: { tokenAmount: string; decimals: number }
@@ -290,8 +305,20 @@ interface EnhancedTransaction {
         userAccount: string
         tokenAccount: string
       }>
+      // Alternative format
+      innerSwaps?: Array<{
+        tokenInputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
+        tokenOutputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
+        nativeFees?: Array<{ amount: number | string }>
+      }>
     }
+    // Alternative field name
+    nft?: unknown
   }
+  // Alternative fee format
+  fee?: number
+  // Native balance change for the whole transaction
+  nativeBalanceChange?: number | string
 }
 
 // Signature info from getSignaturesForAddress fallback
@@ -352,23 +379,39 @@ function extractSolAmount(tx: EnhancedTransaction): number {
     const swap = tx.events.swap
     // For swaps, get SOL input or output
     if (swap.nativeInput?.amount) {
-      return parseInt(swap.nativeInput.amount) / 1e9
+      const amount = typeof swap.nativeInput.amount === 'string' 
+        ? parseInt(swap.nativeInput.amount) 
+        : swap.nativeInput.amount
+      if (amount > 0) return amount / 1e9
     }
     if (swap.nativeOutput?.amount) {
-      return parseInt(swap.nativeOutput.amount) / 1e9
+      const amount = typeof swap.nativeOutput.amount === 'string' 
+        ? parseInt(swap.nativeOutput.amount) 
+        : swap.nativeOutput.amount
+      if (amount > 0) return amount / 1e9
     }
   }
 
   // PRIORITY 2: Try nativeTransfers - reliable for SOL transfers
   if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
-    // Filter out tiny amounts (likely fees) and get the main transfer
-    const significantTransfers = tx.nativeTransfers.filter(t => Math.abs(t.amount || 0) > 5000) // > 0.000005 SOL
-    if (significantTransfers.length > 0) {
-      // Get the largest transfer (likely the main trade)
-      const largest = significantTransfers.reduce((max, t) => 
-        Math.abs(t.amount) > Math.abs(max.amount) ? t : max
-      )
-      return Math.abs(largest.amount) / 1e9
+    // Sum all significant transfers (filter out tiny fee-related amounts)
+    let totalSol = 0
+    for (const transfer of tx.nativeTransfers) {
+      const amount = typeof transfer.amount === 'string' 
+        ? parseInt(transfer.amount) 
+        : (transfer.amount || 0)
+      // Only count significant transfers (> 0.001 SOL = 1_000_000 lamports)
+      if (Math.abs(amount) > 1_000_000) {
+        totalSol += Math.abs(amount)
+      }
+    }
+    if (totalSol > 0) {
+      // Return the average to avoid double-counting (from/to same pair)
+      const count = tx.nativeTransfers.filter(t => {
+        const amt = typeof t.amount === 'string' ? parseInt(t.amount) : (t.amount || 0)
+        return Math.abs(amt) > 1_000_000
+      }).length
+      return (totalSol / Math.max(count, 1)) / 1e9
     }
   }
   
@@ -377,9 +420,11 @@ function extractSolAmount(tx: EnhancedTransaction): number {
     // Look for significant balance changes (not just fee payer)
     let maxChange = 0
     for (const account of tx.accountData) {
-      const change = Math.abs(account.nativeBalanceChange || 0)
-      // Ignore very small changes (fees) and changes from system programs
-      if (change > 5000 && change > maxChange) {
+      const change = typeof account.nativeBalanceChange === 'string'
+        ? parseInt(account.nativeBalanceChange)
+        : Math.abs(account.nativeBalanceChange || 0)
+      // Only count significant changes (> 0.001 SOL)
+      if (change > 1_000_000 && change > maxChange) {
         maxChange = change
       }
     }

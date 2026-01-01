@@ -32,7 +32,6 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
-const JUPITER_PRICE_API = 'https://lite-api.jup.ag/price/v3';
 
 // Minimum market cap to process (saves API credits)
 const MIN_MARKET_CAP_USD = 1000;
@@ -66,21 +65,26 @@ interface PriceUpdateResult {
 // ============================================================================
 
 /**
- * Fetch SOL price in USD
+ * Fetch SOL price in USD from DexScreener or Binance
  */
 async function fetchSolPrice(): Promise<number> {
+  // DexScreener first (no auth required)
   try {
-    const response = await fetch(`${JUPITER_PRICE_API}?ids=${SOL_MINT}`);
+    const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${SOL_MINT}`);
     if (response.ok) {
       const data = await response.json();
-      const price = data.data?.[SOL_MINT]?.price;
-      if (price && price > 0) {
+      const pair = data.pairs?.find((p: { priceUsd?: string; baseToken?: { symbol?: string } }) => 
+        p.priceUsd && parseFloat(p.priceUsd) > 0 && 
+        (p.baseToken?.symbol === 'SOL' || p.baseToken?.symbol === 'WSOL')
+      );
+      if (pair) {
+        const price = parseFloat(pair.priceUsd);
         console.log(`[PRICE-UPDATER] SOL price: $${price.toFixed(2)}`);
         return price;
       }
     }
   } catch (error) {
-    console.warn('[PRICE-UPDATER] Jupiter SOL price failed:', error);
+    console.warn('[PRICE-UPDATER] DexScreener SOL price failed:', error);
   }
 
   // Fallback to Binance
@@ -103,7 +107,7 @@ async function fetchSolPrice(): Promise<number> {
 }
 
 /**
- * Batch fetch token prices from Jupiter
+ * Batch fetch token prices from DexScreener
  */
 async function fetchTokenPrices(
   mints: string[]
@@ -112,26 +116,21 @@ async function fetchTokenPrices(
 
   if (mints.length === 0) return priceMap;
 
-  try {
-    const ids = mints.join(',');
-    const response = await fetch(`${JUPITER_PRICE_API}?ids=${ids}`);
-
-    if (response.ok) {
-      const data = await response.json();
-      
-      for (const mint of mints) {
-        const price = data.data?.[mint]?.price;
-        if (price && price > 0) {
-          priceMap.set(mint, price);
-        }
+  // DexScreener doesn't support batch - fetch individually (with limit)
+  const limitedMints = mints.slice(0, 20); // Limit to avoid rate limits
+  
+  for (const mint of limitedMints) {
+    try {
+      const price = await fetchDexScreenerPrice(mint);
+      if (price > 0) {
+        priceMap.set(mint, price);
       }
-
-      console.log(`[PRICE-UPDATER] Jupiter: ${priceMap.size}/${mints.length} prices found`);
+    } catch {
+      // Skip failed fetches
     }
-  } catch (error) {
-    console.warn('[PRICE-UPDATER] Jupiter batch fetch failed:', error);
   }
 
+  console.log(`[PRICE-UPDATER] DexScreener: ${priceMap.size}/${limitedMints.length} prices found`);
   return priceMap;
 }
 

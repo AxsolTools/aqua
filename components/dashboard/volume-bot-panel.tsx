@@ -957,8 +957,7 @@ export function VolumeBotPanel({
         {/* Info Box */}
         <div className="p-3 bg-[var(--bg-secondary)] border border-[var(--border)] rounded-lg">
           <p className="text-xs text-[var(--text-muted)] leading-relaxed">
-            Uses Helius Enhanced WebSockets for real-time monitoring. Executes trades across multiple wallets.
-            Smart Profit manages take profit and stop loss automatically. 2% platform fee applies to all transactions.
+            2% platform fee applies to all transactions.
           </p>
         </div>
       </div>
