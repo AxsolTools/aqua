@@ -104,11 +104,11 @@ async function fetchDatabaseTransactions(
 /**
  * Fetch transactions from Helius Enhanced Transactions API
  * 
- * CORRECT APPROACH:
- * 1. Use getSignaturesForAddress to get transaction signatures
- * 2. Use POST /v0/transactions with signatures to get enhanced parsed data
+ * CREDIT COSTS:
+ * - Enhanced Transactions API: 100 credits per call
+ * - Returns rich parsed data: token transfers, SOL amounts, transaction types
  * 
- * Docs: https://docs.helius.dev/solana-apis/enhanced-transactions-api/parse-transaction-s
+ * URL: https://api-mainnet.helius-rpc.com/v0/addresses/{address}/transactions?api-key=XXX
  */
 async function fetchHeliusTransactions(
   tokenAddress: string,
@@ -123,80 +123,41 @@ async function fetchHeliusTransactions(
   console.log("[TOKEN-TRANSACTIONS] Fetching for token:", tokenAddress.slice(0, 8))
 
   try {
-    // Step 1: Get signatures using standard RPC
-    const sigResponse = await fetch(HELIUS_RPC!, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: "sigs",
-        method: "getSignaturesForAddress",
-        params: [
-          tokenAddress,
-          { 
-            limit: Math.min(limit, 50),
-            ...(beforeSignature ? { before: beforeSignature } : {})
-          }
-        ]
-      }),
-      signal: AbortSignal.timeout(10000)
+    // Use Enhanced Transactions API - returns rich parsed data
+    // Docs: https://www.helius.dev/docs/enhanced-transactions/transaction-history
+    let url = `https://api-mainnet.helius-rpc.com/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}`
+    
+    // Add pagination if needed
+    if (beforeSignature) {
+      url += `&before=${beforeSignature}`
+    }
+    
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+      },
+      signal: AbortSignal.timeout(15000)
     })
 
-    if (!sigResponse.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Failed to get signatures:", sigResponse.status)
-      return []
+    if (!response.ok) {
+      console.warn("[TOKEN-TRANSACTIONS] Helius Enhanced API error:", response.status)
+      // Fall back to standard RPC if enhanced API fails
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
     }
 
-    const sigData = await sigResponse.json()
-    const signatures = (sigData.result || [])
-      .filter((sig: SignatureInfo) => sig.err === null)
-      .map((sig: SignatureInfo) => sig.signature)
-      .slice(0, Math.min(limit, 50))
-
-    if (signatures.length === 0) {
-      console.log("[TOKEN-TRANSACTIONS] No signatures found")
-      return []
-    }
-
-    console.log("[TOKEN-TRANSACTIONS] Found", signatures.length, "signatures, fetching enhanced data...")
-
-    // Step 2: Use POST /v0/transactions to get enhanced parsed data
-    // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
-    const enhancedResponse = await fetch(
-      `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${HELIUS_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactions: signatures }),
-        signal: AbortSignal.timeout(15000)
-      }
-    )
-
-    if (!enhancedResponse.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Enhanced API error:", enhancedResponse.status)
-      // Return basic transactions from signatures
-      return sigData.result
-        .filter((sig: SignatureInfo) => sig.err === null)
-        .slice(0, limit)
-        .map((sig: SignatureInfo) => ({
-          signature: sig.signature,
-          type: "unknown" as const,
-          walletAddress: "",
-          amountSol: 0,
-          amountTokens: 0,
-          timestamp: (sig.blockTime || 0) * 1000,
-          status: "confirmed" as const,
-        }))
-    }
-
-    const transactions = await enhancedResponse.json()
+    const transactions = await response.json()
     
     if (!Array.isArray(transactions)) {
       console.warn("[TOKEN-TRANSACTIONS] Unexpected response format")
-      return []
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
     }
     
-    console.log("[TOKEN-TRANSACTIONS] Got", transactions.length, "enhanced transactions")
+    console.log("[TOKEN-TRANSACTIONS] Found", transactions.length, "transactions")
+
+    if (transactions.length === 0) {
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
+    }
 
     // Map enhanced transactions to our format
     const mappedTxs = transactions
@@ -205,6 +166,16 @@ async function fetchHeliusTransactions(
         const isBuy = isTokenBuy(tx, tokenAddress)
         const solAmount = extractSolAmount(tx)
         const tokenAmount = extractTokenAmount(tx, tokenAddress)
+        
+        // Debug log for first few transactions
+        if (transactions.indexOf(tx) < 3) {
+          console.log("[TOKEN-TRANSACTIONS] TX:", tx.signature?.slice(0, 12), 
+            "type:", tx.type,
+            "SOL:", solAmount.toFixed(6),
+            "hasSwap:", !!tx.events?.swap,
+            "nativeTransfers:", tx.nativeTransfers?.length || 0
+          )
+        }
         
         return {
           signature: tx.signature || "",
@@ -216,17 +187,72 @@ async function fetchHeliusTransactions(
           status: "confirmed" as const,
         }
       })
-      .filter((tx) => tx.signature)
+      .filter((tx) => tx.signature) // Only include valid txs
     
     return mappedTxs
   } catch (error) {
     if (error instanceof Error && error.name !== 'AbortError') {
       console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
     }
-    return []
+    return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
   }
 }
 
+/**
+ * Fallback to standard RPC if Enhanced API fails
+ */
+async function fetchHeliusTransactionsFallback(
+  tokenAddress: string,
+  limit: number,
+  beforeSignature?: string | null
+): Promise<Transaction[]> {
+  if (!HELIUS_RPC) return []
+
+  console.log("[TOKEN-TRANSACTIONS] Using fallback RPC method")
+
+  try {
+    const response = await fetch(HELIUS_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "sigs",
+        method: "getSignaturesForAddress",
+        params: [
+          tokenAddress,
+          { 
+            limit: Math.min(limit, 100),
+            ...(beforeSignature ? { before: beforeSignature } : {})
+          }
+        ]
+      }),
+      signal: AbortSignal.timeout(10000)
+    })
+
+    if (!response.ok) return []
+
+    const data = await response.json()
+    const signatures = data.result || []
+    
+    console.log("[TOKEN-TRANSACTIONS] Fallback found", signatures.length, "signatures")
+
+    return signatures
+      .filter((sig: SignatureInfo) => sig.err === null)
+      .slice(0, limit)
+      .map((sig: SignatureInfo) => ({
+        signature: sig.signature,
+        type: "unknown" as const,
+        walletAddress: "",
+        amountSol: 0,
+        amountTokens: 0,
+        timestamp: (sig.blockTime || 0) * 1000,
+        status: "confirmed" as const,
+      }))
+  } catch (error) {
+    console.error("[TOKEN-TRANSACTIONS] Fallback error:", error)
+    return []
+  }
+}
 
 // Enhanced Transaction format from Helius API
 // Supports multiple formats as Helius response can vary
