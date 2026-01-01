@@ -3,6 +3,7 @@
 import { Header } from "@/components/layout/header"
 import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { TokenAggregator } from "@/components/kol/token-aggregator"
+import { DexAlertsTicker } from "@/components/kol/dex-alerts-ticker"
 import { BarChart3, Activity } from "lucide-react"
 
 export default function TokenAggregatorPage() {
@@ -13,6 +14,9 @@ export default function TokenAggregatorPage() {
 
       <div className="px-3 sm:px-4 lg:px-6 py-4">
         <div className="max-w-[1920px] mx-auto">
+          {/* DexScreener Real-Time Alerts Ticker */}
+          <DexAlertsTicker className="mb-3" maxAlerts={15} />
+
           {/* Page Header */}
           <div className="mb-4">
             <div className="flex items-center gap-3 mb-2">
