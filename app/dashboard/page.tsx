@@ -8,7 +8,6 @@ import { useAuth } from "@/components/providers/auth-provider"
 import { Header } from "@/components/layout/header"
 import { 
   FintechCard, 
-  FintechHeader, 
   MetricCard, 
   ProgressBar, 
   StatusBadge, 
@@ -19,19 +18,6 @@ import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 import type { Token, TideHarvest } from "@/lib/types/database"
 import { motion } from "framer-motion"
-import { 
-  Wallet, 
-  Coins, 
-  TrendingUp, 
-  Droplets, 
-  ExternalLink,
-  Settings,
-  Plus,
-  BarChart3,
-  Activity,
-  Gift,
-  X
-} from "lucide-react"
 import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
 import { WaterLevelMeter } from "@/components/metrics/water-level-meter"
 import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
@@ -196,24 +182,24 @@ export default function DashboardPage() {
 
       <Header />
 
-      <div className="relative z-10 pt-20 pb-12 px-3 sm:px-4 lg:px-6">
-        <div className="max-w-[1920px] mx-auto">
-          {/* Dashboard Header */}
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
-                    <BarChart3 className="w-5 h-5 text-teal-400" />
-                  </div>
-                  <h1 className="text-2xl font-bold text-zinc-100">Creator Dashboard</h1>
+      <div className="relative z-10 pt-20 pb-8 px-4 lg:px-6">
+        <div className="max-w-6xl mx-auto">
+          {/* Dashboard Header - Compact */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                  <span className="text-lg">📊</span>
                 </div>
-                <p className="text-zinc-500">Your tokens. Your rewards. Real-time data.</p>
+                <div>
+                  <h1 className="text-xl font-bold text-zinc-100">Creator Dashboard</h1>
+                  <p className="text-xs text-zinc-500">Your tokens. Your rewards. Real-time data.</p>
+                </div>
               </div>
               {mainWallet && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <StatusBadge status="online" label="Connected" />
-                  <span className="text-sm text-zinc-500 font-mono">
+                  <span className="text-xs text-zinc-500 font-mono">
                     {mainWallet.public_key.slice(0, 6)}...{mainWallet.public_key.slice(-4)}
                   </span>
                 </div>
@@ -223,87 +209,75 @@ export default function DashboardPage() {
 
           {isAuthenticated && mainWallet ? (
             <>
-              {/* Stats Overview */}
+              {/* Stats Overview - Compact Row */}
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8"
+                transition={{ delay: 0.05 }}
+                className="grid grid-cols-5 gap-3 mb-4"
               >
-                <MetricCard
-                  label="Tokens Created"
-                  value={createdTokens.length}
-                  icon={<Coins className="w-4 h-4" />}
-                />
-                <MetricCard
-                  label="Total Market Cap"
-                  value={`$${formatNumber(createdTokens.reduce((sum, t) => sum + (t.market_cap || 0), 0))}`}
-                  color="teal"
-                  icon={<TrendingUp className="w-4 h-4" />}
-                />
-                <MetricCard
-                  label="Total Liquidity"
-                  value={formatNumber(createdTokens.reduce((sum, t) => sum + (t.current_liquidity || 0), 0))}
-                  suffix="SOL"
-                  icon={<Droplets className="w-4 h-4" />}
-                />
-                <MetricCard
-                  label="24h Volume"
-                  value={formatNumber(createdTokens.reduce((sum, t) => sum + (t.volume_24h || 0), 0))}
-                  suffix="SOL"
-                  icon={<Activity className="w-4 h-4" />}
-                />
-                <MetricCard
-                  label="Claimable Rewards"
-                  value={formatNumber(totalRewards)}
-                  suffix="SOL"
-                  color="amber"
-                  icon={<Gift className="w-4 h-4" />}
-                />
+                <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">Tokens Created</p>
+                  <p className="text-xl font-bold text-zinc-100">{createdTokens.length}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-zinc-900/80 border border-teal-500/20">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">Total Market Cap</p>
+                  <p className="text-xl font-bold text-teal-400">${formatNumber(createdTokens.reduce((sum, t) => sum + (t.market_cap || 0), 0))}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">Total Liquidity</p>
+                  <p className="text-xl font-bold text-zinc-100">{formatNumber(createdTokens.reduce((sum, t) => sum + (t.current_liquidity || 0), 0))} <span className="text-xs text-zinc-500">SOL</span></p>
+                </div>
+                <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">24h Volume</p>
+                  <p className="text-xl font-bold text-zinc-100">{formatNumber(createdTokens.reduce((sum, t) => sum + (t.volume_24h || 0), 0))} <span className="text-xs text-zinc-500">SOL</span></p>
+                </div>
+                <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
+                  <p className="text-[10px] text-amber-400 uppercase tracking-wide mb-1">Claimable Rewards</p>
+                  <p className="text-xl font-bold text-amber-400">{formatNumber(totalRewards)} <span className="text-xs text-zinc-500">SOL</span></p>
+                </div>
               </motion.div>
 
-              {/* Aqua Metrics - Compact with Inline Animated Elements */}
+              {/* Liquidity Health - Compact Animated Metrics */}
               <motion.div
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15 }}
-                className="mb-6"
+                transition={{ delay: 0.1 }}
+                className="mb-4"
               >
-                <FintechCard>
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-zinc-300">Liquidity Health</h3>
-                    <span className="text-[10px] text-zinc-500">Live metrics</span>
+                <div className="p-4 rounded-xl bg-zinc-900/80 border border-zinc-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-xs font-medium text-zinc-400 uppercase tracking-wide">Liquidity Health</h3>
+                    <span className="text-[9px] text-zinc-600">Live metrics</span>
                   </div>
-                  <div className="grid grid-cols-5 gap-3">
-                    {/* Water Level - Compact */}
-                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-teal-400">💧</span>
-                        <span className="text-[10px] text-zinc-400">Level</span>
+                  <div className="grid grid-cols-5 gap-2">
+                    {/* Water Level */}
+                    <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-xs">💧</span>
+                        <span className="text-[9px] text-zinc-500">Level</span>
                       </div>
-                      <div className="h-16">
-                        <WaterLevelMeter level={createdTokens[0]?.water_level || 75} size="sm" showLabel={true} />
-                      </div>
+                      <WaterLevelMeter level={createdTokens[0]?.water_level || 50} size="sm" showLabel={true} />
                     </div>
 
-                    {/* Pour Rate - Compact */}
-                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-cyan-400">💦</span>
-                        <span className="text-[10px] text-zinc-400">Pour</span>
+                    {/* Pour Rate */}
+                    <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-xs">💦</span>
+                        <span className="text-[9px] text-zinc-500">Pour</span>
                       </div>
-                      <div className="h-16">
+                      <div className="h-24 -mb-2">
                         <PourRateVisualizer rate={createdTokens[0]?.pour_rate || 1.5} />
                       </div>
                     </div>
 
-                    {/* Evaporation - Compact */}
-                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-amber-400">🔥</span>
-                        <span className="text-[10px] text-zinc-400">Burn</span>
+                    {/* Evaporation */}
+                    <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-xs">🔥</span>
+                        <span className="text-[9px] text-zinc-500">Burn</span>
                       </div>
-                      <div className="h-16">
+                      <div className="flex flex-col items-center justify-center h-20">
                         <EvaporationTracker 
                           totalEvaporated={createdTokens[0]?.total_evaporated || 0}
                           evaporationRate={createdTokens[0]?.evaporation_rate || 0.5}
@@ -312,36 +286,36 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    {/* Health Score - Compact */}
-                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-purple-400">⭐</span>
-                        <span className="text-[10px] text-zinc-400">Health</span>
+                    {/* Health Score */}
+                    <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-xs">⭐</span>
+                        <span className="text-[9px] text-zinc-500">Health</span>
                       </div>
-                      <div className="h-16">
-                        <ConstellationGauge strength={createdTokens[0]?.constellation_strength || 85} />
+                      <div className="flex items-center justify-center h-20">
+                        <ConstellationGauge strength={createdTokens[0]?.constellation_strength || 50} />
                       </div>
                     </div>
 
-                    {/* Harvest - Compact */}
-                    <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-amber-400">🎁</span>
-                        <span className="text-[10px] text-amber-400">Harvest</span>
+                    {/* Harvest */}
+                    <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="text-xs">🎁</span>
+                        <span className="text-[9px] text-amber-400/70">Harvest</span>
                       </div>
-                      <div className="h-16 flex flex-col items-center justify-center">
-                        <span className="text-lg font-bold text-amber-400">{formatNumber(totalRewards)}</span>
-                        <span className="text-[10px] text-zinc-500">SOL</span>
+                      <div className="flex flex-col items-center justify-center h-20">
+                        <span className="text-xl font-bold text-amber-400">{formatNumber(totalRewards)}</span>
+                        <span className="text-[9px] text-zinc-500">SOL</span>
                       </div>
                     </div>
                   </div>
-                </FintechCard>
+                </div>
               </motion.div>
 
               {/* Token List - Compact */}
               {dataLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                <div className="flex items-center justify-center py-6">
+                  <div className="flex items-center gap-2 text-zinc-500 text-xs">
                     <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
@@ -350,98 +324,111 @@ export default function DashboardPage() {
                   </div>
                 </div>
               ) : createdTokens.length === 0 ? (
-                <FintechCard>
-                  <EmptyState
-                    icon={<Coins className="w-6 h-6" />}
-                    title="Ready to Launch?"
-                    description="Drop your first token and start collecting rewards."
-                    action={
-                      <Link href="/launch">
-                        <ActionButton icon={<Plus className="w-4 h-4" />}>
-                          Launch Token
-                        </ActionButton>
-                      </Link>
-                    }
-                  />
-                </FintechCard>
+                <div className="p-6 rounded-xl bg-zinc-900/80 border border-zinc-800 text-center">
+                  <span className="text-2xl mb-2 block">🪙</span>
+                  <h3 className="text-sm font-semibold text-zinc-300 mb-1">Ready to Launch?</h3>
+                  <p className="text-xs text-zinc-500 mb-3">Drop your first token and start collecting rewards.</p>
+                  <Link href="/launch" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-500 text-zinc-900 text-xs font-semibold hover:bg-teal-400 transition-colors">
+                    <span>+</span> Launch Token
+                  </Link>
+                </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="space-y-2">
                   {createdTokens.map((token, index) => (
                     <motion.div
                       key={token.id}
-                      initial={{ opacity: 0, y: 10 }}
+                      initial={{ opacity: 0, y: 5 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.1 + index * 0.05 }}
+                      transition={{ delay: 0.05 + index * 0.02 }}
+                      className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800 hover:border-teal-500/30 transition-colors"
                     >
-                      <FintechCard hover className="!p-4">
-                        {/* Compact Header */}
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden flex-shrink-0">
-                              {token.image_url ? (
-                                <Image src={token.image_url} alt={token.name} fill className="object-cover" />
-                              ) : (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className="text-xs font-bold text-teal-400">{token.symbol.slice(0, 2)}</span>
-                                </div>
-                              )}
+                      {/* Token Row - Single Line Compact */}
+                      <div className="flex items-center gap-3">
+                        {/* Token Icon */}
+                        <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden flex-shrink-0">
+                          {token.image_url ? (
+                            <Image src={token.image_url} alt={token.name} fill className="object-cover" />
+                          ) : (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <span className="text-xs font-bold text-teal-400">{token.symbol.slice(0, 2)}</span>
                             </div>
-                            <div className="min-w-0">
-                              <h3 className="font-semibold text-sm text-zinc-100 truncate">{token.name}</h3>
-                              <p className="text-xs text-teal-400">${token.symbol}</p>
-                            </div>
-                          </div>
-                          <span className={cn(
-                            "px-2 py-0.5 rounded text-[10px] font-medium flex-shrink-0",
-                            token.stage === "bonding" ? "bg-amber-500/10 text-amber-400" : "bg-green-500/10 text-green-400"
-                          )}>
-                            {token.stage === "bonding" ? "Bonding" : "DEX"}
-                          </span>
+                          )}
                         </div>
 
-                        {/* Compact Metrics Row */}
-                        <div className="flex items-center gap-2 mb-3 text-xs">
-                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
-                            <p className="text-zinc-500 text-[10px]">MCap</p>
+                        {/* Token Name & Symbol */}
+                        <div className="min-w-0 flex-shrink-0 w-32">
+                          <h3 className="font-semibold text-sm text-zinc-100 truncate">{token.name}</h3>
+                          <p className="text-xs text-teal-400">${token.symbol}</p>
+                        </div>
+
+                        {/* Status Badge */}
+                        <span className={cn(
+                          "px-2 py-0.5 rounded text-[10px] font-medium flex-shrink-0",
+                          token.stage === "bonding" ? "bg-amber-500/10 text-amber-400" : "bg-green-500/10 text-green-400"
+                        )}>
+                          {token.stage === "bonding" ? "Bonding" : "DEX"}
+                        </span>
+
+                        {/* Stats - Inline */}
+                        <div className="flex items-center gap-4 flex-1 text-xs">
+                          <div className="text-center">
+                            <p className="text-[10px] text-zinc-500">MCap</p>
                             <p className="font-semibold text-teal-400">${formatNumber(token.market_cap || 0)}</p>
                           </div>
-                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
-                            <p className="text-zinc-500 text-[10px]">Vol 24h</p>
+                          <div className="text-center">
+                            <p className="text-[10px] text-zinc-500">Vol 24h</p>
                             <p className="font-semibold text-zinc-200">{formatNumber(token.volume_24h || 0)}</p>
                           </div>
-                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
-                            <p className="text-zinc-500 text-[10px]">Holders</p>
+                          <div className="text-center">
+                            <p className="text-[10px] text-zinc-500">Holders</p>
                             <p className="font-semibold text-zinc-200">{token.holders || 0}</p>
                           </div>
                         </div>
 
-                        {/* Progress Bar */}
-                        <div className="mb-3">
-                          <ProgressBar value={token.water_level} label="Water Level" color="teal" />
+                        {/* Water Level - Compact Bar */}
+                        <div className="w-24 flex-shrink-0">
+                          <div className="flex items-center justify-between text-[9px] text-zinc-500 mb-0.5">
+                            <span>Water Level</span>
+                            <span className="text-teal-400">{(token.water_level || 50).toFixed(0)}%</span>
+                          </div>
+                          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-teal-500 to-teal-400 rounded-full transition-all"
+                              style={{ width: `${token.water_level || 50}%` }}
+                            />
+                          </div>
                         </div>
 
-                        {/* Rewards + Actions Row */}
-                        <div className="flex items-center gap-2">
-                          {token.harvest && (
-                            <div className="flex-1 p-2 rounded bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
-                              <div>
-                                <p className="text-[10px] text-zinc-500">Rewards</p>
-                                <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated - token.harvest.total_claimed)} SOL</p>
-                              </div>
-                              <button className="px-2 py-1 rounded bg-amber-500 text-[10px] font-semibold text-zinc-900 hover:bg-amber-400">Claim</button>
+                        {/* Rewards */}
+                        {token.harvest && (
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="p-2 rounded bg-amber-500/5 border border-amber-500/20">
+                              <p className="text-[9px] text-zinc-500">Rewards</p>
+                              <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated - token.harvest.total_claimed)} SOL</p>
                             </div>
-                          )}
-                          <Link href={`/token/${token.mint_address}`} className="p-2 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors">
-                            <ExternalLink className="w-4 h-4 text-zinc-400" />
+                            <button className="px-2 py-1.5 rounded bg-amber-500 text-[10px] font-semibold text-zinc-900 hover:bg-amber-400">Claim</button>
+                          </div>
+                        )}
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Link href={`/token/${token.mint_address}`} className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors" title="View Token">
+                            <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                            </svg>
                           </Link>
                           <button 
                             onClick={() => setSelectedTokenForManage(token.mint_address)}
-                            className="p-2 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                            className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                            title="Manage"
                           >
-                            <Settings className="w-4 h-4 text-zinc-400" />
+                            <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
                           </button>
                         </div>
-                      </FintechCard>
+                      </div>
                     </motion.div>
                   ))}
                 </div>
@@ -466,7 +453,9 @@ export default function DashboardPage() {
                         onClick={() => setSelectedTokenForManage(null)}
                         className="absolute -top-2 -right-2 z-10 p-2 rounded-full bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 transition-colors"
                       >
-                        <X className="w-4 h-4 text-zinc-400" />
+                        <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
                       </button>
                       <TokenParametersPanel tokenAddress={selectedTokenForManage} />
                     </div>
@@ -475,18 +464,17 @@ export default function DashboardPage() {
               )}
             </>
           ) : (
-            <FintechCard>
-              <EmptyState
-                icon={<Wallet className="w-8 h-8" />}
-                title="Connect Wallet"
-                description="Link up to see your tokens and rewards."
-                action={
-                  <ActionButton onClick={() => setIsOnboarding(true)} icon={<Wallet className="w-4 h-4" />}>
-                    Connect Wallet
-                  </ActionButton>
-                }
-              />
-            </FintechCard>
+            <div className="p-8 rounded-xl bg-zinc-900/80 border border-zinc-800 text-center max-w-md mx-auto">
+              <span className="text-3xl mb-3 block">💼</span>
+              <h3 className="text-lg font-semibold text-zinc-200 mb-2">Connect Wallet</h3>
+              <p className="text-sm text-zinc-500 mb-4">Link up to see your tokens and rewards.</p>
+              <button
+                onClick={() => setIsOnboarding(true)}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-teal-500 text-zinc-900 font-semibold hover:bg-teal-400 transition-colors"
+              >
+                <span>💳</span> Connect Wallet
+              </button>
+            </div>
           )}
         </div>
       </div>

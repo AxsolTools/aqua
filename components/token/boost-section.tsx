@@ -26,23 +26,28 @@ export function BoostSection({ tokenAddress }: VouchSectionProps) {
     try {
       const supabase = createClient()
 
-      // Get all vouches for this token
-      const { data: vouchesData } = await supabase
-        .from("vouches")
+      // Get all votes for this token (votes table = vouches)
+      const { data: votesData, error } = await supabase
+        .from("votes")
         .select("wallet_address, created_at")
         .eq("token_address", tokenAddress)
         .order("created_at", { ascending: false })
 
-      if (vouchesData) {
-        setTotalVouches(vouchesData.length)
-        setTopVouchers(vouchesData.slice(0, 5).map(v => ({
+      if (error) {
+        console.debug('[VOUCH] Table query error:', error.message)
+        return
+      }
+
+      if (votesData) {
+        setTotalVouches(votesData.length)
+        setTopVouchers(votesData.slice(0, 5).map(v => ({
           wallet_address: v.wallet_address,
           vouched_at: v.created_at
         })))
 
         // Check if user has vouched
         if (activeWallet) {
-          const userVouch = vouchesData.find(v => v.wallet_address === activeWallet.public_key)
+          const userVouch = votesData.find(v => v.wallet_address === activeWallet.public_key)
           setHasVouched(!!userVouch)
         }
       }
@@ -65,23 +70,39 @@ export function BoostSection({ tokenAddress }: VouchSectionProps) {
       const supabase = createClient()
 
       if (hasVouched) {
-        // Remove vouch
-        await supabase
-          .from("vouches")
+        // Remove vouch (from votes table)
+        const { error } = await supabase
+          .from("votes")
           .delete()
           .eq("token_address", tokenAddress)
           .eq("wallet_address", activeWallet.public_key)
 
+        if (error) {
+          console.error('[VOUCH] Delete error:', error)
+          return
+        }
+
         setHasVouched(false)
         setTotalVouches(prev => Math.max(0, prev - 1))
       } else {
-        // Add vouch
-        await supabase
-          .from("vouches")
+        // Add vouch (to votes table)
+        const { error } = await supabase
+          .from("votes")
           .insert({
             token_address: tokenAddress,
             wallet_address: activeWallet.public_key,
+            vote_type: 'up'
           })
+
+        if (error) {
+          // Check if it's a duplicate
+          if (error.code === '23505') {
+            setHasVouched(true)
+            return
+          }
+          console.error('[VOUCH] Insert error:', error)
+          return
+        }
 
         setHasVouched(true)
         setTotalVouches(prev => prev + 1)

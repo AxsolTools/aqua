@@ -92,9 +92,9 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
   }
 
   return (
-    <div className="mb-6">
+    <div className="mb-4">
       {/* Search Bar - Compact */}
-      <div className="mb-4">
+      <div className="mb-3">
         <form onSubmit={handleSearchSubmit} className="relative max-w-xl">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -135,16 +135,16 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
         </form>
       </div>
 
-      {/* Filters row: Tabs + Sort */}
-      <div className="flex flex-col lg:flex-row gap-3 lg:items-center lg:justify-between">
-        {/* Stage Tabs */}
+      {/* Filters row: Tabs + Sort - Compact inline */}
+      <div className="flex items-center gap-3">
+        {/* Stage Tabs - Compact */}
         <div
           ref={containerRef}
-          className="relative flex gap-0.5 p-1 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-x-auto"
+          className="relative inline-flex gap-0.5 p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)]"
         >
           {/* Active indicator */}
           <motion.div
-            className="absolute h-[calc(100%-8px)] top-1 rounded-md bg-[var(--bg-elevated)]"
+            className="absolute h-[calc(100%-4px)] top-0.5 rounded bg-[var(--bg-elevated)]"
             initial={false}
             animate={{
               left: indicatorStyle.left,
@@ -158,7 +158,7 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
               key={s.value}
               onClick={() => handleStageChange(s.value)}
               className={cn(
-                "relative px-4 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap z-10",
+                "relative px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap z-10",
                 stage === s.value
                   ? "text-[var(--text-primary)]"
                   : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
@@ -169,15 +169,15 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
           ))}
         </div>
 
-        {/* Sort */}
+        {/* Sort - Compact */}
         <select
           value={sort}
           onChange={(e) => handleSortChange(e.target.value)}
-          className="input w-auto py-2 pr-8 text-sm appearance-none cursor-pointer"
+          className="px-2 py-1.5 rounded-lg text-xs bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-secondary)] appearance-none cursor-pointer pr-6"
           style={{
-            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%236b7280' strokeWidth='1.5' strokeLinecap='round' strokeLinejoin='round'/%3E%3C/svg%3E")`,
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5l3 3 3-3' stroke='%236b7280' strokeWidth='1.5' strokeLinecap='round' strokeLinejoin='round'/%3E%3C/svg%3E")`,
             backgroundRepeat: "no-repeat",
-            backgroundPosition: "right 0.75rem center",
+            backgroundPosition: "right 0.5rem center",
           }}
         >
           {sortOptions.map((option) => (
