@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import type { Token } from "@/lib/types/database"
 import { GlassPanel } from "@/components/ui/glass-panel"
@@ -22,13 +22,24 @@ interface TokenHeaderProps {
   creator?: Creator | null
 }
 
+interface TokenStats {
+  holders: number
+  volume24h: number
+  liquidity: number
+  bondingCurveProgress: number
+  bondingCurveSol: number
+  isMigrated: boolean
+}
+
 export function TokenHeader({ token, creator }: TokenHeaderProps) {
   const { activeWallet, isAuthenticated } = useAuth()
   const [copied, setCopied] = useState(false)
   const [isWatchlisted, setIsWatchlisted] = useState(false)
+  const [stats, setStats] = useState<TokenStats | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
 
   // Fetch live prices with 30-second polling
-  const { priceUsd, marketCap, isLoading: priceLoading, source: priceSource } = useLivePrice(
+  const { priceUsd, priceSol, marketCap, isLoading: priceLoading } = useLivePrice(
     token.mint_address,
     token.total_supply,
     token.decimals || 6
@@ -37,6 +48,30 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
   // Use live prices if available, fallback to database values
   const displayPrice = priceUsd > 0 ? priceUsd : (token.price_usd || (token.price_sol || 0) * 150)
   const displayMarketCap = marketCap > 0 ? marketCap : (token.market_cap || 0)
+
+  // Fetch real-time stats (holders, volume, liquidity)
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/token/${token.mint_address}/stats`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          setStats(data.data)
+        }
+      }
+    } catch (error) {
+      console.debug("[TOKEN-HEADER] Stats fetch failed:", error)
+    } finally {
+      setStatsLoading(false)
+    }
+  }, [token.mint_address])
+
+  useEffect(() => {
+    fetchStats()
+    // Poll every 30 seconds
+    const interval = setInterval(fetchStats, 30_000)
+    return () => clearInterval(interval)
+  }, [fetchStats])
 
   const copyAddress = () => {
     navigator.clipboard.writeText(token.mint_address)
@@ -62,21 +97,46 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
     setIsWatchlisted(!isWatchlisted)
   }
 
+  // Format price to be readable (not scientific notation)
   const formatPrice = (price: number | null | undefined) => {
     const p = price || 0
-    if (p < 0.0001) return `$${p.toExponential(2)}`
-    if (p < 1) return `$${p.toFixed(6)}`
-    return `$${p.toFixed(4)}`
+    if (p === 0) return "$0.00"
+    
+    // For very small prices, show more decimals
+    if (p < 0.000001) {
+      // Format as readable: $0.00000350 instead of $3.50e-6
+      const decimals = Math.max(8, -Math.floor(Math.log10(p)) + 2)
+      return `$${p.toFixed(Math.min(decimals, 12))}`
+    }
+    if (p < 0.0001) return `$${p.toFixed(8)}`
+    if (p < 0.01) return `$${p.toFixed(6)}`
+    if (p < 1) return `$${p.toFixed(4)}`
+    if (p < 100) return `$${p.toFixed(2)}`
+    return `$${p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   const formatMarketCap = (mc: number | null | undefined) => {
     const m = mc || 0
     if (m >= 1_000_000) return `$${(m / 1_000_000).toFixed(2)}M`
     if (m >= 1_000) return `$${(m / 1_000).toFixed(2)}K`
-    return `$${m.toFixed(2)}`
+    if (m > 0) return `$${m.toFixed(2)}`
+    return "$0.00"
+  }
+
+  const formatVolume = (vol: number | null | undefined) => {
+    const v = vol || 0
+    if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`
+    if (v >= 1_000) return `$${(v / 1_000).toFixed(2)}K`
+    if (v > 0) return `$${v.toFixed(2)}`
+    return "$0.00"
   }
 
   const formatWallet = (address: string) => `${address.slice(0, 4)}...${address.slice(-4)}`
+
+  // Get display values from stats or fallback to token data
+  const displayHolders = stats?.holders || token.holders || 0
+  const displayVolume = stats?.volume24h || token.volume_24h || 0
+  const displayLiquidity = stats?.liquidity || token.current_liquidity || 0
 
   return (
     <GlassPanel className="p-6">
@@ -100,12 +160,12 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               <span
                 className={cn(
                   "px-2 py-1 rounded text-xs font-medium",
-                  token.stage === "migrated"
+                  (stats?.isMigrated || token.stage === "migrated")
                     ? "bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]"
                     : "bg-[var(--warm-orange)]/20 text-[var(--warm-orange)]",
                 )}
               >
-                {token.stage === "migrated" ? "Migrated" : "Bonding"}
+                {(stats?.isMigrated || token.stage === "migrated") ? "Migrated" : "Bonding"}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -186,21 +246,36 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Holders</p>
-              <p className="text-sm md:text-base font-bold text-[var(--warm-pink)]">
-                {(token.holders || 0).toLocaleString()}
-              </p>
+              <div className="flex items-center gap-1">
+                <p className="text-sm md:text-base font-bold text-[var(--warm-pink)]">
+                  {displayHolders.toLocaleString()}
+                </p>
+                {statsLoading && (
+                  <div className="w-2 h-2 border border-[var(--warm-pink)] border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Volume 24h</p>
-              <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
-                {formatMarketCap(token.volume_24h || 0)}
-              </p>
+              <div className="flex items-center gap-1">
+                <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
+                  {formatVolume(displayVolume)}
+                </p>
+                {statsLoading && (
+                  <div className="w-2 h-2 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
             </div>
             <div>
               <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Liquidity</p>
-              <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
-                {formatMarketCap(token.current_liquidity || 0)}
-              </p>
+              <div className="flex items-center gap-1">
+                <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
+                  {formatVolume(displayLiquidity)}
+                </p>
+                {statsLoading && (
+                  <div className="w-2 h-2 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
             </div>
           </div>
 
@@ -231,7 +306,7 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               </button>
             )}
 
-            {/* Social Links - accessed as direct properties */}
+            {/* Social Links */}
             {(token.twitter || token.telegram || token.website) && (
               <div className="flex items-center gap-1">
                 {token.twitter && (
