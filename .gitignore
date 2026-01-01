@@ -25,3 +25,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Dice Game Server
+dice-server/data/
+dice-server/dist/
+
+# Legacy Dice Game folder (if still exists)
+UseANDeditDICEGAME/data/
+UseANDeditDICEGAME/node_modules/
+UseANDeditDICEGAME/dist/
+UseANDeditDICEGAME/.env*
+
+# Encrypted wallet files
+*.enc
+secure-wallets.enc
+wallet_data.enc
+
+# Bet history and sensitive data
+dice_bets.json
+locked_data.json

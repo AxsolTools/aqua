@@ -7,12 +7,13 @@ import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { WalletSidebar } from "@/components/wallet/wallet-sidebar"
-import { ChevronDown, Sparkles, Coins } from "lucide-react"
+import { ChevronDown, Sparkles, Coins, Dice6 } from "lucide-react"
 
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/launch", label: "Launch" },
   { href: "/launch22", label: "TOKEN22" },
+  { href: "/dice", label: "Dice", icon: Dice6 },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
 ]
@@ -42,12 +43,13 @@ export function Header() {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
                     pathname === item.href
                       ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  }`}
+                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
                 >
+                  {item.icon && <item.icon className="w-4 h-4" />}
                   {item.label}
                 </Link>
               ))}
@@ -140,12 +142,13 @@ export function Header() {
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`block px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       pathname === item.href
                         ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    }`}
+                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
                   >
+                    {item.icon && <item.icon className="w-4 h-4" />}
                     {item.label}
                   </Link>
                 ))}
