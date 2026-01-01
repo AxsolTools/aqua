@@ -1,90 +1,44 @@
 import { NextResponse } from 'next/server'
-import { fetchTrendingSolanaPairs, fetchMasterTokenFeed, type TokenData } from '@/lib/api/solana-token-feed'
+import { fetchMasterTokenFeed, getMasterCacheSize, type TokenData } from '@/lib/api/solana-token-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// Server-side cache
-let trendingCache: { data: TokenData[]; timestamp: number } | null = null
-const CACHE_TTL = 10000 // 10 seconds
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   
-  // NO LIMIT CAP - return all available trending tokens
-  const limit = parseInt(searchParams.get('limit') || '200')
+  // Parse params - NO artificial limits
   const page = parseInt(searchParams.get('page') || '1')
-  
-  const now = Date.now()
-  
-  // Return cached data if fresh
-  if (trendingCache && now - trendingCache.timestamp < CACHE_TTL) {
-    const startIdx = (page - 1) * limit
-    const pageData = trendingCache.data.slice(startIdx, startIdx + limit)
-    
-    return NextResponse.json({
-      success: true,
-      data: pageData,
-      count: pageData.length,
-      total: trendingCache.data.length,
-      page,
-      hasMore: startIdx + limit < trendingCache.data.length,
-      cached: true,
-      cacheAge: now - trendingCache.timestamp,
-    })
-  }
+  const limit = parseInt(searchParams.get('limit') || '100')
   
   try {
-    // Get trending tokens - no artificial limit
+    // Get tokens sorted by trending score
     const result = await fetchMasterTokenFeed({
-      page: 1,
-      limit: 500, // Fetch as many as possible
+      page,
+      limit,
       sort: 'trending',
     })
     
-    // Additional trending-specific scoring
-    const scoredTokens = result.tokens.map(token => ({
+    // Apply enhanced trending scoring for this endpoint
+    const enhancedTokens = result.tokens.map(token => ({
       ...token,
       trendingScore: calculateEnhancedTrendingScore(token),
     }))
-
-    // Sort by enhanced trending score
-    scoredTokens.sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
     
-    // Update cache with all tokens
-    trendingCache = {
-      data: scoredTokens,
-      timestamp: now,
-    }
-    
-    // Return requested page
-    const startIdx = (page - 1) * limit
-    const pageData = scoredTokens.slice(startIdx, startIdx + limit)
+    // Re-sort by enhanced score
+    enhancedTokens.sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
     
     return NextResponse.json({
       success: true,
-      data: pageData,
-      count: pageData.length,
-      total: scoredTokens.length,
+      data: enhancedTokens,
+      count: enhancedTokens.length,
+      total: result.total,
       page,
-      hasMore: startIdx + limit < scoredTokens.length,
+      hasMore: result.hasMore,
+      cacheSize: getMasterCacheSize(),
     })
   } catch (error) {
     console.error('Error fetching trending tokens:', error)
-    
-    // Return stale cache if available
-    if (trendingCache) {
-      const startIdx = (page - 1) * limit
-      return NextResponse.json({
-        success: true,
-        data: trendingCache.data.slice(startIdx, startIdx + limit),
-        total: trendingCache.data.length,
-        page,
-        hasMore: startIdx + limit < trendingCache.data.length,
-        stale: true,
-        cacheAge: now - trendingCache.timestamp,
-      })
-    }
     
     return NextResponse.json(
       { success: false, error: 'Failed to fetch trending tokens', data: [] },
