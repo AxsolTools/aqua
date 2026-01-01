@@ -200,6 +200,7 @@ async function fetchHeliusTransactions(
 
 /**
  * Fallback to standard RPC if Enhanced API fails
+ * Uses getSignaturesForAddress + getParsedTransaction for buy/sell detection
  */
 async function fetchHeliusTransactionsFallback(
   tokenAddress: string,
@@ -211,7 +212,8 @@ async function fetchHeliusTransactionsFallback(
   console.log("[TOKEN-TRANSACTIONS] Using fallback RPC method")
 
   try {
-    const response = await fetch(HELIUS_RPC, {
+    // Step 1: Get signatures
+    const sigResponse = await fetch(HELIUS_RPC, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -221,7 +223,7 @@ async function fetchHeliusTransactionsFallback(
         params: [
           tokenAddress,
           { 
-            limit: Math.min(limit, 100),
+            limit: Math.min(limit, 25), // Reduced to avoid rate limits
             ...(beforeSignature ? { before: beforeSignature } : {})
           }
         ]
@@ -229,29 +231,236 @@ async function fetchHeliusTransactionsFallback(
       signal: AbortSignal.timeout(10000)
     })
 
-    if (!response.ok) return []
+    if (!sigResponse.ok) return []
 
-    const data = await response.json()
-    const signatures = data.result || []
+    const sigData = await sigResponse.json()
+    const signatures = (sigData.result || [])
+      .filter((sig: SignatureInfo) => sig.err === null)
+      .slice(0, Math.min(limit, 25))
     
     console.log("[TOKEN-TRANSACTIONS] Fallback found", signatures.length, "signatures")
 
-    return signatures
-      .filter((sig: SignatureInfo) => sig.err === null)
-      .slice(0, limit)
-      .map((sig: SignatureInfo) => ({
-        signature: sig.signature,
-        type: "unknown" as const,
-        walletAddress: "",
-        amountSol: 0,
-        amountTokens: 0,
-        timestamp: (sig.blockTime || 0) * 1000,
-        status: "confirmed" as const,
-      }))
+    if (signatures.length === 0) return []
+
+    // Step 2: Fetch parsed transactions in batch (up to 10 at a time to avoid rate limits)
+    const signatureList = signatures.map((s: SignatureInfo) => s.signature).slice(0, 10)
+    
+    const txResponse = await fetch(HELIUS_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "txs",
+        method: "getTransactions",
+        params: [signatureList, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }]
+      }),
+      signal: AbortSignal.timeout(15000)
+    })
+
+    // If batch fails, try individual getTransaction calls
+    let parsedTxs: ParsedTransactionResult[] = []
+    
+    if (txResponse.ok) {
+      const txData = await txResponse.json()
+      parsedTxs = txData.result || []
+    }
+
+    // If no parsed transactions, fallback to basic info
+    if (parsedTxs.length === 0) {
+      // Try individual transaction fetches for first few signatures
+      for (const sig of signatureList.slice(0, 5)) {
+        try {
+          const singleResponse = await fetch(HELIUS_RPC, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: sig,
+              method: "getTransaction",
+              params: [sig, { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }]
+            }),
+            signal: AbortSignal.timeout(5000)
+          })
+          if (singleResponse.ok) {
+            const data = await singleResponse.json()
+            if (data.result) {
+              parsedTxs.push(data.result)
+            }
+          }
+        } catch {
+          // Continue with next
+        }
+      }
+    }
+
+    // Map parsed transactions
+    const mappedTxs: Transaction[] = []
+    
+    for (let i = 0; i < signatures.length; i++) {
+      const sig = signatures[i]
+      const parsedTx = parsedTxs[i] || parsedTxs.find((tx: ParsedTransactionResult) => 
+        tx?.transaction?.signatures?.[0] === sig.signature
+      )
+      
+      if (parsedTx) {
+        // Analyze parsed transaction to determine buy/sell
+        const { type, solAmount, feePayer } = analyzeTransaction(parsedTx, tokenAddress)
+        
+        mappedTxs.push({
+          signature: sig.signature,
+          type,
+          walletAddress: feePayer,
+          amountSol: solAmount,
+          amountTokens: 0, // Would need more parsing
+          timestamp: (sig.blockTime || 0) * 1000,
+          status: "confirmed" as const,
+        })
+      } else {
+        // No parsed data available, show as unknown
+        mappedTxs.push({
+          signature: sig.signature,
+          type: "unknown" as const,
+          walletAddress: "",
+          amountSol: 0,
+          amountTokens: 0,
+          timestamp: (sig.blockTime || 0) * 1000,
+          status: "confirmed" as const,
+        })
+      }
+    }
+    
+    return mappedTxs
   } catch (error) {
     console.error("[TOKEN-TRANSACTIONS] Fallback error:", error)
     return []
   }
+}
+
+// Parsed transaction result type
+interface ParsedTransactionResult {
+  transaction?: {
+    signatures?: string[]
+    message?: {
+      accountKeys?: Array<{
+        pubkey: string
+        signer: boolean
+        writable: boolean
+      }>
+      instructions?: Array<{
+        program?: string
+        programId?: string
+        parsed?: {
+          type?: string
+          info?: {
+            source?: string
+            destination?: string
+            lamports?: number
+            amount?: string
+            authority?: string
+            mint?: string
+          }
+        }
+      }>
+    }
+  }
+  meta?: {
+    fee?: number
+    preBalances?: number[]
+    postBalances?: number[]
+    preTokenBalances?: Array<{
+      mint: string
+      owner: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number }
+    }>
+    postTokenBalances?: Array<{
+      mint: string
+      owner: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number }
+    }>
+    innerInstructions?: Array<{
+      instructions: Array<{
+        parsed?: {
+          type?: string
+          info?: {
+            source?: string
+            destination?: string
+            lamports?: number
+            amount?: string
+          }
+        }
+      }>
+    }>
+  }
+}
+
+/**
+ * Analyze a parsed transaction to determine buy/sell
+ */
+function analyzeTransaction(
+  tx: ParsedTransactionResult,
+  tokenAddress: string
+): { type: "buy" | "sell" | "unknown"; solAmount: number; feePayer: string } {
+  const feePayer = tx.transaction?.message?.accountKeys?.[0]?.pubkey || ""
+  
+  // Check token balance changes for the fee payer (the user)
+  const preTokenBalances = tx.meta?.preTokenBalances || []
+  const postTokenBalances = tx.meta?.postTokenBalances || []
+  
+  // Find token balance change for the specific token
+  let tokenBalanceChange = 0
+  
+  for (const post of postTokenBalances) {
+    if (post.mint === tokenAddress) {
+      const pre = preTokenBalances.find(p => p.mint === tokenAddress && p.owner === post.owner)
+      const preAmount = pre ? parseFloat(pre.uiTokenAmount.amount) : 0
+      const postAmount = parseFloat(post.uiTokenAmount.amount)
+      
+      // If this is the fee payer's balance change
+      if (post.owner === feePayer) {
+        tokenBalanceChange = postAmount - preAmount
+        break
+      }
+      // Otherwise track largest positive change (likely the buyer)
+      const change = postAmount - preAmount
+      if (Math.abs(change) > Math.abs(tokenBalanceChange)) {
+        tokenBalanceChange = change
+      }
+    }
+  }
+  
+  // Determine type based on token flow
+  let type: "buy" | "sell" | "unknown" = "unknown"
+  
+  if (tokenBalanceChange > 0) {
+    type = "buy" // Tokens increased = bought
+  } else if (tokenBalanceChange < 0) {
+    type = "sell" // Tokens decreased = sold
+  }
+  
+  // Calculate SOL amount from balance changes
+  let solAmount = 0
+  const preBalances = tx.meta?.preBalances || []
+  const postBalances = tx.meta?.postBalances || []
+  
+  if (preBalances.length > 0 && postBalances.length > 0) {
+    // Fee payer's SOL change (index 0)
+    const feePayerSolChange = Math.abs(preBalances[0] - postBalances[0])
+    const fee = tx.meta?.fee || 0
+    // Subtract fee to get actual SOL spent/received
+    solAmount = Math.abs(feePayerSolChange - fee) / 1e9
+    
+    // If very small, try to find larger SOL transfers
+    if (solAmount < 0.001) {
+      for (let i = 0; i < preBalances.length; i++) {
+        const change = Math.abs(preBalances[i] - postBalances[i])
+        if (change > 1_000_000 && change > solAmount * 1e9) { // > 0.001 SOL
+          solAmount = change / 1e9
+        }
+      }
+    }
+  }
+  
+  return { type, solAmount, feePayer }
 }
 
 // Enhanced Transaction format from Helius API

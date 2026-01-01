@@ -240,7 +240,9 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                   <div
                     className={cn(
                       "w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0",
-                      tx.type === "buy" ? "bg-[var(--success)]/10" : "bg-[var(--error)]/10",
+                      tx.type === "buy" ? "bg-[var(--success)]/10" 
+                        : tx.type === "sell" ? "bg-[var(--error)]/10" 
+                        : "bg-[var(--text-muted)]/10",
                     )}
                   >
                     {tx.type === "buy" ? (
@@ -253,10 +255,20 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                           strokeLinejoin="round"
                         />
                       </svg>
-                    ) : (
+                    ) : tx.type === "sell" ? (
                       <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="text-[var(--error)]">
                         <path
                           d="M7 3v8M11 7l-4 4-4-4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="text-[var(--text-muted)]">
+                        <path
+                          d="M7 3v8M3 7h8"
                           stroke="currentColor"
                           strokeWidth="2"
                           strokeLinecap="round"
@@ -269,9 +281,11 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                     <div className="flex items-center gap-1.5">
                       <span className={cn(
                         "text-sm font-medium",
-                        tx.type === "buy" ? "text-[var(--success)]" : "text-[var(--error)]"
+                        tx.type === "buy" ? "text-[var(--success)]" 
+                          : tx.type === "sell" ? "text-[var(--error)]" 
+                          : "text-[var(--text-muted)]"
                       )}>
-                        {tx.type === "buy" ? "Buy" : "Sell"}
+                        {tx.type === "buy" ? "Buy" : tx.type === "sell" ? "Sell" : "Trade"}
                       </span>
                       <svg 
                         className="w-3 h-3 text-[var(--text-muted)] opacity-0 group-hover:opacity-100 transition-opacity" 
@@ -289,10 +303,12 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                   <p
                     className={cn(
                       "text-sm font-semibold font-mono",
-                      tx.type === "buy" ? "text-[var(--success)]" : "text-[var(--error)]",
+                      tx.type === "buy" ? "text-[var(--success)]" 
+                        : tx.type === "sell" ? "text-[var(--error)]"
+                        : "text-[var(--text-secondary)]",
                     )}
                   >
-                    {tx.type === "buy" ? "+" : "-"}
+                    {tx.type === "buy" ? "+" : tx.type === "sell" ? "-" : ""}
                     {formatSolAmount(tx.amountSol)} SOL
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">{formatTime(tx.timestamp)}</p>
