@@ -29,8 +29,8 @@ export function HeroSection() {
             <div className="relative">
               <div className="absolute inset-0 rounded-full bg-[var(--aqua-primary)] opacity-20 blur-3xl animate-pulse" />
               <Image
-                src="/logo.png"
-                alt="Aquarius"
+                src="/propelweblogo.png"
+                alt="Propel"
                 width={120}
                 height={120}
                 className="relative w-28 h-28 sm:w-32 sm:h-32"

@@ -144,12 +144,12 @@ export function WalletOnboarding() {
 
   return (
     <div className="fixed inset-0 z-[100]">
-      {/* Animated background */}
+      {/* Animated background - matches Propel theme */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950"
+        className="absolute inset-0 bg-[var(--ocean-deep)]"
       >
         {/* Subtle grid pattern */}
         <div 
@@ -159,9 +159,9 @@ export function WalletOnboarding() {
             backgroundSize: '50px 50px'
           }}
         />
-        {/* Gradient orbs */}
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+        {/* Gradient orbs - using theme colors */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--aqua-primary)]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[var(--aqua-secondary)]/10 rounded-full blur-3xl" />
       </motion.div>
 
       {/* Content */}
@@ -189,12 +189,12 @@ export function WalletOnboarding() {
                     initial={{ scale: 0.8, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ delay: 0.1 }}
-                    className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-teal-500/20 to-cyan-500/10 border border-teal-500/20 mb-6"
+                    className="inline-flex p-4 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 border border-[var(--aqua-primary)]/20 mb-6"
                   >
-                    <Wallet className="w-10 h-10 text-teal-400" />
+                    <Wallet className="w-10 h-10 text-[var(--aqua-primary)]" />
                   </motion.div>
-                  <h1 className="text-3xl font-bold text-white mb-3">Get Started</h1>
-                  <p className="text-slate-400 text-lg">Your wallet = your account. Quick and secure.</p>
+                  <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-3">Get Started</h1>
+                  <p className="text-[var(--text-muted)] text-lg">Your wallet = your account. Quick and secure.</p>
                 </div>
 
                 {/* Options */}
@@ -204,18 +204,18 @@ export function WalletOnboarding() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
                     onClick={() => setStep("generate")}
-                    className="w-full group relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-500/10 to-cyan-500/10 border border-teal-500/30 hover:border-teal-400/50 transition-all p-6"
+                    className="w-full group relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--aqua-secondary)]/10 border border-[var(--aqua-primary)]/30 hover:border-[var(--aqua-primary)]/50 transition-all p-6"
                   >
-                    <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-cyan-500/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[var(--aqua-primary)]/5 to-[var(--aqua-secondary)]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                     <div className="relative flex items-center gap-5">
-                      <div className="w-14 h-14 rounded-xl bg-teal-500/20 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Plus className="w-7 h-7 text-teal-400" />
+                      <div className="w-14 h-14 rounded-xl bg-[var(--aqua-primary)]/20 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Plus className="w-7 h-7 text-[var(--aqua-primary)]" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-white mb-1">New Wallet</h3>
-                        <p className="text-slate-400">Fresh wallet, fresh start</p>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">New Wallet</h3>
+                        <p className="text-[var(--text-muted)]">Fresh wallet, fresh start</p>
                       </div>
-                      <Sparkles className="w-5 h-5 text-teal-400/50 group-hover:text-teal-400 transition-colors" />
+                      <Sparkles className="w-5 h-5 text-[var(--aqua-primary)]/50 group-hover:text-[var(--aqua-primary)] transition-colors" />
                     </div>
                   </motion.button>
 
@@ -224,15 +224,15 @@ export function WalletOnboarding() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
                     onClick={() => setStep("import")}
-                    className="w-full group relative overflow-hidden rounded-2xl bg-slate-800/50 border border-slate-700 hover:border-slate-600 transition-all p-6"
+                    className="w-full group relative overflow-hidden rounded-2xl bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)] hover:border-[var(--text-muted)] transition-all p-6"
                   >
                     <div className="relative flex items-center gap-5">
-                      <div className="w-14 h-14 rounded-xl bg-slate-700/50 flex items-center justify-center group-hover:scale-110 transition-transform">
-                        <Upload className="w-6 h-6 text-slate-400" />
+                      <div className="w-14 h-14 rounded-xl bg-[var(--ocean-surface)] flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <Upload className="w-6 h-6 text-[var(--text-secondary)]" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-white mb-1">Import Wallet</h3>
-                        <p className="text-slate-400">Already have one? Bring it over</p>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">Import Wallet</h3>
+                        <p className="text-[var(--text-muted)]">Already have one? Bring it over</p>
                       </div>
                     </div>
                   </motion.button>
@@ -243,7 +243,7 @@ export function WalletOnboarding() {
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.4 }}
-                  className="flex items-center justify-center gap-2 text-slate-500"
+                  className="flex items-center justify-center gap-2 text-[var(--text-muted)]"
                 >
                   <Shield className="w-4 h-4" />
                   <span className="text-sm">Keys encrypted & stored securely</span>
@@ -252,7 +252,7 @@ export function WalletOnboarding() {
                 {/* Close button */}
                 <button
                   onClick={handleClose}
-                  className="absolute top-8 right-8 p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-all"
+                  className="absolute top-8 right-8 p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)] transition-all"
                 >
                   <X className="w-6 h-6" />
                 </button>
@@ -270,41 +270,41 @@ export function WalletOnboarding() {
               >
                 <button
                   onClick={() => setStep("choice")}
-                  className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5" />
                   <span>Back</span>
                 </button>
 
                 <div>
-                  <h2 className="text-2xl font-bold text-white mb-2">Name Your Wallet</h2>
-                  <p className="text-slate-400">Give it a name you'll recognize</p>
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Name Your Wallet</h2>
+                  <p className="text-[var(--text-muted)]">Give it a name you&apos;ll recognize</p>
                 </div>
 
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-3">
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
                       Wallet Name
                     </label>
                     <Input
                       value={walletLabel}
                       onChange={(e) => setWalletLabel(e.target.value)}
                       placeholder="Main Wallet"
-                      className="h-14 text-lg bg-slate-800/50 border-slate-700"
+                      className="h-14 text-lg bg-[var(--ocean-surface)]/50 border-[var(--glass-border)]"
                     />
                   </div>
 
                   {error && (
-                    <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                      <p className="text-red-400">{error}</p>
+                    <div className="p-4 rounded-xl bg-[var(--error)]/10 border border-[var(--error)]/20 flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-[var(--error)] shrink-0 mt-0.5" />
+                      <p className="text-[var(--error)]">{error}</p>
                     </div>
                   )}
 
                   <button
                     onClick={handleGenerateWallet}
                     disabled={isProcessing}
-                    className="w-full h-14 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold text-lg hover:from-teal-400 hover:to-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                    className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                   >
                     {isProcessing ? (
                       <>
@@ -336,32 +336,32 @@ export function WalletOnboarding() {
               >
                 <button
                   onClick={() => setStep("choice")}
-                  className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
+                  className="flex items-center gap-2 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
                 >
                   <ArrowLeft className="w-5 h-5" />
                   <span>Back</span>
                 </button>
 
                 <div>
-                  <h2 className="text-2xl font-bold text-white mb-2">Import Your Wallet</h2>
-                  <p className="text-slate-400">Enter your private key or recovery phrase</p>
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Import Your Wallet</h2>
+                  <p className="text-[var(--text-muted)]">Enter your private key or recovery phrase</p>
                 </div>
 
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-3">
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
                       Wallet Name
                     </label>
                     <Input
                       value={walletLabel}
                       onChange={(e) => setWalletLabel(e.target.value)}
                       placeholder="Imported Wallet"
-                      className="h-12 bg-slate-800/50 border-slate-700"
+                      className="h-12 bg-[var(--ocean-surface)]/50 border-[var(--glass-border)]"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-3">
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
                       Private Key or Seed Phrase
                     </label>
                     <Textarea
@@ -369,21 +369,21 @@ export function WalletOnboarding() {
                       onChange={(e) => setImportData(e.target.value)}
                       placeholder="Paste your base58 private key or 12/24 word seed phrase..."
                       rows={4}
-                      className="bg-slate-800/50 border-slate-700 resize-none"
+                      className="bg-[var(--ocean-surface)]/50 border-[var(--glass-border)] resize-none"
                     />
                   </div>
 
                   {error && (
-                    <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 flex items-start gap-3">
-                      <AlertTriangle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                      <p className="text-red-400">{error}</p>
+                    <div className="p-4 rounded-xl bg-[var(--error)]/10 border border-[var(--error)]/20 flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-[var(--error)] shrink-0 mt-0.5" />
+                      <p className="text-[var(--error)]">{error}</p>
                     </div>
                   )}
 
                   <button
                     onClick={handleImportWallet}
                     disabled={isProcessing || !importData.trim()}
-                    className="w-full h-14 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold text-lg hover:from-teal-400 hover:to-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
+                    className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                   >
                     {isProcessing ? (
                       <>
@@ -414,40 +414,40 @@ export function WalletOnboarding() {
                 className="space-y-6"
               >
                 {/* Warning header */}
-                <div className="text-center p-6 rounded-2xl bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/20">
-                  <AlertTriangle className="w-12 h-12 text-amber-400 mx-auto mb-4" />
-                  <h2 className="text-2xl font-bold text-white mb-2">Secure Your Wallet</h2>
-                  <p className="text-slate-400">
+                <div className="text-center p-6 rounded-2xl bg-gradient-to-r from-[var(--warm-orange)]/10 to-[var(--warm-pink)]/10 border border-[var(--warm-orange)]/20">
+                  <AlertTriangle className="w-12 h-12 text-[var(--warm-orange)] mx-auto mb-4" />
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Secure Your Wallet</h2>
+                  <p className="text-[var(--text-muted)]">
                     Save both your recovery phrase AND private key. Store them separately and securely.
                   </p>
                 </div>
 
                 {/* Wallet Address */}
-                <div className="p-5 rounded-xl bg-slate-800/30 border border-slate-700">
+                <div className="p-5 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)]">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-slate-400">Your Wallet Address</span>
+                    <span className="text-sm font-medium text-[var(--text-muted)]">Your Wallet Address</span>
                     <button
                       onClick={() => copyToClipboard(generatedWallet.publicKey, 'address')}
-                      className="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1"
+                      className="text-xs text-[var(--aqua-primary)] hover:opacity-80 flex items-center gap-1"
                     >
                       {copiedField === 'address' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       {copiedField === 'address' ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
-                  <code className="block text-teal-400 font-mono text-sm break-all">
+                  <code className="block text-[var(--aqua-primary)] font-mono text-sm break-all">
                     {generatedWallet.publicKey}
                   </code>
                 </div>
 
                 {/* Tabs for Phrase/Key */}
-                <div className="flex gap-2 p-1 rounded-xl bg-slate-800/50">
+                <div className="flex gap-2 p-1 rounded-xl bg-[var(--ocean-surface)]/50">
                   <button
                     onClick={() => setActiveTab("phrase")}
                     className={cn(
                       "flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all",
                       activeTab === "phrase" 
-                        ? "bg-teal-500 text-white" 
-                        : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                        ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]" 
+                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]"
                     )}
                   >
                     <FileText className="w-4 h-4" />
@@ -458,8 +458,8 @@ export function WalletOnboarding() {
                     className={cn(
                       "flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all",
                       activeTab === "key" 
-                        ? "bg-teal-500 text-white" 
-                        : "text-slate-400 hover:text-white hover:bg-slate-700/50"
+                        ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]" 
+                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]"
                     )}
                   >
                     <Key className="w-4 h-4" />
@@ -475,13 +475,13 @@ export function WalletOnboarding() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="p-5 rounded-xl bg-gradient-to-br from-amber-500/5 to-orange-500/5 border border-amber-500/20"
+                      className="p-5 rounded-xl bg-gradient-to-br from-[var(--warm-orange)]/5 to-[var(--warm-pink)]/5 border border-[var(--warm-orange)]/20"
                     >
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm font-medium text-amber-400">12-Word Recovery Phrase</span>
+                        <span className="text-sm font-medium text-[var(--warm-orange)]">12-Word Recovery Phrase</span>
                         <button
                           onClick={() => copyToClipboard(generatedWallet.mnemonic, 'mnemonic')}
-                          className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                          className="text-xs text-[var(--warm-orange)] hover:opacity-80 flex items-center gap-1"
                         >
                           {copiedField === 'mnemonic' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                           {copiedField === 'mnemonic' ? 'Copied!' : 'Copy All'}
@@ -489,9 +489,9 @@ export function WalletOnboarding() {
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         {generatedWallet.mnemonic.split(" ").map((word, i) => (
-                          <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                            <span className="text-xs text-slate-600 w-5">{i + 1}.</span>
-                            <span className="text-amber-300 font-medium">{word}</span>
+                          <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
+                            <span className="text-xs text-[var(--text-muted)] w-5">{i + 1}.</span>
+                            <span className="text-[var(--warm-orange)] font-medium">{word}</span>
                           </div>
                         ))}
                       </div>
@@ -502,24 +502,24 @@ export function WalletOnboarding() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="p-5 rounded-xl bg-gradient-to-br from-rose-500/5 to-pink-500/5 border border-rose-500/20"
+                      className="p-5 rounded-xl bg-gradient-to-br from-[var(--warm-pink)]/5 to-[var(--error)]/5 border border-[var(--warm-pink)]/20"
                     >
                       <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm font-medium text-rose-400">Base58 Private Key</span>
+                        <span className="text-sm font-medium text-[var(--warm-pink)]">Base58 Private Key</span>
                         <button
                           onClick={() => copyToClipboard(generatedWallet.secretKey, 'secretKey')}
-                          className="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1"
+                          className="text-xs text-[var(--warm-pink)] hover:opacity-80 flex items-center gap-1"
                         >
                           {copiedField === 'secretKey' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                           {copiedField === 'secretKey' ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
-                      <div className="p-4 rounded-lg bg-slate-900/50 border border-slate-700/50">
-                        <code className="text-rose-300 font-mono text-xs break-all leading-relaxed">
+                      <div className="p-4 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
+                        <code className="text-[var(--warm-pink)] font-mono text-xs break-all leading-relaxed">
                           {generatedWallet.secretKey || "Private key not available - use recovery phrase"}
                         </code>
                       </div>
-                      <p className="text-xs text-slate-500 mt-3">
+                      <p className="text-xs text-[var(--text-muted)] mt-3">
                         ⚠️ Never share your private key. Anyone with this key has full control of your wallet.
                       </p>
                     </motion.div>
@@ -527,24 +527,24 @@ export function WalletOnboarding() {
                 </AnimatePresence>
 
                 {/* Confirmation */}
-                <label className="flex items-center gap-4 p-4 rounded-xl bg-slate-800/30 border border-slate-700 cursor-pointer hover:bg-slate-800/50 transition-colors">
+                <label className="flex items-center gap-4 p-4 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)] cursor-pointer hover:bg-[var(--ocean-surface)]/50 transition-colors">
                   <input
                     type="checkbox"
                     checked={backupConfirmed}
                     onChange={(e) => setBackupConfirmed(e.target.checked)}
-                    className="w-5 h-5 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500/30"
+                    className="w-5 h-5 rounded border-[var(--glass-border)] bg-[var(--ocean-surface)] text-[var(--aqua-primary)] focus:ring-[var(--aqua-primary)]/30"
                   />
-                  <span className="text-slate-300">
+                  <span className="text-[var(--text-secondary)]">
                     I have securely saved my recovery phrase and private key
                   </span>
                 </label>
 
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-[var(--error)] text-sm">{error}</p>}
 
                 <button
                   onClick={handleBackupComplete}
                   disabled={!backupConfirmed}
-                  className="w-full h-14 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold text-lg hover:from-teal-400 hover:to-cyan-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Continue to Dashboard
                 </button>
@@ -564,19 +564,19 @@ export function WalletOnboarding() {
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ type: "spring", damping: 15, stiffness: 300, delay: 0.1 }}
-                  className="inline-flex p-6 rounded-full bg-gradient-to-br from-green-500/20 to-emerald-500/10 border border-green-500/20"
+                  className="inline-flex p-6 rounded-full bg-gradient-to-br from-[var(--success)]/20 to-[var(--aqua-secondary)]/10 border border-[var(--success)]/20"
                 >
-                  <Check className="w-16 h-16 text-green-400" />
+                  <Check className="w-16 h-16 text-[var(--success)]" />
                 </motion.div>
                 
                 <div>
-                  <h2 className="text-3xl font-bold text-white mb-3">You're All Set!</h2>
-                  <p className="text-slate-400 text-lg">Your wallet is ready. Welcome to Aquarius.</p>
+                  <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-3">You&apos;re All Set!</h2>
+                  <p className="text-[var(--text-muted)] text-lg">Your wallet is ready. Welcome to Propel.</p>
                 </div>
                 
                 <button
                   onClick={handleClose}
-                  className="w-full max-w-sm mx-auto h-14 rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white font-semibold text-lg hover:from-teal-400 hover:to-cyan-400 transition-all"
+                  className="w-full max-w-sm mx-auto h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all"
                 >
                   Start Exploring
                 </button>

@@ -59,7 +59,7 @@ export default function TrendingPage() {
           <div className="max-w-[1920px] mx-auto">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
               <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">Rising Tides</h1>
-              <p className="text-[var(--text-secondary)]">Featured and trending tokens in the Aquarius ecosystem</p>
+              <p className="text-[var(--text-secondary)]">Featured and trending tokens in the Propel ecosystem</p>
             </motion.div>
 
             {isLoading ? (

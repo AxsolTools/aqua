@@ -34,8 +34,8 @@ export function Header() {
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/logo.png" alt="Aquarius" width={32} height={32} className="w-8 h-8" priority />
-              <span className="text-base font-semibold text-[var(--text-primary)]">aquarius</span>
+              <Image src="/propelweblogo.png" alt="Propel" width={32} height={32} className="w-8 h-8" priority />
+              <span className="text-base font-semibold text-[var(--text-primary)]">propel</span>
             </Link>
 
             {/* Center Nav */}

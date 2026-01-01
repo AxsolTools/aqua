@@ -40,9 +40,9 @@ export default function ProfilePage() {
   
   // Load settings from localStorage on mount
   useEffect(() => {
-    const savedSlippage = localStorage.getItem("aqua_slippage")
-    const savedPriorityFee = localStorage.getItem("aqua_priority_fee")
-    const savedJitoTip = localStorage.getItem("aqua_jito_tip")
+    const savedSlippage = localStorage.getItem("propel_slippage")
+    const savedPriorityFee = localStorage.getItem("propel_priority_fee")
+    const savedJitoTip = localStorage.getItem("propel_jito_tip")
     
     if (savedSlippage) {
       const slippageValue = parseFloat(savedSlippage)
@@ -86,7 +86,7 @@ export default function ProfilePage() {
     setSlippage(value)
     setIsCustomSlippage(false)
     setCustomSlippage("")
-    localStorage.setItem("aqua_slippage", value.toString())
+    localStorage.setItem("propel_slippage", value.toString())
   }
   
   // Save custom slippage to localStorage
@@ -96,7 +96,7 @@ export default function ProfilePage() {
       const numValue = parseFloat(value)
       setSlippage(numValue)
       setIsCustomSlippage(true)
-      localStorage.setItem("aqua_slippage", numValue.toString())
+      localStorage.setItem("propel_slippage", numValue.toString())
     }
   }
   
@@ -105,7 +105,7 @@ export default function ProfilePage() {
       setPriorityFee(value)
       setIsCustomPriorityFee(false)
       setCustomPriorityFee("")
-    localStorage.setItem("aqua_priority_fee", value.toString())
+    localStorage.setItem("propel_priority_fee", value.toString())
   }
   
   // Save custom priority fee to localStorage
@@ -115,7 +115,7 @@ export default function ProfilePage() {
       const numValue = parseFloat(value)
       setPriorityFee(numValue)
       setIsCustomPriorityFee(true)
-      localStorage.setItem("aqua_priority_fee", value)
+      localStorage.setItem("propel_priority_fee", value)
     }
   }
   
@@ -124,7 +124,7 @@ export default function ProfilePage() {
     setJitoTip(value)
     setIsCustomJitoTip(false)
     setCustomJitoTip("")
-    localStorage.setItem("aqua_jito_tip", value.toString())
+    localStorage.setItem("propel_jito_tip", value.toString())
   }
   
   // Save custom Jito tip to localStorage
@@ -134,7 +134,7 @@ export default function ProfilePage() {
       const numValue = parseFloat(value)
       setJitoTip(numValue)
       setIsCustomJitoTip(true)
-      localStorage.setItem("aqua_jito_tip", value)
+      localStorage.setItem("propel_jito_tip", value)
     }
   }
 
@@ -256,21 +256,21 @@ export default function ProfilePage() {
       <div className="relative z-10">
         <Header />
 
-        <div className="pt-20 pb-12 px-3 sm:px-4 lg:px-6">
-          <div className="max-w-[1920px] mx-auto">
+        <div className="pt-16 pb-6 px-3 sm:px-4 lg:px-6">
+          <div className="max-w-5xl mx-auto">
             {/* Profile Header - Compact */}
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center">
-                    <svg width="24" height="24" viewBox="0 0 32 32" fill="var(--ocean-deep)">
+                <div className="flex items-center gap-2">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 32 32" fill="var(--ocean-deep)">
                       <path d="M16 4C16 4 8 14 8 20C8 24.4 11.6 28 16 28C20.4 28 24 24.4 24 20C24 14 16 4 16 4Z" />
                     </svg>
                   </div>
                   <div>
-                    <h1 className="text-xl font-bold text-[var(--text-primary)]">Harbor</h1>
+                    <h1 className="text-lg font-bold text-[var(--text-primary)]">Profile</h1>
                     {mainWallet && (
-                      <p className="text-xs font-mono text-[var(--text-muted)]">
+                      <p className="text-[10px] font-mono text-[var(--text-muted)]">
                         {formatAddress(mainWallet.public_key)}
                       </p>
                     )}
@@ -278,7 +278,7 @@ export default function ProfilePage() {
                 </div>
 
                 {!isAuthenticated && (
-                  <button onClick={() => setIsOnboarding(true)} className="btn-primary text-sm px-4 py-2">
+                  <button onClick={() => setIsOnboarding(true)} className="btn-primary text-xs px-3 py-1.5">
                     Connect Wallet
                   </button>
                 )}
@@ -292,14 +292,14 @@ export default function ProfilePage() {
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.05 }}
-                  className="flex gap-1.5 mb-4"
+                  className="flex gap-1 mb-3 flex-wrap"
                 >
                   {(["portfolio", "pnl", "created", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
                       className={cn(
-                        "px-4 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-all",
+                        "px-3 py-1.5 rounded-md text-[11px] font-medium whitespace-nowrap transition-all",
                         activeTab === tab
                           ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
                           : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
@@ -322,42 +322,42 @@ export default function ProfilePage() {
                   )}
 
                   {activeTab === "portfolio" && (
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {/* Wallet Overview - Compact Row */}
-                      <div className="grid grid-cols-4 gap-2">
-                        <GlassPanel className="p-3">
-                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Wallets</p>
-                          <p className="text-xl font-bold text-[var(--text-primary)]">{wallets.length}<span className="text-[10px] text-[var(--text-muted)]">/25</span></p>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <GlassPanel className="p-2">
+                          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Wallets</p>
+                          <p className="text-lg font-bold text-[var(--text-primary)]">{wallets.length}<span className="text-[9px] text-[var(--text-muted)]">/25</span></p>
                         </GlassPanel>
-                        <GlassPanel className="p-3" glow="aqua">
-                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Balance</p>
-                          <p className="text-xl font-bold text-[var(--aqua-primary)]">
+                        <GlassPanel className="p-2" glow="aqua">
+                          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Balance</p>
+                          <p className="text-lg font-bold text-[var(--aqua-primary)]">
                             {balancesLoading ? "..." : `${totalBalance.toFixed(4)}`}
-                            <span className="text-[10px] text-[var(--text-muted)] ml-1">SOL</span>
+                            <span className="text-[9px] text-[var(--text-muted)] ml-0.5">SOL</span>
                           </p>
                         </GlassPanel>
-                        <GlassPanel className="p-3">
-                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Tokens</p>
-                          <p className="text-xl font-bold text-[var(--text-primary)]">{createdTokens.length}</p>
+                        <GlassPanel className="p-2">
+                          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Tokens</p>
+                          <p className="text-lg font-bold text-[var(--text-primary)]">{createdTokens.length}</p>
                         </GlassPanel>
-                        <GlassPanel className="p-3">
-                          <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide">Trades</p>
-                          <p className="text-xl font-bold text-[var(--text-primary)]">{trades.length}</p>
+                        <GlassPanel className="p-2">
+                          <p className="text-[9px] text-[var(--text-muted)] uppercase tracking-wide">Trades</p>
+                          <p className="text-lg font-bold text-[var(--text-primary)]">{trades.length}</p>
                         </GlassPanel>
                       </div>
 
                       {/* Connected Wallets - Compact List */}
-                      <GlassPanel className="p-3">
-                        <div className="flex items-center justify-between mb-2">
-                          <h2 className="text-xs font-semibold text-[var(--text-primary)]">Connected Wallets</h2>
-                          <span className="text-[10px] text-[var(--text-muted)]">{wallets.length}/25</span>
+                      <GlassPanel className="p-2">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <h2 className="text-[11px] font-semibold text-[var(--text-primary)]">Connected Wallets</h2>
+                          <span className="text-[9px] text-[var(--text-muted)]">{wallets.length}/25</span>
                         </div>
-                        <div className="space-y-1.5">
+                        <div className="space-y-1">
                           {wallets.map((wallet) => (
                             <div
                               key={wallet.id}
                               className={cn(
-                                "p-2 rounded-lg border transition-all flex items-center justify-between",
+                                "p-1.5 rounded-md border transition-all flex items-center justify-between",
                                 wallet.is_primary
                                   ? "border-[var(--aqua-primary)]/50 bg-[var(--aqua-subtle)]/20"
                                   : "border-[var(--glass-border)] bg-[var(--ocean-surface)]/30",
@@ -365,28 +365,28 @@ export default function ProfilePage() {
                             >
                               <div className="flex items-center gap-2 min-w-0">
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-xs font-medium text-[var(--text-primary)] truncate">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-[11px] font-medium text-[var(--text-primary)] truncate">
                                       {wallet.label || "Imported Wallet"}
                                     </span>
                                     {wallet.is_primary && (
-                                      <span className="text-[8px] px-1 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium uppercase flex-shrink-0">
+                                      <span className="text-[7px] px-1 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium uppercase flex-shrink-0">
                                         Main
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-[10px] font-mono text-[var(--text-muted)]">
+                                  <p className="text-[9px] font-mono text-[var(--text-muted)]">
                                     {formatAddress(wallet.public_key)}
                                   </p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-1.5 flex-shrink-0">
-                                <span className="text-xs font-semibold text-[var(--aqua-primary)] font-mono">
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className="text-[11px] font-semibold text-[var(--aqua-primary)] font-mono">
                                   {balancesLoading ? "..." : walletBalances[wallet.id] !== undefined ? `${walletBalances[wallet.id].toFixed(4)}` : "—"}
                                 </span>
                                 <button
                                   onClick={() => navigator.clipboard.writeText(wallet.public_key)}
-                                  className="p-1 rounded hover:bg-[var(--ocean-surface)] transition-colors text-xs"
+                                  className="p-0.5 rounded hover:bg-[var(--ocean-surface)] transition-colors text-[10px]"
                                   title="Copy"
                                 >
                                   📋

@@ -22,7 +22,7 @@ const sortOptions = [
 ]
 
 const sourceOptions = [
-  { value: "aquarius", label: "Aquarius", icon: Droplet },
+  { value: "aquarius", label: "Propel", icon: Droplet },
   { value: "all", label: "All Solana", icon: Globe },
   { value: "trending", label: "Trending", icon: Sparkles },
 ]
@@ -104,7 +104,7 @@ export function DiscoverContent() {
       )
     }
 
-    // Show Aquarius platform tokens
+    // Show Propel platform tokens
     if (viewMode === "trenches") {
       return <TrenchesLayout />
     }
@@ -197,7 +197,7 @@ export function DiscoverContent() {
 
         {/* Right side controls */}
         <div className="flex items-center gap-3">
-          {/* View Mode Toggle - Only show for Aquarius source */}
+          {/* View Mode Toggle - Only show for Propel source */}
           {tokenSource === "aquarius" && (
             <div
               ref={containerRef}
@@ -231,7 +231,7 @@ export function DiscoverContent() {
             </div>
           )}
 
-          {/* Sort - Only show in grid mode for Aquarius */}
+          {/* Sort - Only show in grid mode for Propel */}
           {tokenSource === "aquarius" && viewMode === "grid" && (
             <select
               value={sort}

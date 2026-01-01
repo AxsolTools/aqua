@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
+import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
 
 interface VoteBoostPanelProps {
@@ -21,9 +22,12 @@ const BOOST_TIERS = [
 export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps) {
   const { wallets, activeWallet, isAuthenticated, setIsOnboarding, sessionId } = useAuth()
   const [vouchCount, setVouchCount] = useState(0)
+  const [shitCount, setShitCount] = useState(0)
   const [boostCount, setBoostCount] = useState(0)
   const [hasVouched, setHasVouched] = useState(false)
+  const [hasShitted, setHasShitted] = useState(false)
   const [isVouching, setIsVouching] = useState(false)
+  const [isShitting, setIsShitting] = useState(false)
   const [selectedTier, setSelectedTier] = useState(0) // Index of selected tier
   const [showBoostModal, setShowBoostModal] = useState(false)
   const [selectedWalletId, setSelectedWalletId] = useState<string>("")
@@ -49,7 +53,7 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
   useEffect(() => {
     fetchCounts()
     if (activeWallet) {
-      checkUserVouch()
+      checkUserVotes()
     }
   }, [tokenAddress, activeWallet])
 
@@ -79,31 +83,66 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
 
   const fetchCounts = async () => {
     try {
-      const response = await fetch(`/api/votes?tokenAddress=${tokenAddress}`)
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          setVouchCount(data.vouches || data.votes || 0)
-          setBoostCount(data.boosts || 0)
-        }
-      }
+      const supabase = createClient()
+      
+      // Get vouch count (vote_type = 'up' or null)
+      const { count: vouchCountResult } = await supabase
+        .from("votes")
+        .select("*", { count: "exact", head: true })
+        .eq("token_address", tokenAddress)
+        .or("vote_type.eq.up,vote_type.is.null")
+      
+      // Get shit count (vote_type = 'down')
+      const { count: shitCountResult } = await supabase
+        .from("votes")
+        .select("*", { count: "exact", head: true })
+        .eq("token_address", tokenAddress)
+        .eq("vote_type", "down")
+      
+      // Get boost count
+      const { count: boostCountResult } = await supabase
+        .from("boosts")
+        .select("*", { count: "exact", head: true })
+        .eq("token_address", tokenAddress)
+      
+      setVouchCount(vouchCountResult || 0)
+      setShitCount(shitCountResult || 0)
+      setBoostCount(boostCountResult || 0)
     } catch (err) {
-      console.debug('[VOTE-BOOST] API unavailable:', err)
+      console.debug('[VOTE-BOOST] Database unavailable:', err)
     }
   }
 
-  const checkUserVouch = async () => {
+  const checkUserVotes = async () => {
     if (!activeWallet) return
 
     try {
-      const response = await fetch(`/api/votes?tokenAddress=${tokenAddress}&walletAddress=${activeWallet.public_key}`)
-      if (response.ok) {
-        const data = await response.json()
-        setHasVouched(data.hasVoted || data.hasVouched || false)
+      const supabase = createClient()
+      
+      // Check if user has vouched (up vote)
+      const { data: vouchData } = await supabase
+        .from("votes")
+        .select("vote_type")
+        .eq("token_address", tokenAddress)
+        .eq("wallet_address", activeWallet.public_key)
+        .maybeSingle()
+      
+      if (vouchData) {
+        if (vouchData.vote_type === 'down') {
+          setHasShitted(true)
+          setHasVouched(false)
+        } else {
+          setHasVouched(true)
+          setHasShitted(false)
+        }
+      } else {
+        setHasVouched(false)
+        setHasShitted(false)
       }
     } catch (err) {
       console.debug('[VOTES] Vote check unavailable:', err)
       setHasVouched(false)
+      setHasShitted(false)
     }
   }
 
@@ -118,32 +157,101 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
     setIsVouching(true)
 
     try {
-      const response = await fetch('/api/votes', {
-        method: hasVouched ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tokenAddress,
-          walletAddress: activeWallet.public_key,
-        }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          if (hasVouched) {
-            setHasVouched(false)
-            setVouchCount((prev) => Math.max(0, prev - 1))
-          } else {
-            setHasVouched(true)
-            setVouchCount((prev) => prev + 1)
-          }
+      const supabase = createClient()
+      
+      if (hasVouched) {
+        // Remove vouch
+        await supabase
+          .from("votes")
+          .delete()
+          .eq("token_address", tokenAddress)
+          .eq("wallet_address", activeWallet.public_key)
+        
+        setHasVouched(false)
+        setVouchCount((prev) => Math.max(0, prev - 1))
+      } else {
+        // If user had a shit vote, remove it first
+        if (hasShitted) {
+          await supabase
+            .from("votes")
+            .delete()
+            .eq("token_address", tokenAddress)
+            .eq("wallet_address", activeWallet.public_key)
+          setShitCount((prev) => Math.max(0, prev - 1))
+          setHasShitted(false)
         }
+        
+        // Add vouch
+        await supabase
+          .from("votes")
+          .upsert({
+            token_address: tokenAddress,
+            wallet_address: activeWallet.public_key,
+            vote_type: 'up'
+          }, { onConflict: 'token_address,wallet_address' })
+        
+        setHasVouched(true)
+        setVouchCount((prev) => prev + 1)
       }
     } catch (err) {
       console.debug('[VOTES] Vote operation failed:', err)
     }
 
     setIsVouching(false)
+  }
+
+  const handleShit = async () => {
+    if (!isAuthenticated) {
+      setIsOnboarding(true)
+      return
+    }
+
+    if (!activeWallet || isShitting) return
+
+    setIsShitting(true)
+
+    try {
+      const supabase = createClient()
+      
+      if (hasShitted) {
+        // Remove shit vote
+        await supabase
+          .from("votes")
+          .delete()
+          .eq("token_address", tokenAddress)
+          .eq("wallet_address", activeWallet.public_key)
+        
+        setHasShitted(false)
+        setShitCount((prev) => Math.max(0, prev - 1))
+      } else {
+        // If user had a vouch, remove it first
+        if (hasVouched) {
+          await supabase
+            .from("votes")
+            .delete()
+            .eq("token_address", tokenAddress)
+            .eq("wallet_address", activeWallet.public_key)
+          setVouchCount((prev) => Math.max(0, prev - 1))
+          setHasVouched(false)
+        }
+        
+        // Add shit vote
+        await supabase
+          .from("votes")
+          .upsert({
+            token_address: tokenAddress,
+            wallet_address: activeWallet.public_key,
+            vote_type: 'down'
+          }, { onConflict: 'token_address,wallet_address' })
+        
+        setHasShitted(true)
+        setShitCount((prev) => prev + 1)
+      }
+    } catch (err) {
+      console.debug('[VOTES] Shit vote operation failed:', err)
+    }
+
+    setIsShitting(false)
   }
 
   const handleBoost = async () => {
@@ -230,15 +338,15 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
         <span className="text-[10px] text-[var(--text-muted)]">Show your support</span>
       </div>
 
-      {/* Horizontal layout: Vouch + Boost */}
-      <div className="flex items-stretch gap-3">
+      {/* Horizontal layout: Vouch + Shit + Boost */}
+      <div className="flex items-stretch gap-2">
         {/* Vouch Button (Free) */}
         <motion.button
           onClick={handleVouch}
           disabled={isVouching}
           whileTap={{ scale: 0.95 }}
           className={cn(
-            "flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-xl border transition-all",
+            "flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition-all",
             hasVouched
               ? "border-[var(--aqua-primary)] bg-[var(--aqua-primary)]/10"
               : "border-[var(--glass-border)] hover:border-[var(--aqua-primary)]/50",
@@ -246,8 +354,8 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
         >
           <motion.div animate={hasVouched ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
             <svg
-              width="24"
-              height="24"
+              width="22"
+              height="22"
               viewBox="0 0 24 24"
               fill={hasVouched ? "var(--aqua-primary)" : "none"}
               stroke="var(--aqua-primary)"
@@ -257,8 +365,29 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
             </svg>
           </motion.div>
           <div className="text-center">
-            <span className="text-xl font-bold text-[var(--text-primary)] font-mono block">{vouchCount}</span>
+            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{vouchCount}</span>
             <span className="text-[10px] text-[var(--text-muted)]">{hasVouched ? "Vouched!" : "Vouch"}</span>
+          </div>
+        </motion.button>
+
+        {/* Shit Coin Button (Free) */}
+        <motion.button
+          onClick={handleShit}
+          disabled={isShitting}
+          whileTap={{ scale: 0.95 }}
+          className={cn(
+            "flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border transition-all",
+            hasShitted
+              ? "border-[var(--error)] bg-[var(--error)]/10"
+              : "border-[var(--glass-border)] hover:border-[var(--error)]/50",
+          )}
+        >
+          <motion.div animate={hasShitted ? { scale: [1, 1.2, 1] } : {}} transition={{ duration: 0.3 }}>
+            <span className="text-2xl">{hasShitted ? "💩" : "💩"}</span>
+          </motion.div>
+          <div className="text-center">
+            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{shitCount}</span>
+            <span className="text-[10px] text-[var(--text-muted)]">{hasShitted ? "Shitcoin!" : "Shit Coin"}</span>
           </div>
         </motion.button>
 
@@ -266,13 +395,13 @@ export function VoteBoostPanel({ tokenAddress, tokenName }: VoteBoostPanelProps)
         <motion.button
           onClick={openBoostModal}
           whileTap={{ scale: 0.95 }}
-          className="flex-1 flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-[var(--glass-border)] hover:border-[var(--warm-orange)]/50 bg-gradient-to-br from-[var(--warm-orange)]/5 to-transparent transition-all"
+          className="flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border border-[var(--glass-border)] hover:border-[var(--warm-orange)]/50 bg-gradient-to-br from-[var(--warm-orange)]/5 to-transparent transition-all"
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--warm-orange)" strokeWidth="2">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--warm-orange)" strokeWidth="2">
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <div className="text-center">
-            <span className="text-xl font-bold text-[var(--text-primary)] font-mono block">{boostCount}</span>
+            <span className="text-lg font-bold text-[var(--text-primary)] font-mono block">{boostCount}</span>
             <span className="text-[10px] text-[var(--warm-orange)]">Boost ⚡</span>
           </div>
         </motion.button>

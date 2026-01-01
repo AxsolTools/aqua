@@ -19,7 +19,7 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Aquarius | Infinite Liquidity Launchpad",
+  title: "Propel | Infinite Liquidity Launchpad",
   description:
     "The next-generation Solana token launchpad with continuous liquidity flow. Pour Rate technology ensures your token never runs dry.",
   keywords: [
@@ -29,32 +29,32 @@ export const metadata: Metadata = {
     "defi",
     "token",
     "crypto",
-    "aquarius",
+    "propel",
     "pump.fun",
     "infinite liquidity",
   ],
-  authors: [{ name: "Aquarius" }],
+  authors: [{ name: "Propel" }],
   icons: {
     icon: [
-      { url: "/favicon.png", sizes: "32x32", type: "image/png" },
-      { url: "/logo-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/proplelfavicon.png", sizes: "32x32", type: "image/png" },
+      { url: "/propelweblogo.png", sizes: "192x192", type: "image/png" },
     ],
-    apple: "/apple-touch-icon.png",
+    apple: "/propelweblogo.png",
   },
   manifest: "/manifest.json",
   openGraph: {
-    title: "Aquarius | Infinite Liquidity Launchpad",
+    title: "Propel | Infinite Liquidity Launchpad",
     description:
       "The next-generation Solana token launchpad with continuous liquidity flow. Pour Rate technology keeps liquidity flowing eternally.",
     type: "website",
-    siteName: "Aquarius Launchpad",
-    images: ["/logo-512.png"],
+    siteName: "Propel Launchpad",
+    images: ["/propelweblogo.png"],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Aquarius | Infinite Liquidity Launchpad",
+    title: "Propel | Infinite Liquidity Launchpad",
     description: "Pour Rate technology ensures your token never runs dry",
-    images: ["/logo-512.png"],
+    images: ["/propelweblogo.png"],
   },
     generator: 'v0.app'
 }
