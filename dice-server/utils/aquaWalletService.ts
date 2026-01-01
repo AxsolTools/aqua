@@ -20,7 +20,8 @@ const ENCRYPTION_VERSION = 'v1';
 let cachedServiceSalt: string | null = null;
 
 /**
- * Get the service salt from Supabase vault_secrets table
+ * Get the service salt from Supabase system_config table
+ * (This is where Aqua stores the encryption salt)
  */
 async function getServiceSalt(): Promise<string | null> {
   if (cachedServiceSalt) {
@@ -33,20 +34,34 @@ async function getServiceSalt(): Promise<string | null> {
   }
   
   try {
+    // First try system_config (where Aqua stores it)
     const { data, error } = await supabaseAdmin
+      .from('system_config')
+      .select('value')
+      .eq('key', 'encryption_salt')
+      .single();
+    
+    if (!error && data?.value) {
+      cachedServiceSalt = data.value;
+      console.log('[AQUA_WALLET] Service salt loaded from system_config');
+      return cachedServiceSalt;
+    }
+    
+    // Fallback to vault_secrets (legacy location)
+    const { data: vaultData, error: vaultError } = await supabaseAdmin
       .from('vault_secrets')
       .select('value')
       .eq('key', 'service_encryption_salt')
       .single();
     
-    if (error || !data?.value) {
-      console.error('[AQUA_WALLET] Failed to get service salt:', error?.message);
-      return null;
+    if (!vaultError && vaultData?.value) {
+      cachedServiceSalt = vaultData.value;
+      console.log('[AQUA_WALLET] Service salt loaded from vault_secrets');
+      return cachedServiceSalt;
     }
     
-    cachedServiceSalt = data.value;
-    console.log('[AQUA_WALLET] Service salt loaded from Supabase vault');
-    return cachedServiceSalt;
+    console.error('[AQUA_WALLET] Failed to get service salt from system_config or vault_secrets');
+    return null;
   } catch (error: any) {
     console.error('[AQUA_WALLET] Error fetching service salt:', error.message);
     return null;
@@ -117,8 +132,10 @@ export async function getAquaUserKeypair(walletAddress: string): Promise<Keypair
     // Get the wallet from Supabase
     const { data: wallet, error } = await supabaseAdmin
       .from('wallets')
-      .select('id, user_id, public_key, encrypted_private_key')
+      .select('id, user_id, session_id, public_key, encrypted_private_key')
       .eq('public_key', walletAddress)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
     
     if (error || !wallet) {
@@ -138,9 +155,16 @@ export async function getAquaUserKeypair(walletAddress: string): Promise<Keypair
       return null;
     }
     
-    // Derive the user's encryption key
-    const userId = wallet.user_id;
-    const encryptionKey = deriveUserEncryptionKey(userId, serviceSalt);
+    // Derive the encryption key - use session_id if user_id is null
+    // Aqua uses session_id for key derivation when user is not logged in
+    const keyId = wallet.user_id || wallet.session_id;
+    if (!keyId) {
+      console.error(`[AQUA_WALLET] Wallet ${walletAddress} has no user_id or session_id`);
+      return null;
+    }
+    
+    console.log(`[AQUA_WALLET] Deriving key for wallet ${walletAddress} using keyId: ${keyId.substring(0, 8)}...`);
+    const encryptionKey = deriveUserEncryptionKey(keyId, serviceSalt);
     
     // Decrypt the private key
     let decryptedKey: string;
