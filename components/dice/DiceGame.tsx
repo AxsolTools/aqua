@@ -470,10 +470,12 @@ const DiceGame: React.FC = () => {
             </div>
             </div>
             
-              <div className="bg-background/50 rounded-lg p-3 border border-border">
+              <div className="bg-gradient-to-r from-[var(--aqua-primary)]/20 to-transparent rounded-lg p-3 border border-[var(--aqua-primary)]/30">
                 <p className="text-xs text-muted-foreground">Potential Profit</p>
-                <p className="text-lg font-bold text-accent">+{calculateProfit()} {token.symbol}</p>
-            </div>
+                <p className="text-xl font-bold text-[var(--aqua-primary)]">
+                  +{calculateProfit()} {token.symbol}
+                </p>
+              </div>
             
             <div className="space-y-2">
                 <label className="block text-xs text-muted-foreground">Client Seed</label>

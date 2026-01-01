@@ -989,13 +989,54 @@ router.get('/verify/:betId', (req, res) => {
 });
 
 /**
+ * GET /api/dice/bets/recent
+ * Get recent bets for live feed
+ */
+router.get('/bets/recent', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    
+    const recentBets = Array.from(bets.values())
+      .filter(bet => bet.rolled && bet.status === 'completed')
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, limit)
+      .map(bet => ({
+        id: bet.id,
+        walletAddress: bet.walletAddress,
+        betAmount: bet.amount,
+        profit: bet.profit || '0',
+        won: bet.won || false,
+        result: bet.result || 0,
+        target: bet.target,
+        isOver: bet.isOver,
+        timestamp: bet.date,
+        txSignature: bet.txSignature
+      }));
+    
+    res.json({
+      success: true,
+      bets: recentBets
+    });
+  } catch (error) {
+    console.error('Error getting recent bets:', error);
+    res.status(500).json({ error: 'Failed to get recent bets' });
+  }
+});
+
+/**
  * GET /api/dice/leaderboard
  * Get dice game leaderboard
  */
 router.get('/leaderboard', async (req, res) => {
   try {
-    const leaderboard = calculateLeaderboardFromBets();
-    res.json({ leaderboard });
+    const timeframe = req.query.timeframe as string || 'daily';
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const leaderboard = calculateLeaderboardFromBets(timeframe, limit);
+    res.json({ 
+      success: true,
+      leaderboard 
+    });
   } catch (error) {
     console.error('Error getting leaderboard:', error);
     res.status(500).json({ error: 'Failed to get leaderboard' });
@@ -1005,56 +1046,89 @@ router.get('/leaderboard', async (req, res) => {
 /**
  * Calculate leaderboard from bets
  */
-function calculateLeaderboardFromBets() {
+function calculateLeaderboardFromBets(timeframe: string = 'daily', limit: number = 10) {
   const playerStats = new Map();
+  const now = new Date();
+  
+  // Calculate cutoff time based on timeframe
+  let cutoffTime: Date;
+  switch (timeframe) {
+    case 'daily':
+      cutoffTime = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      break;
+    case 'weekly':
+      cutoffTime = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      break;
+    case 'alltime':
+    default:
+      cutoffTime = new Date(0); // Beginning of time
+      break;
+  }
   
   for (const bet of bets.values()) {
     if (!bet.rolled || bet.status !== 'completed') continue;
+    
+    // Filter by timeframe
+    const betDate = new Date(bet.date);
+    if (betDate < cutoffTime) continue;
     
     const walletAddress = bet.walletAddress;
     
     if (!playerStats.has(walletAddress)) {
       playerStats.set(walletAddress, {
-        address: walletAddress,
-        profit: 0,
+        walletAddress: walletAddress,
+        totalProfit: 0,
+        totalWagered: 0,
         wins: 0,
-        totalBets: 0
+        gamesPlayed: 0
       });
     }
     
     const stats = playerStats.get(walletAddress);
-    stats.totalBets++;
+    stats.gamesPlayed++;
+    
+    const amountValue = parseFloat(bet.amount);
+    if (!isNaN(amountValue)) {
+      stats.totalWagered += amountValue;
+    }
     
     if (bet.won) {
       stats.wins++;
       const profitValue = parseFloat(bet.profit || '0');
       if (!isNaN(profitValue)) {
-        stats.profit += profitValue;
+        stats.totalProfit += profitValue;
       }
     } else {
-      const amountValue = parseFloat(bet.amount);
       if (!isNaN(amountValue)) {
-        stats.profit -= amountValue;
+        stats.totalProfit -= amountValue;
       }
     }
   }
   
-  const result = Array.from(playerStats.values()).map(player => {
-    const winRate = player.totalBets > 0 
-      ? `${((player.wins / player.totalBets) * 100).toFixed(1)}%` 
-      : '0%';
+  const result = Array.from(playerStats.values()).map((player, index) => {
+    const winRate = player.gamesPlayed > 0 
+      ? (player.wins / player.gamesPlayed) * 100
+      : 0;
       
     return {
-      address: player.address,
-      profit: player.profit.toFixed(2),
-      winRate,
-      totalBets: player.totalBets
+      rank: index + 1,
+      walletAddress: player.walletAddress,
+      totalWagered: player.totalWagered.toFixed(2),
+      totalProfit: player.totalProfit.toFixed(2),
+      winRate: winRate,
+      gamesPlayed: player.gamesPlayed
     };
   });
   
-  result.sort((a, b) => parseFloat(b.profit) - parseFloat(a.profit));
+  // Sort by profit (descending)
+  result.sort((a, b) => parseFloat(b.totalProfit) - parseFloat(a.totalProfit));
   
-  return result.slice(0, 10);
+  // Assign proper ranks after sorting
+  result.forEach((entry, index) => {
+    entry.rank = index + 1;
+  });
+  
+  return result.slice(0, limit);
 }
 
 /**
