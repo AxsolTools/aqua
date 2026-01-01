@@ -141,13 +141,24 @@ async function findSourceTokenAccount(
 }
 
 /**
- * Get user's keypair from stored encrypted private key
+ * Get user's keypair from Aqua's Supabase database
+ * Falls back to local file storage if Supabase not available
  */
 export async function getUserKeypair(walletAddress: string): Promise<Keypair | null> {
   try {
+    // First, try to get from Aqua's Supabase (preferred)
+    const { getAquaUserKeypair } = await import('./aquaWalletService');
+    const aquaKeypair = await getAquaUserKeypair(walletAddress);
+    if (aquaKeypair) {
+      console.log(`[TX] Got keypair from Aqua Supabase for ${walletAddress}`);
+      return aquaKeypair;
+    }
+    
+    // Fallback to local file storage (for backwards compatibility)
+    console.log(`[TX] Falling back to local storage for ${walletAddress}`);
     const storedWallet = await storage.getUserWallet(walletAddress);
     if (!storedWallet) {
-      console.error(`No stored wallet found for ${walletAddress}`);
+      console.error(`[TX] No wallet found for ${walletAddress} in Aqua Supabase or local storage`);
       return null;
     }
     
@@ -163,12 +174,12 @@ export async function getUserKeypair(walletAddress: string): Promise<Keypair | n
         const parsed = JSON.parse(privateKey);
         return Keypair.fromSecretKey(Uint8Array.from(parsed));
       } catch {
-        console.error('Failed to decode stored private key');
+        console.error('[TX] Failed to decode stored private key');
         return null;
       }
     }
   } catch (error) {
-    console.error(`Error getting user keypair for ${walletAddress}:`, error);
+    console.error(`[TX] Error getting user keypair for ${walletAddress}:`, error);
     return null;
   }
 }

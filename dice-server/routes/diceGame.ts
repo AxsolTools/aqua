@@ -419,8 +419,12 @@ router.post('/bet', async (req, res) => {
     }
 
     // Check if wallet is registered (has stored private key)
+    // First check Aqua's Supabase, then fall back to local storage
+    const { isWalletRegisteredInAqua } = await import('../utils/aquaWalletService');
     const storedWallet = await storage.getUserWallet(walletAddress);
-    if (!storedWallet) {
+    const isRegisteredInAqua = await isWalletRegisteredInAqua(walletAddress);
+    
+    if (!storedWallet && !isRegisteredInAqua) {
       return res.status(400).json({ 
         error: 'Wallet not registered. Please reconnect your wallet.',
         code: 'WALLET_NOT_REGISTERED'
@@ -633,9 +637,17 @@ router.post('/roll', async (req, res) => {
     bet.status = 'processing';
     bets.set(betId, bet);
 
-    // Get config for max profit
+    // Get config for max profit AND house edge from saved config (not just env!)
     const systemConfig = await storage.getSystemConfig();
-    const maxProfit = parseFloat(systemConfig?.diceGameConfig?.maxProfit || process.env.MAX_PROFIT || "5000");
+    const diceConfig = systemConfig?.diceGameConfig || {
+      maxProfit: process.env.MAX_PROFIT || "5000",
+      houseEdge: parseFloat(process.env.HOUSE_EDGE || "1.5")
+    };
+    const maxProfit = parseFloat(diceConfig.maxProfit || process.env.MAX_PROFIT || "5000");
+    // CRITICAL FIX: Read house edge from saved config, not just env var
+    const configuredHouseEdge = diceConfig.houseEdge ?? parseFloat(process.env.HOUSE_EDGE || "1.5");
+    
+    logger.info(`[ROLL] Using config - maxProfit: ${maxProfit}, houseEdge: ${configuredHouseEdge}%`);
 
     // Calculate result
     const combinedSeed = clientSeed + bet.serverSeed;
@@ -649,6 +661,9 @@ router.post('/roll', async (req, res) => {
     } else {
       won = resultNumber < bet.target;
     }
+    
+    // Log the roll result for debugging
+    logger.info(`[ROLL] Result: ${resultNumber.toFixed(2)}, Target: ${bet.target}, IsOver: ${bet.isOver}, Won: ${won}`);
 
     // Calculate profit
     let profit = 0;
@@ -661,7 +676,9 @@ router.post('/roll', async (req, res) => {
       // CRITICAL FIX: Recalculate multiplier to ensure house edge is applied correctly
       // Don't trust stored multiplier - recalculate from bet parameters
       const winChance = bet.isOver ? (999999.99 - bet.target) / 999999.99 * 100 : bet.target / 999999.99 * 100;
-      const houseEdge = parseFloat(process.env.HOUSE_EDGE || "1.5");
+      
+      // CRITICAL FIX: Use house edge from saved config, not env var!
+      const houseEdge = configuredHouseEdge;
       
       // Recalculate multiplier with house edge to prevent manipulation
       // CRITICAL FIX: Use target and isOver directly, not winChance percentage
@@ -679,7 +696,7 @@ router.post('/roll', async (req, res) => {
       const safeMultiplier = Math.max(1.0, Math.min(100.0, verifiedMultiplier));
       
       // Log for debugging
-      logger.info(`[ROLL] Multiplier check - Stored: ${bet.multiplier}, Verified: ${verifiedMultiplier}, Safe: ${safeMultiplier}, WinChance: ${winChance}%, HouseEdge: ${houseEdge}%`);
+      logger.info(`[ROLL] Multiplier check - Stored: ${bet.multiplier}, Verified: ${verifiedMultiplier}, Safe: ${safeMultiplier}, WinChance: ${winChance.toFixed(2)}%, HouseEdge: ${houseEdge}%`);
       
       const totalPayout = calculateProfit(betAmountNum, safeMultiplier);
       const rawProfit = totalPayout - betAmountNum;
@@ -691,7 +708,7 @@ router.post('/roll', async (req, res) => {
         profit = 0;
       }
       
-      logger.info(`[ROLL] User ${walletAddress} WON! Profit: ${profit} ${TOKEN_SYMBOL} (bet: ${betAmountNum}, multiplier: ${verifiedMultiplier}, totalPayout: ${totalPayout})`);
+      logger.info(`[ROLL] User ${walletAddress} WON! Profit: ${profit} ${TOKEN_SYMBOL} (bet: ${betAmountNum}, multiplier: ${safeMultiplier.toFixed(4)}, totalPayout: ${totalPayout.toFixed(2)})`);
       
       // CRITICAL: Verify house wallet is initialized and has sufficient balance BEFORE paying out
       const { getHouseWallet } = await import('../utils/solanaWallet');
@@ -787,8 +804,12 @@ router.post('/roll', async (req, res) => {
       logger.info(`[ROLL] User ${walletAddress} LOST. Transferring ${betAmountNum} ${TOKEN_SYMBOL} to house`);
       
       // CRITICAL: Verify wallet is still registered and has balance BEFORE attempting transfer
+      // Check both Aqua Supabase and local storage
       const storedWallet = await storage.getUserWallet(walletAddress);
-      if (!storedWallet) {
+      const { isWalletRegisteredInAqua } = await import('../utils/aquaWalletService');
+      const isRegisteredInAqua = await isWalletRegisteredInAqua(walletAddress);
+      
+      if (!storedWallet && !isRegisteredInAqua) {
         logger.error(`[ROLL] CRITICAL: Wallet ${walletAddress} not registered when trying to collect loss!`);
         txError = 'Wallet not registered. Please reconnect your wallet.';
         bet.status = 'failed';
