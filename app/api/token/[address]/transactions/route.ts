@@ -169,7 +169,8 @@ async function fetchHeliusTransactions(
     })
 
     if (!enhancedResponse.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Enhanced API error:", enhancedResponse.status)
+      const errorText = await enhancedResponse.text().catch(() => "")
+      console.warn("[TOKEN-TRANSACTIONS] Enhanced API error:", enhancedResponse.status, errorText.slice(0, 200))
       // Return basic data from signatures
       return signatures.slice(0, limit).map((sig) => ({
         signature: sig.signature,
