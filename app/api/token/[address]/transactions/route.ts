@@ -128,9 +128,9 @@ async function fetchHeliusTransactions(
 
     const data = await response.json()
     
-    if (!Array.isArray(data)) return []
+    const transactions = Array.isArray(data) ? data : (data?.transactions || [])
 
-    return data.slice(0, limit).map((tx: HelixTransaction) => {
+    return transactions.slice(0, limit).map((tx: HelixTransaction) => {
       // Determine if buy or sell based on token movements
       const isBuy = isTokenBuy(tx, tokenAddress)
       
