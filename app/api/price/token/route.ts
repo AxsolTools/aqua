@@ -31,7 +31,7 @@ interface PriceResult {
  * Fetch from Jupiter Quote API (most accurate for any token)
  */
 async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): Promise<PriceResult> {
-  const amount = BigInt(10) ** BigInt(decimals)
+  const amount = BigInt(Math.pow(10, decimals))
   
   const params = new URLSearchParams({
     inputMint: tokenMint,
@@ -57,7 +57,7 @@ async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): P
   const inAmountNum = BigInt(inAmount)
   const outAmountNum = BigInt(outAmount)
   
-  if (inAmountNum === 0n || outAmountNum === 0n) throw new Error("Zero amount in Jupiter quote")
+  if (inAmountNum === BigInt(0) || outAmountNum === BigInt(0)) throw new Error("Zero amount in Jupiter quote")
 
   const tokenUnits = Number(inAmountNum) / Math.pow(10, decimals)
   const usdcUnits = Number(outAmountNum) / Math.pow(10, USDC_DECIMALS)

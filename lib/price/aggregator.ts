@@ -441,7 +441,7 @@ async function fetchJupiterTokenPrice(mint: string): Promise<number> {
 async function fetchJupiterQuotePrice(mint: string): Promise<number> {
   // Get token decimals (assume 9 if unknown)
   const decimals = decimalCache.get(mint) ?? 9;
-  const inputAmount = BigInt(10) ** BigInt(decimals);
+  const inputAmount = BigInt(Math.pow(10, decimals));
   
   // Create timeout manually for Node.js compatibility
   const controller = new AbortController();
