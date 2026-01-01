@@ -34,8 +34,8 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
       
       if (response.ok) {
         const data = await response.json()
-        if (data.success && data.data?.transactions) {
-          setTransactions(data.data.transactions)
+        if (data.success) {
+          setTransactions(data.data?.transactions || [])
         }
       } else {
         console.warn('[TRANSACTIONS] API error:', response.status)
