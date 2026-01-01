@@ -102,13 +102,13 @@ async function fetchDatabaseTransactions(
 }
 
 /**
- * Fetch transactions from Helius Enhanced Transactions API
+ * Fetch transactions from Helius getTransactionsForAddress RPC method
  * 
  * CREDIT COSTS:
- * - Enhanced Transactions API: 100 credits per call
- * - Returns rich parsed data: token transfers, SOL amounts, transaction types
+ * - getTransactionsForAddress: 100 credits per call (Developer plan+)
+ * - Returns full transaction data with filtering and sorting
  * 
- * URL: https://api-mainnet.helius-rpc.com/v0/addresses/{address}/transactions?api-key=XXX
+ * Docs: https://www.helius.dev/docs/rpc/gettransactionsforaddress
  */
 async function fetchHeliusTransactions(
   tokenAddress: string,
@@ -123,30 +123,46 @@ async function fetchHeliusTransactions(
   console.log("[TOKEN-TRANSACTIONS] Fetching for token:", tokenAddress.slice(0, 8))
 
   try {
-    // Use Enhanced Transactions API - returns rich parsed data
-    // Docs: https://www.helius.dev/docs/enhanced-transactions/transaction-history
-    let url = `https://api-mainnet.helius-rpc.com/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}`
+    // Use getTransactionsForAddress RPC method (Helius Developer plan+)
+    // Docs: https://www.helius.dev/docs/rpc/gettransactionsforaddress
+    const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
     
-    // Add pagination if needed
-    if (beforeSignature) {
-      url += `&before=${beforeSignature}`
-    }
-    
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-      },
+    const response = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getTransactionsForAddress",
+        params: [
+          tokenAddress,
+          {
+            transactionDetails: "full",
+            encoding: "jsonParsed",
+            maxSupportedTransactionVersion: 0,
+            sortOrder: "desc",
+            limit: Math.min(limit, 100),
+            filters: { status: "succeeded" }
+          }
+        ]
+      }),
       signal: AbortSignal.timeout(15000)
     })
 
     if (!response.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Helius Enhanced API error:", response.status)
+      console.warn("[TOKEN-TRANSACTIONS] Helius RPC error:", response.status)
       // Fall back to standard RPC if enhanced API fails
       return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
     }
 
-    const transactions = await response.json()
+    const data = await response.json()
+    
+    if (data.error) {
+      console.warn("[TOKEN-TRANSACTIONS] RPC error:", data.error.message || data.error)
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
+    }
+    
+    const transactions = data.result?.data || []
     
     if (!Array.isArray(transactions)) {
       console.warn("[TOKEN-TRANSACTIONS] Unexpected response format")
@@ -159,31 +175,43 @@ async function fetchHeliusTransactions(
       return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
     }
 
-    // Map enhanced transactions to our format
+    // Map getTransactionsForAddress response to our format
+    // Response format: { slot, blockTime, transaction, meta }
     const mappedTxs = transactions
       .slice(0, limit)
-      .map((tx: EnhancedTransaction): Transaction => {
-        const isBuy = isTokenBuy(tx, tokenAddress)
-        const solAmount = extractSolAmount(tx)
-        const tokenAmount = extractTokenAmount(tx, tokenAddress)
+      .map((tx: FullTransactionResponse): Transaction => {
+        const signature = tx.transaction?.signatures?.[0] || ""
+        const blockTime = tx.blockTime || 0
+        const meta = tx.meta
+        const message = tx.transaction?.message
+        
+        // Get fee payer (first account in message)
+        const feePayer = message?.accountKeys?.[0]?.pubkey || ""
+        
+        // Analyze balance changes to determine buy/sell
+        const { isBuy, solAmount, tokenAmount } = analyzeBalanceChanges(
+          meta, 
+          message, 
+          tokenAddress, 
+          feePayer
+        )
         
         // Debug log for first few transactions
         if (transactions.indexOf(tx) < 3) {
-          console.log("[TOKEN-TRANSACTIONS] TX:", tx.signature?.slice(0, 12), 
-            "type:", tx.type,
+          console.log("[TOKEN-TRANSACTIONS] TX:", signature?.slice(0, 12), 
+            "isBuy:", isBuy,
             "SOL:", solAmount.toFixed(6),
-            "hasSwap:", !!tx.events?.swap,
-            "nativeTransfers:", tx.nativeTransfers?.length || 0
+            "tokens:", tokenAmount
           )
         }
         
         return {
-          signature: tx.signature || "",
+          signature,
           type: isBuy ? "buy" as const : "sell" as const,
-          walletAddress: tx.feePayer || "",
+          walletAddress: feePayer,
           amountSol: solAmount,
           amountTokens: tokenAmount,
-          timestamp: (tx.timestamp || 0) * 1000,
+          timestamp: blockTime * 1000,
           status: "confirmed" as const,
         }
       })
@@ -254,71 +282,143 @@ async function fetchHeliusTransactionsFallback(
   }
 }
 
-// Enhanced Transaction format from Helius API
-// Supports multiple formats as Helius response can vary
-interface EnhancedTransaction {
-  signature: string
-  timestamp?: number
-  slot?: number
-  feePayer?: string
-  source?: string
-  type?: string
-  description?: string
-  // Native SOL transfers (lamports)
-  nativeTransfers?: Array<{
-    amount: number | string
-    fromUserAccount: string
-    toUserAccount: string
-  }>
-  // Token transfers
-  tokenTransfers?: Array<{
-    mint: string
-    tokenAmount: number
-    fromUserAccount: string
-    toUserAccount: string
-    tokenStandard?: string
-  }>
-  // Account balance changes
-  accountData?: Array<{
-    account: string
-    nativeBalanceChange: number | string
-    tokenBalanceChanges?: Array<{
-      mint: string
-      rawTokenAmount: { tokenAmount: string; decimals: number }
-      userAccount: string
-    }>
-  }>
-  // Swap events from Helius Enhanced API
-  events?: {
-    swap?: {
-      nativeInput?: { account: string; amount: string | number }
-      nativeOutput?: { account: string; amount: string | number }
-      tokenInputs?: Array<{
-        mint: string
-        rawTokenAmount: { tokenAmount: string; decimals: number }
-        userAccount: string
-        tokenAccount: string
-      }>
-      tokenOutputs?: Array<{
-        mint: string
-        rawTokenAmount: { tokenAmount: string; decimals: number }
-        userAccount: string
-        tokenAccount: string
-      }>
-      // Alternative format
-      innerSwaps?: Array<{
-        tokenInputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
-        tokenOutputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
-        nativeFees?: Array<{ amount: number | string }>
+// Full transaction response from getTransactionsForAddress
+interface FullTransactionResponse {
+  slot: number
+  blockTime: number | null
+  transaction: {
+    signatures: string[]
+    message: {
+      accountKeys: Array<{ pubkey: string; signer: boolean; writable: boolean }>
+      instructions: Array<{
+        programId: string
+        accounts?: string[]
+        data?: string
+        parsed?: {
+          type: string
+          info: Record<string, unknown>
+        }
       }>
     }
-    // Alternative field name
-    nft?: unknown
   }
-  // Alternative fee format
-  fee?: number
-  // Native balance change for the whole transaction
-  nativeBalanceChange?: number | string
+  meta: {
+    err: unknown | null
+    fee: number
+    preBalances: number[]
+    postBalances: number[]
+    preTokenBalances?: Array<{
+      accountIndex: number
+      mint: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number | null }
+      owner?: string
+    }>
+    postTokenBalances?: Array<{
+      accountIndex: number
+      mint: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number | null }
+      owner?: string
+    }>
+  }
+}
+
+/**
+ * Analyze balance changes to determine buy/sell and amounts
+ */
+function analyzeBalanceChanges(
+  meta: FullTransactionResponse["meta"],
+  message: FullTransactionResponse["transaction"]["message"],
+  tokenAddress: string,
+  feePayer: string
+): { isBuy: boolean; solAmount: number; tokenAmount: number } {
+  let isBuy = false
+  let solAmount = 0
+  let tokenAmount = 0
+
+  if (!meta || !message) {
+    return { isBuy, solAmount, tokenAmount }
+  }
+
+  // Calculate SOL change for fee payer (index 0)
+  if (meta.preBalances && meta.postBalances && meta.preBalances.length > 0) {
+    const solChange = (meta.postBalances[0] - meta.preBalances[0]) / 1e9
+    // If SOL decreased significantly (more than just fees), they spent SOL = buy
+    // Account for fees (~0.000005 SOL) by checking if change is significant
+    if (solChange < -0.0001) {
+      // Spent SOL = likely buying tokens
+      solAmount = Math.abs(solChange)
+    } else if (solChange > 0.0001) {
+      // Received SOL = likely selling tokens
+      solAmount = solChange
+    }
+  }
+
+  // Check token balance changes for the specific token
+  const preTokens = meta.preTokenBalances || []
+  const postTokens = meta.postTokenBalances || []
+
+  // Find token balance for fee payer
+  for (const post of postTokens) {
+    if (post.mint !== tokenAddress) continue
+    
+    const postAmount = parseFloat(post.uiTokenAmount.amount) / Math.pow(10, post.uiTokenAmount.decimals)
+    
+    // Find matching pre balance
+    const pre = preTokens.find(p => 
+      p.accountIndex === post.accountIndex && p.mint === tokenAddress
+    )
+    const preAmount = pre 
+      ? parseFloat(pre.uiTokenAmount.amount) / Math.pow(10, pre.uiTokenAmount.decimals)
+      : 0
+    
+    const tokenChange = postAmount - preAmount
+    
+    if (tokenChange > 0) {
+      // Received tokens = buy
+      isBuy = true
+      tokenAmount = tokenChange
+    } else if (tokenChange < 0) {
+      // Sent tokens = sell
+      isBuy = false
+      tokenAmount = Math.abs(tokenChange)
+    }
+    break
+  }
+
+  // If we didn't find token changes, check if fee payer got new token account
+  if (tokenAmount === 0) {
+    for (const post of postTokens) {
+      if (post.mint !== tokenAddress) continue
+      
+      const hasPreBalance = preTokens.some(p => 
+        p.accountIndex === post.accountIndex && p.mint === tokenAddress
+      )
+      
+      if (!hasPreBalance && post.uiTokenAmount.uiAmount && post.uiTokenAmount.uiAmount > 0) {
+        // New token account with balance = buy
+        isBuy = true
+        tokenAmount = post.uiTokenAmount.uiAmount
+        break
+      }
+    }
+  }
+
+  // If we found no token amount but significant SOL change, check any token
+  if (tokenAmount === 0 && solAmount > 0) {
+    for (const post of postTokens) {
+      const pre = preTokens.find(p => p.accountIndex === post.accountIndex && p.mint === post.mint)
+      const postAmt = parseFloat(post.uiTokenAmount.amount) / Math.pow(10, post.uiTokenAmount.decimals)
+      const preAmt = pre ? parseFloat(pre.uiTokenAmount.amount) / Math.pow(10, pre.uiTokenAmount.decimals) : 0
+      const change = postAmt - preAmt
+      
+      if (Math.abs(change) > 0) {
+        tokenAmount = Math.abs(change)
+        isBuy = change > 0
+        break
+      }
+    }
+  }
+
+  return { isBuy, solAmount, tokenAmount }
 }
 
 // Signature info from getSignaturesForAddress fallback
@@ -329,176 +429,6 @@ interface SignatureInfo {
   err: unknown | null
   memo: string | null
   confirmationStatus: string
-}
-
-/**
- * Determine if transaction is a buy (tokens going to the fee payer)
- */
-function isTokenBuy(tx: EnhancedTransaction, tokenAddress: string): boolean {
-  // PRIORITY 1: Check swap events - if SOL is input and tokens are output, it's a buy
-  if (tx.events?.swap) {
-    const swap = tx.events.swap
-    // If there's native input (SOL spent) and token outputs, it's a buy
-    if (swap.nativeInput && swap.tokenOutputs && swap.tokenOutputs.length > 0) {
-      return true
-    }
-    // If there's token input and native output (SOL received), it's a sell
-    if (swap.nativeOutput && swap.tokenInputs && swap.tokenInputs.length > 0) {
-      return false
-    }
-  }
-
-  // PRIORITY 2: Check token transfers
-  if (tx.tokenTransfers) {
-    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
-    if (tokenTransfer) {
-      return tokenTransfer.toUserAccount === tx.feePayer
-    }
-  }
-  
-  // PRIORITY 3: Check account data
-  if (tx.accountData) {
-    const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
-    if (feePayerData?.tokenBalanceChanges) {
-      const tokenChange = feePayerData.tokenBalanceChanges.find(t => t.mint === tokenAddress)
-      if (tokenChange) {
-        return parseFloat(tokenChange.rawTokenAmount.tokenAmount) > 0
-      }
-    }
-  }
-  
-  return false
-}
-
-/**
- * Extract SOL amount from transaction
- */
-function extractSolAmount(tx: EnhancedTransaction): number {
-  // PRIORITY 1: Check swap events (most accurate for DEX trades)
-  if (tx.events?.swap) {
-    const swap = tx.events.swap
-    // For swaps, get SOL input or output
-    if (swap.nativeInput?.amount) {
-      const amount = typeof swap.nativeInput.amount === 'string' 
-        ? parseInt(swap.nativeInput.amount) 
-        : swap.nativeInput.amount
-      if (amount > 0) return amount / 1e9
-    }
-    if (swap.nativeOutput?.amount) {
-      const amount = typeof swap.nativeOutput.amount === 'string' 
-        ? parseInt(swap.nativeOutput.amount) 
-        : swap.nativeOutput.amount
-      if (amount > 0) return amount / 1e9
-    }
-  }
-
-  // PRIORITY 2: Try nativeTransfers - reliable for SOL transfers
-  if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
-    // Sum all significant transfers (filter out tiny fee-related amounts)
-    let totalSol = 0
-    for (const transfer of tx.nativeTransfers) {
-      const amount = typeof transfer.amount === 'string' 
-        ? parseInt(transfer.amount) 
-        : (transfer.amount || 0)
-      // Only count significant transfers (> 0.001 SOL = 1_000_000 lamports)
-      if (Math.abs(amount) > 1_000_000) {
-        totalSol += Math.abs(amount)
-      }
-    }
-    if (totalSol > 0) {
-      // Return the average to avoid double-counting (from/to same pair)
-      const count = tx.nativeTransfers.filter(t => {
-        const amt = typeof t.amount === 'string' ? parseInt(t.amount) : (t.amount || 0)
-        return Math.abs(amt) > 1_000_000
-      }).length
-      return (totalSol / Math.max(count, 1)) / 1e9
-    }
-  }
-  
-  // PRIORITY 3: Try accountData for balance changes
-  if (tx.accountData) {
-    // Look for significant balance changes (not just fee payer)
-    let maxChange = 0
-    for (const account of tx.accountData) {
-      const change = typeof account.nativeBalanceChange === 'string'
-        ? parseInt(account.nativeBalanceChange)
-        : Math.abs(account.nativeBalanceChange || 0)
-      // Only count significant changes (> 0.001 SOL)
-      if (change > 1_000_000 && change > maxChange) {
-        maxChange = change
-      }
-    }
-    if (maxChange > 0) {
-      return maxChange / 1e9
-    }
-  }
-  
-  return 0
-}
-
-/**
- * Extract token amount from transaction
- */
-function extractTokenAmount(tx: EnhancedTransaction, tokenAddress: string): number {
-  // PRIORITY 1: Check swap events for token amounts
-  if (tx.events?.swap) {
-    const swap = tx.events.swap
-    // Check token outputs first (for buys, you receive tokens)
-    if (swap.tokenOutputs && swap.tokenOutputs.length > 0) {
-      const tokenOut = swap.tokenOutputs.find(t => t.mint === tokenAddress) || swap.tokenOutputs[0]
-      if (tokenOut?.rawTokenAmount) {
-        const amount = parseFloat(tokenOut.rawTokenAmount.tokenAmount)
-        const decimals = tokenOut.rawTokenAmount.decimals || 0
-        return Math.abs(amount / Math.pow(10, decimals))
-      }
-    }
-    // Check token inputs (for sells, you send tokens)
-    if (swap.tokenInputs && swap.tokenInputs.length > 0) {
-      const tokenIn = swap.tokenInputs.find(t => t.mint === tokenAddress) || swap.tokenInputs[0]
-      if (tokenIn?.rawTokenAmount) {
-        const amount = parseFloat(tokenIn.rawTokenAmount.tokenAmount)
-        const decimals = tokenIn.rawTokenAmount.decimals || 0
-        return Math.abs(amount / Math.pow(10, decimals))
-      }
-    }
-  }
-
-  // PRIORITY 2: Try tokenTransfers
-  if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
-    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
-    if (tokenTransfer && tokenTransfer.tokenAmount) {
-      return Math.abs(tokenTransfer.tokenAmount)
-    }
-    // If specific token not found, use the first transfer with amount
-    const allTransfers = tx.tokenTransfers.filter(t => t.tokenAmount && t.tokenAmount > 0)
-    if (allTransfers.length > 0) {
-      return Math.abs(allTransfers[0].tokenAmount)
-    }
-  }
-  
-  // PRIORITY 3: Try accountData for balance changes
-  if (tx.accountData) {
-    for (const account of tx.accountData) {
-      if (account.tokenBalanceChanges && account.tokenBalanceChanges.length > 0) {
-        // Look for the specific token first
-        const tokenChange = account.tokenBalanceChanges.find(t => t.mint === tokenAddress)
-        if (tokenChange && tokenChange.rawTokenAmount) {
-          const amount = parseFloat(tokenChange.rawTokenAmount.tokenAmount)
-          const decimals = tokenChange.rawTokenAmount.decimals || 0
-          return Math.abs(amount / Math.pow(10, decimals))
-        }
-        // Fallback to first token change
-        const firstChange = account.tokenBalanceChanges[0]
-        if (firstChange && firstChange.rawTokenAmount) {
-          const amount = parseFloat(firstChange.rawTokenAmount.tokenAmount)
-          const decimals = firstChange.rawTokenAmount.decimals || 0
-          return Math.abs(amount / Math.pow(10, decimals))
-        }
-      }
-    }
-  }
-  
-  return 0
 }
 
 /**
