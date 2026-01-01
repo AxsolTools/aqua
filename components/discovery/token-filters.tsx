@@ -6,10 +6,9 @@ import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 const stages = [
-  { value: "all", label: "All Tokens" },
-  { value: "rising", label: "Rising Tides" },
+  { value: "all", label: "All" },
   { value: "bonding", label: "Bonding" },
-  { value: "migrated", label: "Deep Water" },
+  { value: "migrated", label: "Migrated" },
 ]
 
 const sortOptions = [
@@ -94,11 +93,11 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
 
   return (
     <div className="mb-6">
-      {/* Search Bar - Prominent at the top */}
+      {/* Search Bar - Compact */}
       <div className="mb-4">
-        <form onSubmit={handleSearchSubmit} className="relative">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <form onSubmit={handleSearchSubmit} className="relative max-w-xl">
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
               <circle cx="9" cy="9" r="6" />
               <path d="M14 14l4 4" strokeLinecap="round" />
             </svg>
@@ -109,13 +108,13 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
             value={search}
             onChange={(e) => handleSearchChange(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search by token name, symbol, or paste contract address..."
+            placeholder="Search or paste contract..."
             disabled={isSearching}
             className={cn(
-              "w-full pl-12 pr-28 py-4 rounded-xl text-base",
+              "w-full pl-10 pr-20 py-2.5 rounded-lg text-sm",
               "bg-[var(--bg-secondary)] border border-[var(--border-default)]",
               "text-[var(--text-primary)] placeholder:text-[var(--text-muted)]",
-              "focus:outline-none focus:border-[var(--aqua-primary)] focus:ring-2 focus:ring-[var(--aqua-bg)]",
+              "focus:outline-none focus:border-[var(--aqua-primary)]",
               "transition-all duration-150",
               isSearching && "opacity-70 cursor-not-allowed"
             )}
@@ -124,27 +123,16 @@ export function TokenFilters({ onFilterChange }: TokenFiltersProps) {
             type="submit"
             disabled={isSearching || !search.trim()}
             className={cn(
-              "absolute right-2 top-1/2 -translate-y-1/2",
-              "px-5 py-2.5 rounded-lg font-medium text-sm transition-all",
+              "absolute right-1.5 top-1/2 -translate-y-1/2",
+              "px-3 py-1.5 rounded text-xs font-medium transition-all",
               search.trim() 
                 ? "bg-[var(--aqua-primary)] text-[var(--bg-primary)] hover:bg-[var(--aqua-secondary)]"
                 : "bg-[var(--bg-elevated)] text-[var(--text-muted)] cursor-not-allowed"
             )}
           >
-            {isSearching ? (
-              <span className="flex items-center gap-2">
-                <div className="w-4 h-4 border-2 border-current/30 border-t-current rounded-full animate-spin" />
-                Loading...
-              </span>
-            ) : (
-              "Search"
-            )}
+            {isSearching ? "..." : "Go"}
           </button>
         </form>
-        {/* Hint text */}
-        <p className="text-xs text-[var(--text-muted)] mt-2 ml-1">
-          Tip: Paste any Solana token contract address to view its details
-        </p>
       </div>
 
       {/* Filters row: Tabs + Sort */}

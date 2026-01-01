@@ -55,10 +55,16 @@ export async function GET(
       fetchDexScreenerData(address),
     ])
 
+    // For bonding tokens, use bonding curve SOL as liquidity (in USD)
+    // For migrated tokens, use DexScreener liquidity
+    const solPriceUsd = 150 // Approximate SOL price
+    const bondingLiquidityUsd = bondingData.solBalance * solPriceUsd
+    
     const stats: TokenStats = {
       holders,
       volume24h: volumeData.volume24h || dexData.volume24h || 0,
-      liquidity: dexData.liquidity || bondingData.solBalance || 0,
+      // Use DexScreener liquidity if available (migrated), otherwise bonding curve SOL value
+      liquidity: dexData.liquidity > 0 ? dexData.liquidity : bondingLiquidityUsd,
       bondingCurveProgress: bondingData.progress,
       bondingCurveSol: bondingData.solBalance,
       isMigrated: bondingData.isMigrated,

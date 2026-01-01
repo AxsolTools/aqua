@@ -53,9 +53,9 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
     fetchTransactions()
   }, [fetchTransactions])
 
-  // Poll for updates every 15 seconds
+  // Poll for updates every 5 seconds for faster live trades
   useEffect(() => {
-    const interval = setInterval(fetchTransactions, 15_000)
+    const interval = setInterval(fetchTransactions, 5_000)
     return () => clearInterval(interval)
   }, [fetchTransactions])
 

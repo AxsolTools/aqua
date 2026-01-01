@@ -68,8 +68,8 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
 
   useEffect(() => {
     fetchStats()
-    // Poll every 30 seconds
-    const interval = setInterval(fetchStats, 30_000)
+    // Poll every 10 seconds for faster updates
+    const interval = setInterval(fetchStats, 10_000)
     return () => clearInterval(interval)
   }, [fetchStats])
 
@@ -270,7 +270,7 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-0.5">Liquidity</p>
               <div className="flex items-center gap-1">
                 <p className="text-sm md:text-base font-semibold text-[var(--text-primary)]">
-                  {formatVolume(displayLiquidity)}
+                  {displayLiquidity > 0 ? formatVolume(displayLiquidity) : `${(stats?.bondingCurveSol || 0).toFixed(2)} SOL`}
                 </p>
                 {statsLoading && (
                   <div className="w-2 h-2 border border-[var(--text-muted)] border-t-transparent rounded-full animate-spin" />
@@ -278,6 +278,27 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               </div>
             </div>
           </div>
+          
+          {/* Migration Progress - Only show for bonding tokens */}
+          {!(stats?.isMigrated || token.stage === "migrated") && (
+            <div className="ml-4 min-w-[120px]">
+              <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">Migration</p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--warm-pink)] transition-all duration-500"
+                    style={{ width: `${stats?.bondingCurveProgress || 0}%` }}
+                  />
+                </div>
+                <span className="text-xs font-semibold text-[var(--aqua-primary)] min-w-[40px] text-right">
+                  {(stats?.bondingCurveProgress || 0).toFixed(1)}%
+                </span>
+              </div>
+              <p className="text-[9px] text-[var(--text-muted)] mt-0.5">
+                {(stats?.bondingCurveSol || 0).toFixed(2)} / 85 SOL
+              </p>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex items-center gap-2">

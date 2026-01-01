@@ -42,8 +42,8 @@ export function TokenInfo({ token }: TokenInfoProps) {
 
   useEffect(() => {
     fetchBondingStats()
-    // Poll every 30 seconds for real-time updates
-    const interval = setInterval(fetchBondingStats, 30_000)
+    // Poll every 10 seconds for real-time updates
+    const interval = setInterval(fetchBondingStats, 10_000)
     return () => clearInterval(interval)
   }, [fetchBondingStats])
 
