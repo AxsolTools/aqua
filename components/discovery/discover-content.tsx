@@ -6,6 +6,8 @@ import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { TrenchesLayout } from "./trenches-layout"
 import { TokenGrid } from "./token-grid"
+import { AllSolanaGrid } from "./all-solana-grid"
+import { Droplet, Globe, Flame, Sparkles } from "lucide-react"
 
 const viewModes = [
   { value: "trenches", label: "🪖 Trenches", description: "3-lane view" },
@@ -17,6 +19,13 @@ const sortOptions = [
   { value: "liquidity", label: "Liquidity" },
   { value: "volume", label: "Volume" },
   { value: "marketcap", label: "Market Cap" },
+]
+
+const sourceOptions = [
+  { value: "aquarius", label: "Aquarius", icon: Droplet, description: "Platform tokens" },
+  { value: "all", label: "All Solana", icon: Globe, description: "DexScreener feed" },
+  { value: "pumpfun", label: "Pump.fun", icon: Flame, description: "New launches" },
+  { value: "trending", label: "Trending", icon: Sparkles, description: "Hot tokens" },
 ]
 
 // Check if a string is a valid Solana address (base58, 32-44 chars)
@@ -31,8 +40,11 @@ export function DiscoverContent() {
   const [sort, setSort] = useState("newest")
   const [search, setSearch] = useState("")
   const [isSearching, setIsSearching] = useState(false)
+  const [tokenSource, setTokenSource] = useState<"aquarius" | "all" | "pumpfun" | "trending">("aquarius")
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 })
+  const [sourceIndicatorStyle, setSourceIndicatorStyle] = useState({ left: 0, width: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
+  const sourceContainerRef = useRef<HTMLDivElement>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -48,6 +60,20 @@ export function DiscoverContent() {
       }
     }
   }, [viewMode])
+
+  useEffect(() => {
+    if (sourceContainerRef.current) {
+      const activeIndex = sourceOptions.findIndex((s) => s.value === tokenSource)
+      const buttons = sourceContainerRef.current.querySelectorAll("button")
+      const activeButton = buttons[activeIndex] as HTMLElement
+      if (activeButton) {
+        setSourceIndicatorStyle({
+          left: activeButton.offsetLeft,
+          width: activeButton.offsetWidth,
+        })
+      }
+    }
+  }, [tokenSource])
 
   const handleSearchSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -69,8 +95,71 @@ export function DiscoverContent() {
     }
   }
 
+  const renderContent = () => {
+    // Show external token sources
+    if (tokenSource !== "aquarius") {
+      return (
+        <AllSolanaGrid 
+          source={tokenSource === "all" ? "all" : tokenSource === "pumpfun" ? "pumpfun" : "trending"} 
+        />
+      )
+    }
+
+    // Show Aquarius platform tokens
+    if (viewMode === "trenches") {
+      return <TrenchesLayout />
+    }
+    return <TokenGrid />
+  }
+
   return (
     <div>
+      {/* Token Source Toggle */}
+      <div className="mb-4">
+        <div
+          ref={sourceContainerRef}
+          className="relative inline-flex gap-0.5 p-1 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)]"
+        >
+          {/* Active indicator */}
+          <motion.div
+            className="absolute h-[calc(100%-8px)] top-1 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)]/20 to-[var(--aqua-primary)]/10 border border-[var(--aqua-primary)]/30"
+            initial={false}
+            animate={{
+              left: sourceIndicatorStyle.left,
+              width: sourceIndicatorStyle.width,
+            }}
+            transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+          />
+
+          {sourceOptions.map((source) => {
+            const IconComponent = source.icon
+            return (
+              <button
+                key={source.value}
+                onClick={() => setTokenSource(source.value as typeof tokenSource)}
+                className={cn(
+                  "relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap z-10",
+                  tokenSource === source.value
+                    ? "text-[var(--aqua-primary)]"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                )}
+              >
+                <IconComponent className="w-4 h-4" />
+                <span className="hidden sm:inline">{source.label}</span>
+                {source.value === "pumpfun" && (
+                  <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-400">
+                    LIVE
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-xs text-[var(--text-dim)]">
+          {sourceOptions.find(s => s.value === tokenSource)?.description}
+        </p>
+      </div>
+
       {/* Header Bar with Search, View Toggle, and Sort */}
       <div className="mb-4 flex flex-col sm:flex-row items-start sm:items-center gap-3">
         {/* Search Bar */}
@@ -117,40 +206,42 @@ export function DiscoverContent() {
 
         {/* Right side controls */}
         <div className="flex items-center gap-3">
-          {/* View Mode Toggle */}
-          <div
-            ref={containerRef}
-            className="relative inline-flex gap-0.5 p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)]"
-          >
-            {/* Active indicator */}
-            <motion.div
-              className="absolute h-[calc(100%-4px)] top-0.5 rounded bg-[var(--bg-elevated)]"
-              initial={false}
-              animate={{
-                left: indicatorStyle.left,
-                width: indicatorStyle.width,
-              }}
-              transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
-            />
+          {/* View Mode Toggle - Only show for Aquarius source */}
+          {tokenSource === "aquarius" && (
+            <div
+              ref={containerRef}
+              className="relative inline-flex gap-0.5 p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)]"
+            >
+              {/* Active indicator */}
+              <motion.div
+                className="absolute h-[calc(100%-4px)] top-0.5 rounded bg-[var(--bg-elevated)]"
+                initial={false}
+                animate={{
+                  left: indicatorStyle.left,
+                  width: indicatorStyle.width,
+                }}
+                transition={{ type: "spring", bounce: 0.15, duration: 0.4 }}
+              />
 
-            {viewModes.map((mode) => (
-              <button
-                key={mode.value}
-                onClick={() => setViewMode(mode.value as "trenches" | "grid")}
-                className={cn(
-                  "relative px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap z-10",
-                  viewMode === mode.value
-                    ? "text-[var(--text-primary)]"
-                    : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
-                )}
-              >
-                {mode.label}
-              </button>
-            ))}
-          </div>
+              {viewModes.map((mode) => (
+                <button
+                  key={mode.value}
+                  onClick={() => setViewMode(mode.value as "trenches" | "grid")}
+                  className={cn(
+                    "relative px-3 py-1.5 rounded text-xs font-medium transition-colors whitespace-nowrap z-10",
+                    viewMode === mode.value
+                      ? "text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]",
+                  )}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {/* Sort - Only show in grid mode */}
-          {viewMode === "grid" && (
+          {/* Sort - Only show in grid mode for Aquarius */}
+          {tokenSource === "aquarius" && viewMode === "grid" && (
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value)}
@@ -173,18 +264,13 @@ export function DiscoverContent() {
 
       {/* Content Area */}
       <motion.div
-        key={viewMode}
+        key={`${tokenSource}-${viewMode}`}
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
       >
-        {viewMode === "trenches" ? (
-          <TrenchesLayout />
-        ) : (
-          <TokenGrid />
-        )}
+        {renderContent()}
       </motion.div>
     </div>
   )
 }
-
