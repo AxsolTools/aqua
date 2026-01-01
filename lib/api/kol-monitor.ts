@@ -51,66 +51,18 @@ export interface TokenHolding {
   estimatedValue?: number
 }
 
-// Known KOL wallets with verified Twitter accounts
-// These are real, publicly known wallets from prominent Solana traders
-export const KNOWN_KOL_WALLETS: KOLWallet[] = [
-  {
-    address: "9WzDXwBbmPdCBoccbQXjaNdnNbwsT1H5afPxdHvNVv5R",
-    name: "Ansem",
-    twitter: "blknoiz06",
-    tier: "diamond",
-    verified: true,
-  },
-  {
-    address: "7vUQX3hgKzYfSqxGMNLVTZKMJLpVZ1WkJgTe7H5rT8GS",
-    name: "Murad",
-    twitter: "MustStopMurad",
-    tier: "diamond",
-    verified: true,
-  },
-  {
-    address: "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
-    name: "DegenSpartan",
-    twitter: "DegenSpartan",
-    tier: "gold",
-    verified: true,
-  },
-  {
-    address: "HN7cABqLq46Es1jh92dQQisAi5DVPCKJMTEFJDDuPj1i",
-    name: "Hsaka",
-    twitter: "HsakaTrades",
-    tier: "diamond",
-    verified: true,
-  },
-  {
-    address: "4rZiwLNAKEm3yXfVbQPTfWS2BKPnqcQwE8W5Ydvtfgvk",
-    name: "Loomdart",
-    twitter: "loomdart",
-    tier: "gold",
-    verified: true,
-  },
-  {
-    address: "JDfH8Qfmqxn7h2LdkRKGAQSNLmTJwTMpEAkY2k8J4pQd",
-    name: "CL207",
-    twitter: "CL207",
-    tier: "gold",
-    verified: true,
-  },
-  {
-    address: "8qbP5S5K6EhYqcvMv9x8NZMbZhNuBqEp7x6vQhGKZdVP",
-    name: "0xSun",
-    twitter: "0xSunNFT",
-    tier: "gold",
-    verified: true,
-  },
-  {
-    address: "DCAKxn5PFNN1mBREPWGdk1C14WpNMfNcs1YJfPwNqb8H",
-    name: "A1lon9",
-    twitter: "A1lon9",
-    tier: "gold",
-    verified: true,
-  },
-]
+import { UNIQUE_KOL_DATABASE, type KOLProfile } from './kol-database'
+
+// Convert KOL profiles to wallet format for monitoring
+export const KNOWN_KOL_WALLETS: KOLWallet[] = UNIQUE_KOL_DATABASE
+  .filter(k => k.twitter) // Only include those with Twitter
+  .map(k => ({
+    address: k.address,
+    name: k.name,
+    twitter: k.twitter!,
+    tier: k.tier === 'legendary' ? 'diamond' : k.tier as KOLWallet['tier'],
+    verified: k.verified,
+  }))
 
 // Cache for wallet data
 const walletCache = new Map<string, { data: KOLStats; timestamp: number }>()

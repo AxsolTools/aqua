@@ -6,19 +6,21 @@ import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { KOLLeaderboard } from "@/components/kol/kol-leaderboard"
 import { KOLProfilePanel } from "@/components/kol/kol-profile-panel"
 import { WallOfShame } from "@/components/kol/wall-of-shame"
+import { TokenAggregator } from "@/components/kol/token-aggregator"
 import type { KOL } from "@/lib/kol-data"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { Users, Skull, TrendingUp, Activity } from "lucide-react"
+import { Users, Skull, TrendingUp, Activity, BarChart3, Zap } from "lucide-react"
 
 const tabs = [
   { id: "leaderboard", label: "Leaderboard", icon: TrendingUp },
+  { id: "aggregator", label: "Token Aggregator", icon: BarChart3 },
   { id: "shame", label: "Wall of Shame", icon: Skull },
 ]
 
 export default function KOLMonitorPage() {
   const [selectedKOL, setSelectedKOL] = useState<KOL | null>(null)
-  const [activeTab, setActiveTab] = useState<"leaderboard" | "shame">("leaderboard")
+  const [activeTab, setActiveTab] = useState<"leaderboard" | "aggregator" | "shame">("leaderboard")
 
   return (
     <main className="min-h-screen bg-[var(--bg-primary)]">
@@ -82,7 +84,7 @@ export default function KOLMonitorPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.2 }}
           >
-            {activeTab === "leaderboard" ? (
+            {activeTab === "leaderboard" && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {/* Leaderboard - Takes 2 columns on large screens */}
                 <div className="lg:col-span-2 bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-xl overflow-hidden h-[calc(100vh-280px)]">
@@ -114,7 +116,15 @@ export default function KOLMonitorPage() {
                   )}
                 </div>
               </div>
-            ) : (
+            )}
+
+            {activeTab === "aggregator" && (
+              <div className="bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-xl overflow-hidden h-[calc(100vh-280px)]">
+                <TokenAggregator />
+              </div>
+            )}
+
+            {activeTab === "shame" && (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                 <div className="xl:col-span-2 h-[calc(100vh-280px)]">
                   <WallOfShame />
