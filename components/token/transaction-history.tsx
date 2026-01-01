@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { GlassPanel } from "@/components/ui/glass-panel"
 import { cn } from "@/lib/utils"
+import { useLogsSubscription, useHeliusWebSocketState } from "@/hooks/use-helius-websocket"
 
 interface Transaction {
   signature: string
@@ -25,6 +26,10 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const pendingSignatures = useRef<Set<string>>(new Set())
+  
+  // WebSocket state for UI indicator
+  const wsState = useHeliusWebSocketState()
 
   // Fetch transactions from API (combines on-chain + database)
   const fetchTransactions = useCallback(async () => {
@@ -53,11 +58,34 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
     fetchTransactions()
   }, [fetchTransactions])
 
-  // Poll for updates every 5 seconds for faster live trades
+  // WebSocket subscription for real-time updates (replaces 5s polling when connected)
+  // This is much more efficient - only fetches when there's actually a new transaction
+  useLogsSubscription(
+    wsState.isConnected ? tokenAddress : null,
+    useCallback((logs) => {
+      // New transaction detected via WebSocket!
+      const signature = logs.signature
+      
+      // Avoid duplicate fetches for the same signature
+      if (pendingSignatures.current.has(signature)) return
+      pendingSignatures.current.add(signature)
+      
+      // Fetch the new transaction details
+      setTimeout(() => {
+        fetchTransactions()
+        pendingSignatures.current.delete(signature)
+      }, 1000) // Small delay to ensure transaction is indexed
+    }, [fetchTransactions])
+  )
+
+  // Fallback polling when WebSocket is not connected (less frequent)
   useEffect(() => {
-    const interval = setInterval(fetchTransactions, 5_000)
-    return () => clearInterval(interval)
-  }, [fetchTransactions])
+    // If WebSocket is connected, use less frequent polling as backup
+    // If not connected, poll every 5 seconds
+    const interval = wsState.isConnected ? 30_000 : 5_000
+    const timer = setInterval(fetchTransactions, interval)
+    return () => clearInterval(timer)
+  }, [fetchTransactions, wsState.isConnected])
 
   // Real-time subscription for platform trades
   useEffect(() => {
@@ -141,8 +169,17 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
         <div className="flex items-center gap-2">
           <h3 className="text-sm font-semibold text-[var(--text-primary)]">Recent Trades</h3>
           <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-            <span className="text-xs text-[var(--text-muted)]">Live</span>
+            <span 
+              className={cn(
+                "w-2 h-2 rounded-full",
+                wsState.isConnected 
+                  ? "bg-[var(--success)] animate-pulse" 
+                  : "bg-[var(--warning)]"
+              )} 
+            />
+            <span className="text-xs text-[var(--text-muted)]">
+              {wsState.isConnected ? "Live" : "Polling"}
+            </span>
           </div>
         </div>
         <button

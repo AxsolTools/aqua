@@ -1,156 +1,189 @@
-import { NextResponse } from "next/server"
-import { Connection, PublicKey } from "@solana/web3.js"
-import { getMint } from "@solana/spl-token"
+/**
+ * Token Metadata API - Uses Helius DAS API for comprehensive token info
+ * 
+ * CREDIT COSTS: 10 credits per call
+ * 
+ * Returns:
+ * - Token name, symbol, decimals
+ * - Logo/image URI
+ * - Description
+ * - Supply information
+ * - Creator/authority info
+ */
 
-const HELIUS_RPC = process.env.HELIUS_RPC_URL || process.env.NEXT_PUBLIC_HELIUS_RPC_URL
+import { NextRequest, NextResponse } from 'next/server'
+
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 
-interface TokenMetadata {
-  name: string
-  symbol: string
-  decimals: number
-  supply: number
-  image?: string
-  description?: string
-  uri?: string
+interface DASAsset {
+  id: string
+  interface: string
+  content?: {
+    metadata?: {
+      name?: string
+      symbol?: string
+      description?: string
+    }
+    links?: {
+      image?: string
+      external_url?: string
+    }
+    files?: Array<{
+      uri?: string
+      mime?: string
+    }>
+  }
+  authorities?: Array<{
+    address: string
+    scopes: string[]
+  }>
+  creators?: Array<{
+    address: string
+    share: number
+    verified: boolean
+  }>
+  token_info?: {
+    symbol?: string
+    supply?: number
+    decimals?: number
+    price_info?: {
+      price_per_token?: number
+    }
+  }
 }
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   context: { params: Promise<{ address: string }> }
 ) {
   try {
     const { address } = await context.params
 
-    // Validate address
-    let mintPubkey: PublicKey
-    try {
-      mintPubkey = new PublicKey(address)
-    } catch {
+    if (!address) {
       return NextResponse.json(
-        { success: false, error: { message: "Invalid token address" } },
+        { success: false, error: 'Token address required' },
         { status: 400 }
       )
     }
 
-    // Use Helius RPC for better metadata support
-    const rpcUrl = HELIUS_RPC || "https://api.mainnet-beta.solana.com"
-    const connection = new Connection(rpcUrl, "confirmed")
-
-    // Fetch mint info
-    let mintInfo
-    try {
-      mintInfo = await getMint(connection, mintPubkey)
-    } catch (error) {
-      console.error("[TOKEN-METADATA] Failed to get mint:", error)
-      return NextResponse.json(
-        { success: false, error: { message: "Token not found on-chain" } },
-        { status: 404 }
-      )
-    }
-
-    // Try Helius DAS API for rich metadata
-    let metadata: TokenMetadata = {
-      name: "Unknown Token",
-      symbol: address.slice(0, 6).toUpperCase(),
-      decimals: mintInfo.decimals,
-      supply: Number(mintInfo.supply) / Math.pow(10, mintInfo.decimals),
-    }
-
+    // Try DAS API first
     if (HELIUS_API_KEY) {
-      try {
-        const heliusResponse = await fetch(
-          `https://api.helius.xyz/v0/token-metadata?api-key=${HELIUS_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mintAccounts: [address] }),
-          }
-        )
-
-        if (heliusResponse.ok) {
-          const heliusData = await heliusResponse.json()
-          if (heliusData && heliusData[0]) {
-            const tokenData = heliusData[0]
-            metadata = {
-              name: tokenData.onChainMetadata?.metadata?.data?.name || 
-                    tokenData.legacyMetadata?.name ||
-                    metadata.name,
-              symbol: tokenData.onChainMetadata?.metadata?.data?.symbol || 
-                      tokenData.legacyMetadata?.symbol ||
-                      metadata.symbol,
-              decimals: mintInfo.decimals,
-              supply: Number(mintInfo.supply) / Math.pow(10, mintInfo.decimals),
-              image: tokenData.offChainMetadata?.metadata?.image ||
-                     tokenData.legacyMetadata?.logoURI,
-              description: tokenData.offChainMetadata?.metadata?.description,
-              uri: tokenData.onChainMetadata?.metadata?.data?.uri,
-            }
-          }
-        }
-      } catch (heliusError) {
-        console.warn("[TOKEN-METADATA] Helius API error:", heliusError)
+      const dasResponse = await fetchFromDAS(address)
+      if (dasResponse) {
+        return NextResponse.json({
+          success: true,
+          data: dasResponse,
+          source: 'helius-das',
+        })
       }
     }
 
-    // If we still don't have good metadata, try Jupiter token list
-    if (metadata.name === "Unknown Token") {
-      try {
-        const jupResponse = await fetch(`https://tokens.jup.ag/token/${address}`)
-        if (jupResponse.ok) {
-          const jupData = await jupResponse.json()
-          if (jupData) {
-            metadata = {
-              name: jupData.name || metadata.name,
-              symbol: jupData.symbol || metadata.symbol,
-              decimals: jupData.decimals || mintInfo.decimals,
-              supply: metadata.supply,
-              image: jupData.logoURI,
-              description: jupData.description,
-            }
-          }
-        }
-      } catch (jupError) {
-        console.warn("[TOKEN-METADATA] Jupiter API error:", jupError)
-      }
+    // Fallback to DexScreener
+    const dexResponse = await fetchFromDexScreener(address)
+    if (dexResponse) {
+      return NextResponse.json({
+        success: true,
+        data: dexResponse,
+        source: 'dexscreener',
+      })
     }
 
-    // Try DexScreener as another source
-    if (metadata.name === "Unknown Token" || !metadata.image) {
-      try {
-        const dexResponse = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${address}`)
-        if (dexResponse.ok) {
-          const dexData = await dexResponse.json()
-          if (dexData.pairs && dexData.pairs.length > 0) {
-            const pair = dexData.pairs[0]
-            if (metadata.name === "Unknown Token") {
-              metadata.name = pair.baseToken?.name || metadata.name
-              metadata.symbol = pair.baseToken?.symbol || metadata.symbol
-            }
-            if (!metadata.image && pair.info?.imageUrl) {
-              metadata.image = pair.info.imageUrl
-            }
-          }
-        }
-      } catch (dexError) {
-        console.warn("[TOKEN-METADATA] DexScreener API error:", dexError)
-      }
-    }
-
-    // Clean up the name and symbol (remove null bytes)
-    metadata.name = metadata.name.replace(/\0/g, "").trim()
-    metadata.symbol = metadata.symbol.replace(/\0/g, "").trim()
-
-    return NextResponse.json({
-      success: true,
-      data: metadata,
-    })
-  } catch (error) {
-    console.error("[TOKEN-METADATA] Error:", error)
     return NextResponse.json(
-      { success: false, error: { message: "Failed to fetch token metadata" } },
+      { success: false, error: 'Token metadata not found' },
+      { status: 404 }
+    )
+  } catch (error) {
+    console.error('[TOKEN-METADATA] Error:', error)
+    return NextResponse.json(
+      { success: false, error: 'Failed to fetch metadata' },
       { status: 500 }
     )
   }
 }
 
+async function fetchFromDAS(address: string) {
+  try {
+    const response = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 'getAsset',
+        method: 'getAsset',
+        params: {
+          id: address,
+          displayOptions: {
+            showFungible: true,
+          },
+        },
+      }),
+    })
+
+    if (!response.ok) return null
+
+    const data = await response.json()
+    const asset: DASAsset = data.result
+
+    if (!asset) return null
+
+    return {
+      address: asset.id,
+      name: asset.content?.metadata?.name || asset.token_info?.symbol || 'Unknown',
+      symbol: asset.content?.metadata?.symbol || asset.token_info?.symbol || 'UNKNOWN',
+      decimals: asset.token_info?.decimals || 0,
+      logoUri: asset.content?.links?.image || asset.content?.files?.[0]?.uri || '',
+      description: asset.content?.metadata?.description || '',
+      supply: asset.token_info?.supply || 0,
+      isNft: asset.interface === 'V1_NFT' || asset.interface === 'ProgrammableNFT',
+      isFungible: asset.interface === 'FungibleToken' || asset.interface === 'FungibleAsset',
+      creators: asset.creators || [],
+      authority: asset.authorities?.[0]?.address || null,
+      updateAuthority: asset.authorities?.find(a => a.scopes.includes('metadata'))?.address || null,
+      mintAuthority: asset.authorities?.find(a => a.scopes.includes('mint'))?.address || null,
+      freezeAuthority: asset.authorities?.find(a => a.scopes.includes('freeze'))?.address || null,
+    }
+  } catch (error) {
+    console.error('[TOKEN-METADATA] DAS error:', error)
+    return null
+  }
+}
+
+async function fetchFromDexScreener(address: string) {
+  try {
+    const response = await fetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${address}`,
+      {
+        headers: {
+          'User-Agent': 'AQUA-Launchpad/1.0',
+        },
+      }
+    )
+
+    if (!response.ok) return null
+
+    const data = await response.json()
+    const pair = data.pairs?.[0]
+
+    if (!pair?.baseToken) return null
+
+    return {
+      address,
+      name: pair.baseToken.name || 'Unknown',
+      symbol: pair.baseToken.symbol || 'UNKNOWN',
+      decimals: 6, // Default for most Solana tokens
+      logoUri: pair.info?.imageUrl || `https://dd.dexscreener.com/ds-data/tokens/solana/${address}.png`,
+      description: '',
+      supply: 0,
+      isNft: false,
+      isFungible: true,
+      creators: [],
+      authority: null,
+      updateAuthority: null,
+      mintAuthority: null,
+      freezeAuthority: null,
+    }
+  } catch (error) {
+    console.error('[TOKEN-METADATA] DexScreener error:', error)
+    return null
+  }
+}
