@@ -117,7 +117,7 @@ async function fetchHeliusTransactions(
 
   try {
     // Use Helius Enhanced Transactions API
-    const url = `https://api.helius.xyz/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}&type=SWAP`
+    const url = `https://api-mainnet.helius-rpc.com/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}&type=SWAP`
     
     const response = await fetch(url)
     
