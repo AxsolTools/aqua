@@ -30,6 +30,7 @@ export interface DexProfile {
 }
 
 export interface DexScreenerUpdate {
+  id: string // Unique identifier
   type: 'boost' | 'profile'
   data: DexBoost | DexProfile
   tokenName?: string
@@ -37,9 +38,12 @@ export interface DexScreenerUpdate {
   tokenLogo?: string
 }
 
-// Cache for processed items to avoid duplicates
-const processedBoosts = new Set<string>()
-const processedProfiles = new Set<string>()
+// Persistent store for ALL updates (keeps growing until max limit)
+const allUpdates: DexScreenerUpdate[] = []
+const MAX_STORED_UPDATES = 100 // Keep last 100 updates
+
+// Track seen items to avoid adding duplicates
+const seenIds = new Set<string>()
 const tokenNameCache = new Map<string, { name: string; symbol: string; logo: string }>()
 
 // Configuration
@@ -50,11 +54,6 @@ const CONFIG = {
     tokenInfo: 'https://api.dexscreener.com/latest/dex/tokens',
   },
   targetChainId: 'solana',
-  checkInterval: 5000, // 5 seconds
-  profileCheckInterval: 10000, // 10 seconds
-  resetInterval: 86400000, // 24 hours
-  maxRetries: 3,
-  retryDelay: 2000,
 }
 
 /**
@@ -96,6 +95,39 @@ async function fetchTokenInfo(tokenAddress: string): Promise<{ name: string; sym
 }
 
 /**
+ * Validate if token address looks like a valid Solana address
+ */
+function isValidSolanaAddress(address: string): boolean {
+  // Solana addresses are base58 encoded, typically 32-44 characters
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)
+}
+
+/**
+ * Add new updates to the persistent store
+ */
+function addUpdates(newUpdates: DexScreenerUpdate[]): number {
+  let addedCount = 0
+  
+  for (const update of newUpdates) {
+    if (seenIds.has(update.id)) continue
+    
+    seenIds.add(update.id)
+    allUpdates.unshift(update) // Add to beginning (newest first)
+    addedCount++
+  }
+  
+  // Trim to max size
+  while (allUpdates.length > MAX_STORED_UPDATES) {
+    const removed = allUpdates.pop()
+    if (removed) {
+      seenIds.delete(removed.id)
+    }
+  }
+  
+  return addedCount
+}
+
+/**
  * Fetch latest boosts from DexScreener API
  */
 export async function fetchLatestBoosts(): Promise<DexScreenerUpdate[]> {
@@ -114,20 +146,26 @@ export async function fetchLatestBoosts(): Promise<DexScreenerUpdate[]> {
 
     const data = await response.json()
     const boosts = (Array.isArray(data) ? data : [data])
-      .filter((b: any) => b?.tokenAddress && b.chainId?.toLowerCase() === CONFIG.targetChainId)
+      .filter((b: any) => {
+        if (!b?.tokenAddress) return false
+        if (b.chainId?.toLowerCase() !== CONFIG.targetChainId) return false
+        if (!isValidSolanaAddress(b.tokenAddress)) return false
+        return true
+      })
 
-    const updates: DexScreenerUpdate[] = []
+    const newUpdates: DexScreenerUpdate[] = []
 
     for (const boost of boosts) {
-      const boostId = `${boost.chainId}_${boost.tokenAddress}_${boost.amount}`
+      const boostId = `boost_${boost.tokenAddress}_${boost.amount}_${boost.totalAmount || 0}`
       
-      if (processedBoosts.has(boostId)) continue
-      processedBoosts.add(boostId)
+      // Skip if already seen
+      if (seenIds.has(boostId)) continue
 
       // Fetch token info
       const tokenInfo = await fetchTokenInfo(boost.tokenAddress)
 
-      updates.push({
+      newUpdates.push({
+        id: boostId,
         type: 'boost',
         data: {
           tokenAddress: boost.tokenAddress,
@@ -147,7 +185,10 @@ export async function fetchLatestBoosts(): Promise<DexScreenerUpdate[]> {
       })
     }
 
-    return updates
+    // Add to persistent store
+    addUpdates(newUpdates)
+
+    return newUpdates
   } catch (error) {
     console.error('[DEXSCREENER] Failed to fetch boosts:', error)
     return []
@@ -173,20 +214,26 @@ export async function fetchLatestProfiles(): Promise<DexScreenerUpdate[]> {
 
     const data = await response.json()
     const profiles = (Array.isArray(data) ? data : [data])
-      .filter((p: any) => p?.tokenAddress && p.chainId?.toLowerCase() === CONFIG.targetChainId)
+      .filter((p: any) => {
+        if (!p?.tokenAddress) return false
+        if (p.chainId?.toLowerCase() !== CONFIG.targetChainId) return false
+        if (!isValidSolanaAddress(p.tokenAddress)) return false
+        return true
+      })
 
-    const updates: DexScreenerUpdate[] = []
+    const newUpdates: DexScreenerUpdate[] = []
 
     for (const profile of profiles) {
-      const profileId = `${profile.chainId}_${profile.tokenAddress}`
+      const profileId = `profile_${profile.tokenAddress}_${profile.schemaVersion || 1}`
       
-      if (processedProfiles.has(profileId)) continue
-      processedProfiles.add(profileId)
+      // Skip if already seen
+      if (seenIds.has(profileId)) continue
 
       // Fetch token info
       const tokenInfo = await fetchTokenInfo(profile.tokenAddress)
 
-      updates.push({
+      newUpdates.push({
+        id: profileId,
         type: 'profile',
         data: {
           tokenAddress: profile.tokenAddress,
@@ -205,7 +252,10 @@ export async function fetchLatestProfiles(): Promise<DexScreenerUpdate[]> {
       })
     }
 
-    return updates
+    // Add to persistent store
+    addUpdates(newUpdates)
+
+    return newUpdates
   } catch (error) {
     console.error('[DEXSCREENER] Failed to fetch profiles:', error)
     return []
@@ -213,57 +263,41 @@ export async function fetchLatestProfiles(): Promise<DexScreenerUpdate[]> {
 }
 
 /**
- * Fetch all updates (boosts + profiles)
+ * Fetch new updates and return ALL stored updates
  */
 export async function fetchAllUpdates(): Promise<DexScreenerUpdate[]> {
-  const [boosts, profiles] = await Promise.all([
+  // Fetch new data (this adds to the persistent store)
+  await Promise.all([
     fetchLatestBoosts(),
     fetchLatestProfiles(),
   ])
 
-  // Sort by timestamp (newest first)
-  const allUpdates = [...boosts, ...profiles]
-  allUpdates.sort((a, b) => {
-    const timeA = (a.data as any).timestamp || 0
-    const timeB = (b.data as any).timestamp || 0
-    return timeB - timeA
-  })
-
-  return allUpdates
+  // Return ALL stored updates (newest first)
+  return [...allUpdates]
 }
 
 /**
- * Clear processed cache (for testing or daily reset)
+ * Get all stored updates without fetching new ones
+ */
+export function getAllStoredUpdates(): DexScreenerUpdate[] {
+  return [...allUpdates]
+}
+
+/**
+ * Clear all stored updates (for testing or reset)
  */
 export function clearCache(): void {
-  processedBoosts.clear()
-  processedProfiles.clear()
+  allUpdates.length = 0
+  seenIds.clear()
   console.log('[DEXSCREENER] Cache cleared')
-}
-
-/**
- * Mark items as processed (for initialization without sending)
- */
-export function markAsProcessed(items: DexScreenerUpdate[]): void {
-  for (const item of items) {
-    if (item.type === 'boost') {
-      const boost = item.data as DexBoost
-      processedBoosts.add(`${boost.chainId}_${boost.tokenAddress}_${boost.amount}`)
-    } else {
-      const profile = item.data as DexProfile
-      processedProfiles.add(`${profile.chainId}_${profile.tokenAddress}`)
-    }
-  }
 }
 
 /**
  * Get cache stats
  */
-export function getCacheStats(): { boosts: number; profiles: number; tokens: number } {
+export function getCacheStats(): { total: number; tokens: number } {
   return {
-    boosts: processedBoosts.size,
-    profiles: processedProfiles.size,
+    total: allUpdates.length,
     tokens: tokenNameCache.size,
   }
 }
-

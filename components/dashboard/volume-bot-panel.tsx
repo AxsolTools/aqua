@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { getAuthHeaders } from "@/lib/api/auth-headers"
-import { Loader2, ChevronDown, ChevronUp } from "lucide-react"
+import { Loader2, ChevronDown, ChevronUp, HelpCircle, Zap, Target, Shield, Rocket } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // ============================================================================
@@ -507,6 +507,52 @@ export function VolumeBotPanel({
         </div>
       </div>
 
+      {/* Quick Guide - Degen/Pro Hybrid */}
+      <div className="px-4 py-3 border-b border-[var(--border)] bg-gradient-to-r from-purple-500/5 to-[var(--bg-secondary)]">
+        <details className="group">
+          <summary className="flex items-center gap-2 cursor-pointer list-none">
+            <HelpCircle className="w-4 h-4 text-purple-400" />
+            <span className="text-sm font-medium text-[var(--text-primary)]">Quick Guide</span>
+            <ChevronDown className="w-4 h-4 text-[var(--text-muted)] ml-auto group-open:rotate-180 transition-transform" />
+          </summary>
+          <div className="mt-3 space-y-2 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="flex items-start gap-2 p-2 rounded bg-[var(--bg-primary)]/50">
+                <Rocket className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-green-400">1. Select Wallets</p>
+                  <p className="text-[var(--text-muted)]">Choose which wallets to trade with. Multiple wallets create organic-looking activity.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 rounded bg-[var(--bg-primary)]/50">
+                <Zap className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-yellow-400">2. Choose Strategy</p>
+                  <p className="text-[var(--text-muted)]">DBPM: Buy pressure | PLD: Price stabilization | CMWA: Multi-wallet patterns</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 rounded bg-[var(--bg-primary)]/50">
+                <Target className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-blue-400">3. Set Volume Target</p>
+                  <p className="text-[var(--text-muted)]">Total SOL volume to generate. Bot automatically splits into buy/sell transactions.</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2 p-2 rounded bg-[var(--bg-primary)]/50">
+                <Shield className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-semibold text-red-400">4. Smart Profit (Optional)</p>
+                  <p className="text-[var(--text-muted)]">Enable auto take-profit and stop-loss for hands-free risk management.</p>
+                </div>
+              </div>
+            </div>
+            <p className="text-center text-[var(--text-dim)] pt-1 border-t border-[var(--border-subtle)]">
+              Pro tip: Start with small amounts to test, then scale up once you see results.
+            </p>
+          </div>
+        </details>
+      </div>
+
       {/* Status Messages */}
       <AnimatePresence>
         {error && (
@@ -602,27 +648,27 @@ export function VolumeBotPanel({
                   ) : (
                     wallets.map((wallet) => (
                       <label
-                        key={wallet.wallet_id}
+                        key={wallet.id}
                         className={cn(
                           "flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors",
-                          selectedWalletIds.includes(wallet.wallet_id)
+                          selectedWalletIds.includes(wallet.id)
                             ? "bg-[var(--accent)]/10 border border-[var(--accent)]/30"
                             : "bg-[var(--bg-secondary)] hover:bg-[var(--bg-secondary)]/80"
                         )}
                       >
                         <input
                           type="checkbox"
-                          checked={selectedWalletIds.includes(wallet.wallet_id)}
-                          onChange={() => toggleWallet(wallet.wallet_id)}
+                          checked={selectedWalletIds.includes(wallet.id)}
+                          onChange={() => toggleWallet(wallet.id)}
                           className="w-4 h-4 accent-[var(--accent)]"
                           disabled={settings.enabled}
                         />
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-[var(--text-primary)] truncate">
-                            {wallet.name || 'Unnamed Wallet'}
+                            {wallet.label || 'Unnamed Wallet'}
                           </p>
                           <p className="text-xs text-[var(--text-muted)] font-mono">
-                            {wallet.address.slice(0, 4)}...{wallet.address.slice(-4)}
+                            {wallet.public_key.slice(0, 4)}...{wallet.public_key.slice(-4)}
                           </p>
                         </div>
                       </label>
