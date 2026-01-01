@@ -467,7 +467,126 @@ async function sendWithRetry(
 }
 
 /**
+ * Get platform fee percentage from config
+ */
+function getPlatformFeePercent(): number {
+  return parseFloat(process.env.PLATFORM_FEE_PERCENT || '2');
+}
+
+/**
+ * Get platform fee wallet address
+ */
+function getFeeWalletAddress(): PublicKey | null {
+  const feeWallet = process.env.FEE_WALLET_ADDRESS;
+  if (!feeWallet) return null;
+  try {
+    return new PublicKey(feeWallet);
+  } catch {
+    console.error('[TX] Invalid FEE_WALLET_ADDRESS configured');
+    return null;
+  }
+}
+
+/**
+ * Build transfer transaction with fee split (two transfers in one tx)
+ * Sends platformFee% to fee wallet and remainder to main destination
+ */
+async function buildTransferWithFeeTransaction(
+  connection: Connection,
+  fromKeypair: Keypair,
+  mainDestination: PublicKey,
+  feeDestination: PublicKey,
+  totalAmount: number,
+  feePercent: number,
+  tokenMint: PublicKey,
+  decimals: number
+): Promise<{ transaction: Transaction; feeAmount: number; mainAmount: number }> {
+  const transaction = new Transaction();
+  
+  // Add priority fee for faster confirmation
+  transaction.add(
+    ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: PRIORITY_FEE_MICROLAMPORTS
+    })
+  );
+  
+  // Calculate fee split
+  const feeAmount = totalAmount * (feePercent / 100);
+  const mainAmount = totalAmount - feeAmount;
+  
+  console.log(`[TX] Fee split: total=${totalAmount}, fee=${feeAmount} (${feePercent}%), main=${mainAmount}`);
+  
+  // Convert amounts to raw units
+  const rawFeeAmount = BigInt(Math.floor(feeAmount * Math.pow(10, decimals)));
+  const rawMainAmount = BigInt(Math.floor(mainAmount * Math.pow(10, decimals)));
+  
+  // Get token program
+  const tokenProgramId = await getTokenProgramId(connection, tokenMint);
+  
+  // Find source token account
+  const totalRawAmount = rawFeeAmount + rawMainAmount;
+  const sourceInfo = await findSourceTokenAccount(
+    connection,
+    fromKeypair.publicKey,
+    tokenMint,
+    totalRawAmount,
+    decimals
+  );
+  
+  if (!sourceInfo) {
+    throw new Error(
+      `No token account with sufficient balance found for owner=${fromKeypair.publicKey.toBase58()}`
+    );
+  }
+  
+  // Ensure fee destination token account exists
+  const { address: feeTokenAccount, instruction: createFeeAccountInstr } = 
+    await ensureTokenAccount(connection, fromKeypair, tokenMint, feeDestination);
+  
+  if (createFeeAccountInstr) {
+    transaction.add(createFeeAccountInstr);
+  }
+  
+  // Ensure main destination token account exists
+  const { address: mainTokenAccount, instruction: createMainAccountInstr } = 
+    await ensureTokenAccount(connection, fromKeypair, tokenMint, mainDestination);
+  
+  if (createMainAccountInstr) {
+    transaction.add(createMainAccountInstr);
+  }
+  
+  // Add transfer to fee wallet (if fee > 0)
+  if (rawFeeAmount > 0n) {
+    transaction.add(
+      createTransferInstruction(
+        sourceInfo.source,
+        feeTokenAccount,
+        fromKeypair.publicKey,
+        rawFeeAmount,
+        [],
+        tokenProgramId
+      )
+    );
+  }
+  
+  // Add transfer to main destination
+  transaction.add(
+    createTransferInstruction(
+      sourceInfo.source,
+      mainTokenAccount,
+      fromKeypair.publicKey,
+      rawMainAmount,
+      [],
+      tokenProgramId
+    )
+  );
+  
+  return { transaction, feeAmount, mainAmount };
+}
+
+/**
  * Transfer tokens from user to house wallet (when user loses bet)
+ * Includes 2% platform fee split: fee% to fee wallet, rest to house
  */
 export async function transferFromUser(
   userWalletAddress: string,
@@ -480,8 +599,10 @@ export async function transferFromUser(
     const connection = getConnection();
     const mint = tokenMint ? new PublicKey(tokenMint) : getTokenMint();
     const decimals = getTokenDecimals();
+    const feePercent = getPlatformFeePercent();
+    const feeWallet = getFeeWalletAddress();
     
-    console.log(`[TX] transferFromUser: mint=${mint?.toBase58()}, decimals=${decimals}`);
+    console.log(`[TX] transferFromUser: mint=${mint?.toBase58()}, decimals=${decimals}, feePercent=${feePercent}%`);
     
     if (!mint) {
       return { success: false, error: 'Token mint not configured', attempts: 0 };
@@ -504,15 +625,38 @@ export async function transferFromUser(
     invalidateTokenCache(houseKeypair.publicKey.toBase58(), mint.toBase58());
     const houseBalanceBefore = await getTokenBalance(houseKeypair.publicKey.toBase58(), mint.toBase58());
     
-    // Build transaction
-    const transaction = await buildTransferTransaction(
-      connection,
-      userKeypair,
-      houseKeypair.publicKey,
-      amount,
-      mint,
-      decimals
-    );
+    let transaction: Transaction;
+    let feeAmount = 0;
+    let houseAmount = amount;
+    
+    // Build transaction with fee split if fee wallet is configured
+    if (feeWallet && feePercent > 0) {
+      const result = await buildTransferWithFeeTransaction(
+        connection,
+        userKeypair,
+        houseKeypair.publicKey,
+        feeWallet,
+        amount,
+        feePercent,
+        mint,
+        decimals
+      );
+      transaction = result.transaction;
+      feeAmount = result.feeAmount;
+      houseAmount = result.mainAmount;
+      console.log(`[TX] LOSE: User pays ${amount} → Fee wallet: ${feeAmount} (${feePercent}%), House: ${houseAmount}`);
+    } else {
+      // No fee wallet configured, send all to house
+      transaction = await buildTransferTransaction(
+        connection,
+        userKeypair,
+        houseKeypair.publicKey,
+        amount,
+        mint,
+        decimals
+      );
+      console.log(`[TX] LOSE: User pays ${amount} → House (no fee wallet configured)`);
+    }
     
     // Send with retry
     const result = await sendWithRetry(connection, transaction, [userKeypair]);
@@ -529,7 +673,7 @@ export async function transferFromUser(
     }
     
     // CRITICAL: Verify balance actually changed (transaction was sent, now verify it executed)
-    console.log(`[TX] Starting balance verification for transferFromUser: user pays house ${amount}`);
+    console.log(`[TX] Starting balance verification for transferFromUser: user pays house ${houseAmount}`);
     console.log(`[TX] House balance before: ${houseBalanceBefore.balance}`);
     console.log(`[TX] Transaction signature: ${result.signature}`);
     
@@ -544,11 +688,11 @@ export async function transferFromUser(
       const houseBalanceAfter = await getTokenBalance(houseKeypair.publicKey.toBase58(), mint.toBase58());
       const balanceIncrease = houseBalanceAfter.balance - houseBalanceBefore.balance;
       
-      console.log(`[TX] Balance check ${balanceCheck + 1}/5: ${houseBalanceAfter.balance} (increase: +${balanceIncrease}, expected: +${amount})`);
+      console.log(`[TX] Balance check ${balanceCheck + 1}/5: ${houseBalanceAfter.balance} (increase: +${balanceIncrease}, expected: +${houseAmount})`);
       
       const tolerance = 0.000001;
-      if (balanceIncrease >= (amount - tolerance)) {
-        console.log(`[TX] ✅ Balance verified: +${balanceIncrease} (expected +${amount})`);
+      if (balanceIncrease >= (houseAmount - tolerance)) {
+        console.log(`[TX] ✅ Balance verified: +${balanceIncrease} (expected +${houseAmount})`);
         balanceVerified = true;
         break;
       }
@@ -560,13 +704,13 @@ export async function transferFromUser(
       const finalIncrease = finalBalance.balance - houseBalanceBefore.balance;
       
       console.error(`[TX] ❌ CRITICAL: Balance verification FAILED for transferFromUser!`);
-      console.error(`[TX] Expected: +${amount}, Got: +${finalIncrease}`);
+      console.error(`[TX] Expected: +${houseAmount}, Got: +${finalIncrease}`);
       console.error(`[TX] House balance before: ${houseBalanceBefore.balance}, after: ${finalBalance.balance}`);
       console.error(`[TX] Transaction signature: ${result.signature}`);
       
       return {
         success: false,
-        error: `Transaction did not execute - house balance did not increase. Expected +${amount}, got +${finalIncrease}. Signature: ${result.signature}`,
+        error: `Transaction did not execute - house balance did not increase. Expected +${houseAmount}, got +${finalIncrease}. Signature: ${result.signature}`,
         attempts: result.attempts,
         signature: result.signature
       };
@@ -576,6 +720,9 @@ export async function transferFromUser(
     if (result.success) {
       invalidateTokenCache(userWalletAddress, mint.toBase58());
       invalidateTokenCache(houseKeypair.publicKey.toBase58(), mint.toBase58());
+      if (feeWallet) {
+        invalidateTokenCache(feeWallet.toBase58(), mint.toBase58());
+      }
       
       // Update wallet last used
       await storage.updateWalletLastUsed(userWalletAddress);
@@ -590,6 +737,12 @@ export async function transferFromUser(
 
 /**
  * Transfer tokens from house to user wallet (when user wins bet)
+ * Includes 2% platform fee split: fee% to fee wallet, rest to user
+ * 
+ * IMPORTANT: The 'amount' passed here is the PROFIT (winnings - bet).
+ * For fee calculation, we apply fee to the profit amount.
+ * User receives: profit - (profit * feePercent)
+ * Fee wallet receives: profit * feePercent
  */
 export async function transferToUser(
   userWalletAddress: string,
@@ -600,6 +753,10 @@ export async function transferToUser(
     const connection = getConnection();
     const mint = tokenMint ? new PublicKey(tokenMint) : getTokenMint();
     const decimals = getTokenDecimals();
+    const feePercent = getPlatformFeePercent();
+    const feeWallet = getFeeWalletAddress();
+    
+    console.log(`[TX] transferToUser CALLED: user=${userWalletAddress}, amount=${amount}, feePercent=${feePercent}%`);
     
     if (!mint) {
       return { success: false, error: 'Token mint not configured', attempts: 0 };
@@ -613,21 +770,49 @@ export async function transferToUser(
     
     const userPubkey = new PublicKey(userWalletAddress);
     
+    // Calculate fee split
+    let feeAmount = 0;
+    let userAmount = amount;
+    
+    if (feeWallet && feePercent > 0) {
+      feeAmount = amount * (feePercent / 100);
+      userAmount = amount - feeAmount;
+      console.log(`[TX] WIN: House pays ${amount} → Fee wallet: ${feeAmount} (${feePercent}%), User: ${userAmount}`);
+    } else {
+      console.log(`[TX] WIN: House pays ${amount} → User (no fee wallet configured)`);
+    }
+    
     // Get balance BEFORE transfer to verify it actually happened
     const { getTokenBalance } = await import('./balanceService');
     invalidateTokenCache(userWalletAddress, mint.toBase58());
     const balanceBefore = await getTokenBalance(userWalletAddress, mint.toBase58());
-    const expectedBalanceAfter = balanceBefore.balance + amount;
     
-    // Build transaction
-    const transaction = await buildTransferTransaction(
-      connection,
-      houseKeypair,
-      userPubkey,
-      amount,
-      mint,
-      decimals
-    );
+    let transaction: Transaction;
+    
+    // Build transaction with fee split if fee wallet is configured
+    if (feeWallet && feePercent > 0 && feeAmount > 0) {
+      const result = await buildTransferWithFeeTransaction(
+        connection,
+        houseKeypair,
+        userPubkey,
+        feeWallet,
+        amount,
+        feePercent,
+        mint,
+        decimals
+      );
+      transaction = result.transaction;
+    } else {
+      // No fee wallet configured, send all to user
+      transaction = await buildTransferTransaction(
+        connection,
+        houseKeypair,
+        userPubkey,
+        amount,
+        mint,
+        decimals
+      );
+    }
     
     // Send with retry
     const result = await sendWithRetry(connection, transaction, [houseKeypair]);
@@ -644,7 +829,7 @@ export async function transferToUser(
     }
     
     // CRITICAL: Verify balance actually changed (transaction was sent, now verify it executed)
-    console.log(`[TX] Starting balance verification for transferToUser: ${userWalletAddress}, amount: ${amount}`);
+    console.log(`[TX] Starting balance verification for transferToUser: ${userWalletAddress}, amount: ${userAmount}`);
     console.log(`[TX] Balance before transfer: ${balanceBefore.balance}`);
     console.log(`[TX] Transaction signature: ${result.signature}`);
     
@@ -659,12 +844,12 @@ export async function transferToUser(
       const balanceAfter = await getTokenBalance(userWalletAddress, mint.toBase58());
       const balanceIncrease = balanceAfter.balance - balanceBefore.balance;
       
-      console.log(`[TX] Balance check ${balanceCheck + 1}/5: ${balanceAfter.balance} (increase: +${balanceIncrease}, expected: +${amount})`);
+      console.log(`[TX] Balance check ${balanceCheck + 1}/5: ${balanceAfter.balance} (increase: +${balanceIncrease}, expected: +${userAmount})`);
       
       // Check if balance increased by expected amount (allow small rounding differences)
       const tolerance = 0.000001;
-      if (balanceIncrease >= (amount - tolerance)) {
-        console.log(`[TX] ✅ Balance verified: +${balanceIncrease} (expected +${amount})`);
+      if (balanceIncrease >= (userAmount - tolerance)) {
+        console.log(`[TX] ✅ Balance verified: +${balanceIncrease} (expected +${userAmount})`);
         balanceVerified = true;
         break;
       }
@@ -676,14 +861,14 @@ export async function transferToUser(
       const finalIncrease = finalBalance.balance - balanceBefore.balance;
       
       console.error(`[TX] ❌ CRITICAL: Balance verification FAILED after 5 attempts!`);
-      console.error(`[TX] Expected: +${amount}, Got: +${finalIncrease}`);
+      console.error(`[TX] Expected: +${userAmount}, Got: +${finalIncrease}`);
       console.error(`[TX] Balance before: ${balanceBefore.balance}, after: ${finalBalance.balance}`);
       console.error(`[TX] Transaction signature: ${result.signature}`);
       
       // Transaction was sent but balance didn't change - transaction must have failed
       return {
         success: false,
-        error: `Transaction did not execute - balance did not increase. Expected +${amount}, got +${finalIncrease}. Signature: ${result.signature}`,
+        error: `Transaction did not execute - balance did not increase. Expected +${userAmount}, got +${finalIncrease}. Signature: ${result.signature}`,
         attempts: result.attempts,
         signature: result.signature
       };
@@ -693,6 +878,9 @@ export async function transferToUser(
     if (result.success) {
       invalidateTokenCache(userWalletAddress, mint.toBase58());
       invalidateTokenCache(houseKeypair.publicKey.toBase58(), mint.toBase58());
+      if (feeWallet) {
+        invalidateTokenCache(feeWallet.toBase58(), mint.toBase58());
+      }
     }
     
     return result;
