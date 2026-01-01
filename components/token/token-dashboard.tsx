@@ -14,6 +14,9 @@ import { VoteBoostPanel } from "@/components/token/vote-boost-panel"
 import { TokenPourOverlay } from "@/components/token/token-pour-overlay"
 import { TokenChat } from "@/components/token/token-chat"
 import { TokenComments } from "@/components/token/token-comments"
+import { Token22SettingsPanel } from "@/components/dashboard/token22-settings-panel"
+import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
+import { useAuth } from "@/components/providers/auth-provider"
 import Link from "next/link"
 
 interface TokenDashboardProps {
@@ -31,10 +34,14 @@ interface OnChainTokenData {
 }
 
 export function TokenDashboard({ address }: TokenDashboardProps) {
+  const { activeWallet, mainWallet } = useAuth()
   const [token, setToken] = useState<Token | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isExternal, setIsExternal] = useState(false) // True if token is not from our platform
+  const [isToken22, setIsToken22] = useState(false) // True if token is Token-2022 standard
+  
+  const walletAddress = activeWallet?.public_key || mainWallet?.public_key
 
   useEffect(() => {
     const supabase = createClient()
@@ -83,6 +90,8 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       } as Token
       setToken(tokenWithMetrics)
       setIsExternal(false)
+      // Check if token is Token-2022 (has token_standard field or token22_parameters)
+      setIsToken22(tokenData.token_standard === 'token22' || !!tokenData.token22_parameters)
       setIsLoading(false)
 
       // Set up real-time subscription for token updates
@@ -333,13 +342,33 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       </div>
 
       {/* Metrics Row - only for platform tokens */}
-      {!isExternal && <MetricsGrid token={token} />}
+      {!isExternal && <MetricsGrid token={token} isToken22={isToken22} />}
 
       {/* Comments & Boost Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <TokenComments tokenAddress={token.mint_address} />
         <BoostSection tokenAddress={token.mint_address} />
       </div>
+      
+      {/* Creator Settings Panel - only visible to token creator */}
+      {!isExternal && walletAddress && token.creator_wallet && 
+        walletAddress.toLowerCase() === token.creator_wallet.toLowerCase() && (
+        <div className="mt-6">
+          <h2 className="text-xl font-semibold text-[var(--text-primary)] mb-4">
+            Creator Settings
+          </h2>
+          {isToken22 ? (
+            <Token22SettingsPanel 
+              tokenId={token.id}
+              mintAddress={token.mint_address}
+              tokenSymbol={token.symbol}
+              isCreator={true}
+            />
+          ) : (
+            <TokenParametersPanel tokenAddress={token.mint_address} />
+          )}
+        </div>
+      )}
     </div>
   )
 }

@@ -9,9 +9,11 @@ import { EvaporationTracker } from "@/components/metrics/evaporation-tracker"
 import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
 import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
 import { TideHarvestCard } from "@/components/metrics/tide-harvest-card"
+import { Token22FeeHarvestCard } from "@/components/metrics/token22-fee-harvest-card"
 
 interface MetricsGridProps {
   token: Token
+  isToken22?: boolean
 }
 
 interface RealTimeMetrics {
@@ -44,7 +46,7 @@ const itemVariants = {
 // Polling interval for real-time metrics (10 seconds)
 const METRICS_POLL_INTERVAL = 10_000
 
-export function MetricsGrid({ token }: MetricsGridProps) {
+export function MetricsGrid({ token, isToken22 = false }: MetricsGridProps) {
   const [metrics, setMetrics] = useState<RealTimeMetrics | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
@@ -188,27 +190,55 @@ export function MetricsGrid({ token }: MetricsGridProps) {
           </GlassPanel>
         </motion.div>
 
-        {/* Tide Harvest */}
+        {/* Tide Harvest / Token22 Fee Harvest */}
         <motion.div variants={itemVariants}>
-          <GlassPanel className="p-5 h-full" glow="aqua">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tide Harvest</h3>
-                <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Creator Rewards</p>
+          {isToken22 ? (
+            <GlassPanel className="p-5 h-full" glow="purple">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Token22 Fees</h3>
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Transfer Fees</p>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                  <svg className="w-4 h-4 text-purple-400" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
               </div>
-              <div className="w-8 h-8 rounded-lg bg-[var(--aqua-subtle)] flex items-center justify-center">
-                <svg className="w-4 h-4 text-[var(--aqua-primary)]" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                  />
-                </svg>
+              <Token22FeeHarvestCard 
+                tokenId={token.id} 
+                tokenAddress={token.mint_address} 
+                creatorWallet={token.creator_wallet || ""} 
+                tokenSymbol={token.symbol}
+                decimals={token.decimals}
+              />
+            </GlassPanel>
+          ) : (
+            <GlassPanel className="p-5 h-full" glow="aqua">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-[var(--text-primary)]">Tide Harvest</h3>
+                  <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Creator Rewards</p>
+                </div>
+                <div className="w-8 h-8 rounded-lg bg-[var(--aqua-subtle)] flex items-center justify-center">
+                  <svg className="w-4 h-4 text-[var(--aqua-primary)]" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M12 8v4l3 3M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
               </div>
-            </div>
-            <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} tokenAddress={token.mint_address} />
-          </GlassPanel>
+              <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} tokenAddress={token.mint_address} />
+            </GlassPanel>
+          )}
         </motion.div>
       </motion.div>
     </div>
