@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { motion } from "framer-motion"
-import { RefreshCw, TrendingUp, TrendingDown, ExternalLink, Copy, Clock } from "lucide-react"
+import { RefreshCw, TrendingUp, TrendingDown, ExternalLink, Copy, Clock, ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface LiveToken {
@@ -14,39 +14,48 @@ interface LiveToken {
   price: number
   priceChange24h: number
   priceChange1h?: number
+  priceChange5m?: number
   volume24h: number
   volume1h?: number
+  volume5m?: number
   liquidity: number
   marketCap: number
   pairCreatedAt: number
   logo: string
   txns24h: { buys: number; sells: number }
   txns1h?: { buys: number; sells: number }
+  txns5m?: { buys: number; sells: number }
   source?: string
+  trendingScore?: number
 }
 
 interface AllSolanaGridProps {
   source?: 'all' | 'trending'
 }
 
-const POLL_INTERVAL = 15000 // 15 seconds for live feel
-const MAX_TOKENS = 100 // Increased to 100
-const TOKENS_PER_PAGE = 20
+const POLL_INTERVAL = 12000 // 12 seconds
+const TOKENS_PER_PAGE = 30 // Show more tokens per page
 
 export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
-  const [tokens, setTokens] = useState<LiveToken[]>([])
+  const [allTokens, setAllTokens] = useState<LiveToken[]>([])
+  const [displayTokens, setDisplayTokens] = useState<LiveToken[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState(15)
+  const [countdown, setCountdown] = useState(12)
   const [currentPage, setCurrentPage] = useState(1)
+  const [totalTokens, setTotalTokens] = useState(0)
+  const [hasMore, setHasMore] = useState(true)
   const lastFetchRef = useRef<number>(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
-  const fetchTokens = useCallback(async (showRefresh = false) => {
-    // Prevent too frequent fetches
+  // Fetch tokens from API - now handles pagination properly
+  const fetchTokens = useCallback(async (page: number = 1, append: boolean = false, showRefresh = false) => {
     const now = Date.now()
-    if (now - lastFetchRef.current < 5000 && tokens.length > 0) {
+    
+    // Prevent too frequent fetches for same page
+    if (!append && now - lastFetchRef.current < 3000 && allTokens.length > 0 && !showRefresh) {
       return
     }
     lastFetchRef.current = now
@@ -58,11 +67,14 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
     abortControllerRef.current = new AbortController()
 
     if (showRefresh) setIsRefreshing(true)
+    if (append) setIsLoadingMore(true)
+    if (!append && allTokens.length === 0) setIsLoading(true)
 
     try {
+      const limit = 200 // Fetch 200 tokens per API call
       const endpoint = source === 'trending' 
-        ? `/api/tokens/trending?limit=${MAX_TOKENS}` 
-        : `/api/tokens/live?limit=${MAX_TOKENS}`
+        ? `/api/tokens/trending?limit=${limit}&page=${page}` 
+        : `/api/tokens/live?limit=${limit}&page=${page}&sort=trending`
       
       const res = await fetch(endpoint, {
         signal: abortControllerRef.current.signal,
@@ -74,32 +86,43 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
       const data = await res.json()
       
       if (data.success && data.data) {
-        setTokens(data.data.slice(0, MAX_TOKENS))
+        if (append) {
+          setAllTokens(prev => {
+            const newTokens = data.data.filter((t: LiveToken) => 
+              !prev.some(existing => existing.address === t.address)
+            )
+            return [...prev, ...newTokens]
+          })
+        } else {
+          setAllTokens(data.data)
+        }
+        
+        setTotalTokens(data.total || data.data.length)
+        setHasMore(data.hasMore !== false && data.data.length >= 50)
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        return // Ignore abort errors
+        return
       }
       console.error('Error fetching tokens:', error)
     } finally {
       setIsLoading(false)
       setIsRefreshing(false)
+      setIsLoadingMore(false)
     }
-  }, [source, tokens.length])
+  }, [source, allTokens.length])
 
+  // Initial fetch and polling
   useEffect(() => {
-    // Initial fetch
-    fetchTokens()
+    fetchTokens(1, false)
     
-    // Set up polling
     const pollInterval = setInterval(() => {
-      fetchTokens()
-      setCountdown(15)
+      fetchTokens(1, false)
+      setCountdown(12)
     }, POLL_INTERVAL)
 
-    // Countdown timer
     const countdownInterval = setInterval(() => {
-      setCountdown(prev => prev > 0 ? prev - 1 : 15)
+      setCountdown(prev => prev > 0 ? prev - 1 : 12)
     }, 1000)
 
     return () => {
@@ -114,14 +137,28 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   // Re-fetch when source changes
   useEffect(() => {
     setIsLoading(true)
-    setTokens([])
+    setAllTokens([])
     setCurrentPage(1)
-    fetchTokens()
+    fetchTokens(1, false)
   }, [source])
 
+  // Update display tokens when page or allTokens changes
+  useEffect(() => {
+    const start = (currentPage - 1) * TOKENS_PER_PAGE
+    const end = start + TOKENS_PER_PAGE
+    setDisplayTokens(allTokens.slice(start, end))
+  }, [currentPage, allTokens])
+
   const handleManualRefresh = () => {
-    setCountdown(15)
-    fetchTokens(true)
+    setCountdown(12)
+    fetchTokens(1, false, true)
+  }
+
+  const loadMoreTokens = () => {
+    if (hasMore && !isLoadingMore) {
+      const nextPage = Math.ceil(allTokens.length / 200) + 1
+      fetchTokens(nextPage, true)
+    }
   }
 
   const copyAddress = (address: string, e: React.MouseEvent) => {
@@ -153,27 +190,33 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   const getTokenAge = (timestamp: number) => {
     if (!timestamp) return ''
     const diff = Date.now() - timestamp
+    const mins = Math.floor(diff / 60000)
     const hours = Math.floor(diff / 3600000)
     const days = Math.floor(hours / 24)
     
     if (days > 0) return `${days}d`
     if (hours > 0) return `${hours}h`
-    return `${Math.floor(diff / 60000)}m`
+    return `${mins}m`
   }
 
   // Pagination
-  const totalPages = Math.ceil(tokens.length / TOKENS_PER_PAGE)
-  const paginatedTokens = tokens.slice((currentPage - 1) * TOKENS_PER_PAGE, currentPage * TOKENS_PER_PAGE)
+  const totalPages = Math.ceil(allTokens.length / TOKENS_PER_PAGE)
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page)
+    
+    // Load more if nearing the end
+    if (page >= totalPages - 1 && hasMore && !isLoadingMore) {
+      loadMoreTokens()
+    }
+    
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  if (isLoading) {
+  if (isLoading && allTokens.length === 0) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-        {[...Array(15)].map((_, i) => (
+        {[...Array(20)].map((_, i) => (
           <div key={i} className="h-[140px] skeleton rounded-lg" />
         ))}
       </div>
@@ -182,11 +225,22 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
 
   return (
     <div className="space-y-4">
-      {/* Minimal Header */}
+      {/* Header with stats */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-[var(--text-muted)]">
-          {tokens.length} tokens
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-[var(--text-primary)]">
+            {allTokens.length.toLocaleString()} tokens
+          </span>
+          {totalTokens > allTokens.length && (
+            <span className="text-xs text-[var(--text-muted)]">
+              of {totalTokens.toLocaleString()}+
+            </span>
+          )}
+          <span className="text-xs bg-[var(--green)]/20 text-[var(--green)] px-2 py-0.5 rounded flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />
+            LIVE
+          </span>
+        </div>
         <div className="flex items-center gap-3">
           <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
             {countdown}s
@@ -201,9 +255,9 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
         </div>
       </div>
 
-      {/* Token Grid - Matching Aquarius Tab Layout */}
+      {/* Token Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
-        {paginatedTokens.map((token, index) => {
+        {displayTokens.map((token, index) => {
           const isPositive = token.priceChange24h >= 0
           const buyRatio = token.txns24h.buys + token.txns24h.sells > 0 
             ? (token.txns24h.buys / (token.txns24h.buys + token.txns24h.sells)) * 100 
@@ -215,14 +269,12 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
               key={`${token.address}-${index}`}
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.15, delay: Math.min(index * 0.02, 0.3) }}
+              transition={{ duration: 0.1, delay: Math.min(index * 0.01, 0.2) }}
             >
               <Link href={`/token/${token.address}`}>
                 <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all">
-                  {/* Horizontal layout: Image on left, info on right - matching Aquarius */}
                   <div className="flex gap-3 p-3">
-                    {/* Token Image - Square, left side */}
-                    <div className="relative w-20 h-20 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
+                    <div className="relative w-16 h-16 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
                       <Image
                         src={token.logo}
                         alt={token.symbol}
@@ -231,61 +283,53 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
                         unoptimized
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = 
-                            `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=80`
+                            `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=64`
                         }}
                       />
                     </div>
 
-                    {/* Token Info - Right side */}
                     <div className="flex-1 min-w-0 flex flex-col justify-between">
-                      {/* Top: Name + Symbol + Age */}
                       <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">{token.name}</h3>
+                        <div className="flex items-center gap-1.5">
+                          <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">{token.symbol}</h3>
                           {age && (
-                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-dim)] flex-shrink-0">
-                              <Clock className="w-2.5 h-2.5" />
+                            <span className="flex items-center gap-0.5 px-1 py-0.5 text-[8px] font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-dim)] flex-shrink-0">
                               {age}
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-[var(--text-muted)]">${token.symbol}</p>
+                        <p className="text-[10px] text-[var(--text-muted)] truncate">{token.name}</p>
                       </div>
 
-                      {/* Middle: Price + Change */}
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-[var(--text-primary)] font-medium">{formatPrice(token.price)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--text-primary)] font-medium">{formatPrice(token.price)}</span>
                         <span className={cn(
-                          "flex items-center gap-0.5 font-semibold",
+                          "flex items-center gap-0.5 text-[10px] font-semibold",
                           isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
                         )}>
-                          {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {isPositive ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
                           {isPositive ? '+' : ''}{token.priceChange24h?.toFixed(1) || '0'}%
                         </span>
                       </div>
 
-                      {/* Bottom: Market Cap + Volume + Buy/Sell Bar */}
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-[var(--text-muted)]">MC</span>
-                        <span className="text-sm font-bold text-[var(--aqua-primary)]">
+                        <span className="text-[9px] text-[var(--text-dim)]">MC</span>
+                        <span className="text-[11px] font-bold text-[var(--aqua-primary)]">
                           {formatCompact(token.marketCap)}
                         </span>
                         
-                        {/* Buy/Sell Pressure Bar */}
-                        <div className="flex-1 h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                        <div className="flex-1 h-1 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
                           <div className="h-full bg-[var(--green)]" style={{ width: `${buyRatio}%` }} />
                           <div className="h-full bg-[var(--red)]" style={{ width: `${100 - buyRatio}%` }} />
                         </div>
                         
-                        {/* Txns */}
-                        <span className="text-[10px] text-[var(--text-dim)]">
+                        <span className="text-[9px] text-[var(--text-dim)]">
                           {token.txns24h.buys + token.txns24h.sells}
                         </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Quick Actions - Bottom */}
                   <div className="px-3 pb-2 flex gap-1">
                     <button
                       onClick={(e) => copyAddress(token.address, e)}
@@ -297,7 +341,7 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
                       )}
                     >
                       <Copy className="w-3 h-3" />
-                      {copiedAddress === token.address ? 'Copied!' : 'Copy CA'}
+                      {copiedAddress === token.address ? '✓' : 'Copy'}
                     </button>
                     <a
                       href={`https://dexscreener.com/solana/${token.address}`}
@@ -306,8 +350,7 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
                       onClick={(e) => e.stopPropagation()}
                       className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
                     >
-                      Chart
-                      <ExternalLink className="w-3 h-3" />
+                      Chart <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 </div>
@@ -317,33 +360,63 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
         })}
       </div>
 
+      {/* Load More Button */}
+      {hasMore && (
+        <div className="flex justify-center pt-2">
+          <button
+            onClick={loadMoreTokens}
+            disabled={isLoadingMore}
+            className="flex items-center gap-2 px-6 py-2 bg-[var(--aqua-primary)] text-[var(--ocean-deep)] rounded-lg font-medium text-sm hover:bg-[var(--aqua-secondary)] transition-all disabled:opacity-50"
+          >
+            {isLoadingMore ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Loading more...
+              </>
+            ) : (
+              <>Load More Tokens</>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-2 pt-4">
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            onClick={() => handlePageChange(1)}
+            disabled={currentPage === 1}
+            className={cn(
+              "p-2 rounded-lg transition-all",
+              currentPage === 1 ? "text-white/20" : "text-white/60 hover:bg-white/10"
+            )}
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-4 h-4 -ml-2" />
+          </button>
+          
           <button
             onClick={() => handlePageChange(currentPage - 1)}
             disabled={currentPage === 1}
             className={cn(
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-              currentPage === 1
-                ? "bg-white/5 text-white/30 cursor-not-allowed"
-                : "bg-white/10 text-white/70 hover:bg-white/20"
+              currentPage === 1 ? "bg-white/5 text-white/30" : "bg-white/10 text-white/70 hover:bg-white/20"
             )}
           >
-            ← Prev
+            Prev
           </button>
           
           <div className="flex items-center gap-1">
-            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+            {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
               let pageNum: number
-              if (totalPages <= 5) {
+              if (totalPages <= 7) {
                 pageNum = i + 1
-              } else if (currentPage <= 3) {
+              } else if (currentPage <= 4) {
                 pageNum = i + 1
-              } else if (currentPage >= totalPages - 2) {
-                pageNum = totalPages - 4 + i
+              } else if (currentPage >= totalPages - 3) {
+                pageNum = totalPages - 6 + i
               } else {
-                pageNum = currentPage - 2 + i
+                pageNum = currentPage - 3 + i
               }
               
               return (
@@ -368,21 +441,31 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
             disabled={currentPage === totalPages}
             className={cn(
               "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-              currentPage === totalPages
-                ? "bg-white/5 text-white/30 cursor-not-allowed"
-                : "bg-white/10 text-white/70 hover:bg-white/20"
+              currentPage === totalPages ? "bg-white/5 text-white/30" : "bg-white/10 text-white/70 hover:bg-white/20"
             )}
           >
-            Next →
+            Next
+          </button>
+          
+          <button
+            onClick={() => handlePageChange(totalPages)}
+            disabled={currentPage === totalPages}
+            className={cn(
+              "p-2 rounded-lg transition-all",
+              currentPage === totalPages ? "text-white/20" : "text-white/60 hover:bg-white/10"
+            )}
+          >
+            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-4 h-4 -ml-2" />
           </button>
           
           <span className="ml-4 text-xs text-white/40">
-            {tokens.length} tokens
+            Page {currentPage} of {totalPages}
           </span>
         </div>
       )}
 
-      {tokens.length === 0 && !isLoading && (
+      {allTokens.length === 0 && !isLoading && (
         <div className="card p-8 text-center">
           <RefreshCw className="w-8 h-8 mx-auto mb-3 text-[var(--text-muted)]" />
           <p className="text-sm text-[var(--text-muted)] mb-3">No tokens found</p>

@@ -1,101 +1,82 @@
 import { NextResponse } from 'next/server'
-import { 
-  fetchAggregatedFeed, 
-  fetchDexScreenerTokens,
-  getSourceHealth,
-  type TokenData 
-} from '@/lib/api/multi-source-feed'
+import { fetchMasterTokenFeed, type TokenData } from '@/lib/api/solana-token-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-// Server-side cache to reduce API calls
-let serverCache: { data: TokenData[]; timestamp: number; sources: string[] } | null = null
-const SERVER_CACHE_TTL = 12000 // 12 seconds
+// Server-side cache
+let serverCache: { 
+  data: TokenData[]
+  timestamp: number
+  page: number
+  sort: string
+} | null = null
+const SERVER_CACHE_TTL = 8000 // 8 seconds
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const limit = Math.min(parseInt(searchParams.get('limit') || '40'), 100)
-  const sources = searchParams.get('sources')?.split(',') || ['dexscreener', 'jupiter', 'helius']
+  
+  // NO LIMIT - return as many tokens as available
+  // Frontend handles pagination
+  const page = parseInt(searchParams.get('page') || '1')
+  const limit = parseInt(searchParams.get('limit') || '200') // Default 200, no max cap
+  const sort = (searchParams.get('sort') || 'trending') as 'trending' | 'new' | 'volume' | 'gainers' | 'losers'
+  
+  const cacheKey = `${page}-${sort}`
+  const now = Date.now()
   
   // Check server cache
-  const now = Date.now()
-  if (serverCache && now - serverCache.timestamp < SERVER_CACHE_TTL) {
+  if (serverCache && 
+      serverCache.page === page && 
+      serverCache.sort === sort &&
+      now - serverCache.timestamp < SERVER_CACHE_TTL) {
     return NextResponse.json({
       success: true,
       data: serverCache.data.slice(0, limit),
-      count: Math.min(serverCache.data.length, limit),
-      sources: serverCache.sources,
+      count: serverCache.data.length,
+      total: serverCache.data.length,
+      page,
+      hasMore: serverCache.data.length >= limit,
       cached: true,
       cacheAge: now - serverCache.timestamp,
     })
   }
   
   try {
-    // Determine which sources to use based on health
-    const health = getSourceHealth()
-    const healthySources = (sources as ('dexscreener' | 'jupiter' | 'helius' | 'birdeye')[])
-      .filter(s => health[s]?.healthy !== false)
-
-    // If all sources are unhealthy, try DexScreener anyway as fallback
-    if (healthySources.length === 0) {
-      healthySources.push('dexscreener')
-    }
-
-    let tokens: TokenData[] = []
-
-    // Use aggregated feed for best results
-    if (healthySources.length > 1) {
-      tokens = await fetchAggregatedFeed({
-        sources: healthySources,
-        limit: Math.max(limit, 50), // Fetch more for better sorting
-        minLiquidity: 1000,
-        minVolume: 100,
-      })
-    } else {
-      // Fallback to single source
-      tokens = await fetchDexScreenerTokens(limit)
-    }
-
-    // Sort by activity score
-    tokens.sort((a, b) => {
-      // Prioritize tokens with high activity relative to size
-      const aActivity = (a.txns1h.buys + a.txns1h.sells) * 2 + (a.txns24h.buys + a.txns24h.sells) / 10
-      const bActivity = (b.txns1h.buys + b.txns1h.sells) * 2 + (b.txns24h.buys + b.txns24h.sells) / 10
-      
-      // Also factor in volume/mcap ratio (higher = more interesting)
-      const aRatio = a.marketCap > 0 ? a.volume24h / a.marketCap : 0
-      const bRatio = b.marketCap > 0 ? b.volume24h / b.marketCap : 0
-      
-      return (bActivity + bRatio * 100) - (aActivity + aRatio * 100)
+    const result = await fetchMasterTokenFeed({
+      page,
+      limit,
+      sort,
     })
-
-    const result = tokens.slice(0, limit)
     
     // Update server cache
     serverCache = {
-      data: tokens,
+      data: result.tokens,
       timestamp: now,
-      sources: healthySources,
+      page,
+      sort,
     }
     
     return NextResponse.json({
       success: true,
-      data: result,
-      count: result.length,
-      sources: healthySources,
-      sourceHealth: health,
+      data: result.tokens,
+      count: result.tokens.length,
+      total: result.total,
+      page,
+      hasMore: result.hasMore,
+      sources: result.sources,
     })
   } catch (error) {
     console.error('Error fetching live tokens:', error)
     
-    // Try to return stale cache if available
+    // Return stale cache if available
     if (serverCache) {
       return NextResponse.json({
         success: true,
         data: serverCache.data.slice(0, limit),
-        count: Math.min(serverCache.data.length, limit),
-        sources: serverCache.sources,
+        count: serverCache.data.length,
+        page,
+        hasMore: true,
         stale: true,
         cacheAge: now - serverCache.timestamp,
       })
