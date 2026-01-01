@@ -49,7 +49,7 @@ export function Header() {
                     pathname === item.href
                       ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${item.href === "/volume-bot" ? "text-purple-400" : ""}`}
+                  } ${item.href === "/dice" || item.href === "/volume-bot" ? "text-[var(--aqua-primary)]" : ""}`}
                 >
                   {item.icon && <item.icon className="w-4 h-4" />}
                   {item.label}
@@ -148,7 +148,7 @@ export function Header() {
                       pathname === item.href
                         ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${item.href === "/volume-bot" ? "text-purple-400" : ""}`}
+                    } ${item.href === "/dice" || item.href === "/volume-bot" ? "text-[var(--aqua-primary)]" : ""}`}
                   >
                     {item.icon && <item.icon className="w-4 h-4" />}
                     {item.label}
