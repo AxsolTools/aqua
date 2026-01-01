@@ -96,7 +96,7 @@ async function fetchFromJupiterQuote(tokenMint) {
 }
 
 async function fetchFromJupiterPriceV2(tokenMint) {
-  const response = await axios.get('https://api.jup.ag/price/v2', {
+  const response = await axios.get('https://lite-api.jup.ag/price/v3', {
     params: { ids: tokenMint },
     timeout: 3000
   });

@@ -52,9 +52,9 @@ async function fetchLiquidity(mintAddress: string): Promise<number> {
   let liquidity = 0;
 
   try {
-    // Try Jupiter Price API v2 (new endpoint)
+    // Try Jupiter Price API v3
     const jupiterResponse = await fetch(
-      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
+      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
       { next: { revalidate: 10 } }
     );
 
@@ -104,7 +104,7 @@ async function fetchSolPriceUsd(): Promise<number> {
   try {
     // Try Jupiter first
     const response = await fetch(
-      `https://api.jup.ag/price/v2?ids=${SOL_MINT}`,
+      `https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`,
       { next: { revalidate: 10 } }
     );
     
@@ -162,10 +162,10 @@ async function fetchPriceAndMarketCap(
   // Fetch SOL price for conversions
   solPriceUsd = await fetchSolPriceUsd();
 
-  // Try Jupiter Price API v2 first
+  // Try Jupiter Price API v3
   try {
     const response = await fetch(
-      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
+      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
       { next: { revalidate: 10 } }
     );
 

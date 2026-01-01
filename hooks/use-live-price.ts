@@ -31,7 +31,7 @@ interface JupiterPriceResponse {
 // ============================================================================
 
 const SOL_MINT = "So11111111111111111111111111111111111111112"
-const JUPITER_PRICE_API = "https://api.jup.ag/price/v2"
+const JUPITER_PRICE_API = "https://lite-api.jup.ag/price/v3"
 const POLL_INTERVAL = 30_000 // 30 seconds
 
 // ============================================================================

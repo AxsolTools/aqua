@@ -188,7 +188,7 @@ export async function fetchJupiterTokens(limit = 30): Promise<TokenData[]> {
 
   try {
     // Get verified token list
-    const listRes = await fetchWithTimeout('https://token.jup.ag/strict')
+    const listRes = await fetchWithTimeout('https://lite-api.jup.ag/tokens/v2/strict')
     if (!listRes.ok) throw new Error('Jupiter API error')
     
     const tokenList = await listRes.json()
@@ -196,7 +196,7 @@ export async function fetchJupiterTokens(limit = 30): Promise<TokenData[]> {
 
     // Get prices for these tokens
     const addresses = solanaTokens.map((t: { address: string }) => t.address).join(',')
-    const pricesRes = await fetchWithTimeout(`https://api.jup.ag/price/v2?ids=${addresses}`)
+    const pricesRes = await fetchWithTimeout(`https://lite-api.jup.ag/price/v3?ids=${addresses}`)
     
     if (pricesRes.ok) {
       const priceData = await pricesRes.json()

@@ -305,7 +305,7 @@ async function fetchFromJupiter(): Promise<TokenData[]> {
   const tokens: TokenData[] = []
   
   try {
-    const listRes = await fetchWithTimeout('https://token.jup.ag/all')
+    const listRes = await fetchWithTimeout('https://lite-api.jup.ag/tokens/v2/all')
     if (!listRes.ok) throw new Error('Jupiter list failed')
     
     const allTokens = await listRes.json()
@@ -318,7 +318,7 @@ async function fetchFromJupiter(): Promise<TokenData[]> {
     for (let i = 0; i < addresses.length; i += 100) {
       const chunk = addresses.slice(i, i + 100)
       try {
-        const priceRes = await fetchWithTimeout(`https://api.jup.ag/price/v2?ids=${chunk.join(',')}`)
+        const priceRes = await fetchWithTimeout(`https://lite-api.jup.ag/price/v3?ids=${chunk.join(',')}`)
         if (priceRes.ok) {
           const data = await priceRes.json()
           Object.assign(priceData, data.data || {})

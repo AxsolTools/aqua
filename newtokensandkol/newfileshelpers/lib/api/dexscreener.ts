@@ -269,7 +269,7 @@ export async function getBulkTokenPairs(tokenAddresses: string[]): Promise<Map<s
 export async function getTokenLogo(tokenAddress: string): Promise<string | null> {
   // Try Jupiter first (best for Solana tokens)
   try {
-    const jupiterRes = await fetch(`https://token.jup.ag/strict`)
+    const jupiterRes = await fetch(`https://lite-api.jup.ag/tokens/v2/strict`)
     if (jupiterRes.ok) {
       const tokens = await jupiterRes.json()
       const token = tokens.find((t: { address: string }) => t.address === tokenAddress)

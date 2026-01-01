@@ -198,7 +198,7 @@ async function fetchJupiterSolPrice(): Promise<number> {
   
   try {
     const response = await fetch(
-      `https://api.jup.ag/price/v2?ids=${SOL_MINT}`,
+      `https://lite-api.jup.ag/price/v3?ids=${SOL_MINT}`,
       { 
         next: { revalidate: 10 },
         signal: controller.signal,
@@ -399,7 +399,7 @@ async function fetchJupiterTokenPrice(mint: string): Promise<number> {
   
   try {
     const response = await fetch(
-      `https://api.jup.ag/price/v2?ids=${mint}`,
+      `https://lite-api.jup.ag/price/v3?ids=${mint}`,
       { 
         next: { revalidate: 10 },
         signal: controller.signal,

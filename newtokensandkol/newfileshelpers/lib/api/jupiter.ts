@@ -22,8 +22,8 @@ export interface JupiterPrice {
   price: number
 }
 
-const JUPITER_BASE = "https://token.jup.ag"
-const JUPITER_PRICE = "https://price.jup.ag/v6"
+const JUPITER_BASE = "https://lite-api.jup.ag/tokens/v2"
+const JUPITER_PRICE = "https://lite-api.jup.ag/price/v3"
 
 // Cache token list
 let tokenListCache: JupiterToken[] | null = null

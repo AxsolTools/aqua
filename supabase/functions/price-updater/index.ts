@@ -32,7 +32,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
-const JUPITER_PRICE_API = 'https://api.jup.ag/price/v2';
+const JUPITER_PRICE_API = 'https://lite-api.jup.ag/price/v3';
 
 // Minimum market cap to process (saves API credits)
 const MIN_MARKET_CAP_USD = 1000;

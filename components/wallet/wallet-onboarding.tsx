@@ -17,21 +17,41 @@ import {
   X,
   Key,
   FileText,
-  Sparkles
+  Sparkles,
+  Minus,
+  CheckCircle2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 type OnboardingStep = "choice" | "generate" | "import" | "backup" | "complete"
 
+interface GeneratedWallet {
+  publicKey: string
+  secretKey: string
+  mnemonic: string
+  label: string
+}
+
+interface ImportedWallet {
+  publicKey: string
+  label: string
+  success: boolean
+  error?: string
+}
+
 export function WalletOnboarding() {
-  const { isOnboarding, setIsOnboarding, refreshWallets, userId, setUserId } = useAuth()
+  const { isOnboarding, setIsOnboarding, refreshWallets, userId, setUserId, wallets } = useAuth()
   const [step, setStep] = useState<OnboardingStep>("choice")
-  const [generatedWallet, setGeneratedWallet] = useState<{
-    publicKey: string
-    secretKey: string
-    mnemonic: string
-  } | null>(null)
-  const [importData, setImportData] = useState("")
+  
+  // Multi-wallet generation
+  const [walletCount, setWalletCount] = useState(1)
+  const [generatedWallets, setGeneratedWallets] = useState<GeneratedWallet[]>([])
+  const [currentWalletIndex, setCurrentWalletIndex] = useState(0)
+  
+  // Multi-wallet import
+  const [importLines, setImportLines] = useState("")
+  const [importedWallets, setImportedWallets] = useState<ImportedWallet[]>([])
+  
   const [walletLabel, setWalletLabel] = useState("")
   const [backupConfirmed, setBackupConfirmed] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -39,85 +59,148 @@ export function WalletOnboarding() {
   const [copiedField, setCopiedField] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<"phrase" | "key">("phrase")
 
+  // Calculate max wallets allowed (25 - current count)
+  const existingWalletCount = wallets?.length || 0
+  const maxNewWallets = Math.min(5, 25 - existingWalletCount)
+
   if (!isOnboarding) return null
 
-  const handleGenerateWallet = async () => {
+  const handleGenerateWallets = async () => {
     setIsProcessing(true)
     setError("")
+    const generated: GeneratedWallet[] = []
 
     try {
-      const response = await fetch("/api/wallet/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          label: walletLabel || "Main Wallet",
-          userId: userId,
-        }),
-      })
+      for (let i = 0; i < walletCount; i++) {
+        const label = walletCount === 1 
+          ? (walletLabel || "Main Wallet")
+          : `${walletLabel || "Wallet"} ${i + 1}`
 
-      const data = await response.json()
-      
-      console.log('[GENERATE] Response:', data)
+        const response = await fetch("/api/wallet/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label,
+            userId: userId,
+          }),
+        })
 
-      if (!response.ok) throw new Error(data.error?.message || data.error || "Failed to generate wallet")
+        const data = await response.json()
 
-      if (data.data?.sessionId) {
-        console.log('[GENERATE] Setting sessionId:', data.data.sessionId)
-        setUserId(data.data.sessionId)
+        if (!response.ok) throw new Error(data.error?.message || data.error || `Failed to generate wallet ${i + 1}`)
+
+        if (data.data?.sessionId && !userId) {
+          setUserId(data.data.sessionId)
+        }
+
+        generated.push({
+          publicKey: data.data?.publicKey || data.publicKey,
+          secretKey: data.data?.secretKey || data.secretKey || "",
+          mnemonic: data.data?.mnemonic || data.mnemonic,
+          label,
+        })
       }
 
-      setGeneratedWallet({
-        publicKey: data.data?.publicKey || data.publicKey,
-        secretKey: data.data?.secretKey || data.secretKey || "",
-        mnemonic: data.data?.mnemonic || data.mnemonic,
-      })
+      setGeneratedWallets(generated)
+      setCurrentWalletIndex(0)
       setStep("backup")
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate wallet")
+      setError(err instanceof Error ? err.message : "Failed to generate wallets")
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleImportWallet = async () => {
+  const handleImportWallets = async () => {
     setIsProcessing(true)
     setError("")
-
-    try {
-      const response = await fetch("/api/wallet/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          secretKey: importData.trim(),
-          label: walletLabel || "Imported Wallet",
-          sessionId: userId, // Pass sessionId for consistency
-        }),
-      })
-
-      const data = await response.json()
-      
-      console.log('[IMPORT] Response:', data)
-
-      if (!response.ok) throw new Error(data.error?.message || data.error || "Failed to import wallet")
-
-      // CRITICAL FIX: The API returns sessionId in data.data.sessionId, not data.userId
-      if (data.data?.sessionId) {
-        console.log('[IMPORT] Setting sessionId:', data.data.sessionId)
-        setUserId(data.data.sessionId)
-      }
-
-      await refreshWallets()
-      setStep("complete")
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to import wallet")
-    } finally {
+    
+    // Parse lines - each line is a private key
+    const lines = importLines.trim().split('\n').filter(line => line.trim())
+    
+    if (lines.length === 0) {
+      setError("Please enter at least one private key")
       setIsProcessing(false)
+      return
     }
+
+    if (lines.length > maxNewWallets) {
+      setError(`Maximum ${maxNewWallets} wallets can be added (${existingWalletCount}/25 slots used)`)
+      setIsProcessing(false)
+      return
+    }
+
+    const results: ImportedWallet[] = []
+
+    for (let i = 0; i < lines.length; i++) {
+      const secretKey = lines[i].trim()
+      const label = walletLabel 
+        ? (lines.length === 1 ? walletLabel : `${walletLabel} ${i + 1}`)
+        : `Imported Wallet ${i + 1}`
+
+      try {
+        const response = await fetch("/api/wallet/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            secretKey,
+            label,
+            sessionId: userId,
+          }),
+        })
+
+        const data = await response.json()
+
+        if (!response.ok) {
+          results.push({
+            publicKey: "",
+            label,
+            success: false,
+            error: data.error?.message || data.error || "Failed to import",
+          })
+        } else {
+          if (data.data?.sessionId && !userId) {
+            setUserId(data.data.sessionId)
+          }
+
+          results.push({
+            publicKey: data.data?.publicKey || data.publicKey || "",
+            label,
+            success: true,
+          })
+        }
+      } catch (err) {
+        results.push({
+          publicKey: "",
+          label,
+          success: false,
+          error: err instanceof Error ? err.message : "Failed to import",
+        })
+      }
+    }
+
+    setImportedWallets(results)
+    
+    const successCount = results.filter(r => r.success).length
+    if (successCount > 0) {
+      await refreshWallets()
+    }
+    
+    setStep("complete")
+    setIsProcessing(false)
   }
 
   const handleBackupComplete = async () => {
     if (!backupConfirmed) {
       setError("Please confirm you have saved your credentials")
+      return
+    }
+
+    // If more wallets to show
+    if (currentWalletIndex < generatedWallets.length - 1) {
+      setCurrentWalletIndex(prev => prev + 1)
+      setBackupConfirmed(false)
+      setActiveTab("phrase")
       return
     }
 
@@ -128,12 +211,15 @@ export function WalletOnboarding() {
   const handleClose = () => {
     setIsOnboarding(false)
     setStep("choice")
-    setGeneratedWallet(null)
-    setImportData("")
+    setGeneratedWallets([])
+    setImportedWallets([])
+    setImportLines("")
     setWalletLabel("")
     setBackupConfirmed(false)
     setError("")
     setActiveTab("phrase")
+    setWalletCount(1)
+    setCurrentWalletIndex(0)
   }
 
   const copyToClipboard = (text: string, field: string) => {
@@ -142,16 +228,18 @@ export function WalletOnboarding() {
     setTimeout(() => setCopiedField(null), 2000)
   }
 
+  const currentWallet = generatedWallets[currentWalletIndex]
+
   return (
     <div className="fixed inset-0 z-[100]">
-      {/* Animated background - matches Propel theme */}
+      {/* Animated background */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="absolute inset-0 bg-[var(--ocean-deep)]"
+        onClick={handleClose}
       >
-        {/* Subtle grid pattern */}
         <div 
           className="absolute inset-0 opacity-[0.03]"
           style={{
@@ -159,13 +247,21 @@ export function WalletOnboarding() {
             backgroundSize: '50px 50px'
           }}
         />
-        {/* Gradient orbs - using theme colors */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-[var(--aqua-primary)]/10 rounded-full blur-3xl" />
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-[var(--aqua-secondary)]/10 rounded-full blur-3xl" />
       </motion.div>
 
+      {/* Global Close Button */}
+      <button
+        onClick={handleClose}
+        className="fixed top-6 right-6 z-[110] p-3 rounded-xl bg-[var(--ocean-surface)]/80 backdrop-blur-sm border border-[var(--glass-border)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)] transition-all shadow-lg"
+        aria-label="Close"
+      >
+        <X className="w-6 h-6" />
+      </button>
+
       {/* Content */}
-      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
         <motion.div
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
@@ -183,7 +279,6 @@ export function WalletOnboarding() {
                 exit={{ opacity: 0, x: 40 }}
                 className="space-y-8"
               >
-                {/* Header */}
                 <div className="text-center">
                   <motion.div 
                     initial={{ scale: 0.8, opacity: 0 }}
@@ -195,16 +290,21 @@ export function WalletOnboarding() {
                   </motion.div>
                   <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-3">Get Started</h1>
                   <p className="text-[var(--text-muted)] text-lg">Your wallet = your account. Quick and secure.</p>
+                  {existingWalletCount > 0 && (
+                    <p className="text-sm text-[var(--text-dim)] mt-2">
+                      {existingWalletCount}/25 wallet slots used
+                    </p>
+                  )}
                 </div>
 
-                {/* Options */}
                 <div className="space-y-4">
                   <motion.button
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.2 }}
                     onClick={() => setStep("generate")}
-                    className="w-full group relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--aqua-secondary)]/10 border border-[var(--aqua-primary)]/30 hover:border-[var(--aqua-primary)]/50 transition-all p-6"
+                    disabled={maxNewWallets === 0}
+                    className="w-full group relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--aqua-secondary)]/10 border border-[var(--aqua-primary)]/30 hover:border-[var(--aqua-primary)]/50 transition-all p-6 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="absolute inset-0 bg-gradient-to-r from-[var(--aqua-primary)]/5 to-[var(--aqua-secondary)]/5 opacity-0 group-hover:opacity-100 transition-opacity" />
                     <div className="relative flex items-center gap-5">
@@ -212,8 +312,8 @@ export function WalletOnboarding() {
                         <Plus className="w-7 h-7 text-[var(--aqua-primary)]" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">New Wallet</h3>
-                        <p className="text-[var(--text-muted)]">Fresh wallet, fresh start</p>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">New Wallet(s)</h3>
+                        <p className="text-[var(--text-muted)]">Generate up to {maxNewWallets} new wallets</p>
                       </div>
                       <Sparkles className="w-5 h-5 text-[var(--aqua-primary)]/50 group-hover:text-[var(--aqua-primary)] transition-colors" />
                     </div>
@@ -224,21 +324,21 @@ export function WalletOnboarding() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.3 }}
                     onClick={() => setStep("import")}
-                    className="w-full group relative overflow-hidden rounded-2xl bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)] hover:border-[var(--text-muted)] transition-all p-6"
+                    disabled={maxNewWallets === 0}
+                    className="w-full group relative overflow-hidden rounded-2xl bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)] hover:border-[var(--text-muted)] transition-all p-6 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="relative flex items-center gap-5">
                       <div className="w-14 h-14 rounded-xl bg-[var(--ocean-surface)] flex items-center justify-center group-hover:scale-110 transition-transform">
                         <Upload className="w-6 h-6 text-[var(--text-secondary)]" />
                       </div>
                       <div className="flex-1 text-left">
-                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">Import Wallet</h3>
-                        <p className="text-[var(--text-muted)]">Already have one? Bring it over</p>
+                        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">Import Wallet(s)</h3>
+                        <p className="text-[var(--text-muted)]">Import multiple wallets at once</p>
                       </div>
                     </div>
                   </motion.button>
                 </div>
 
-                {/* Security badge */}
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -248,14 +348,6 @@ export function WalletOnboarding() {
                   <Shield className="w-4 h-4" />
                   <span className="text-sm">Keys encrypted & stored securely</span>
                 </motion.div>
-
-                {/* Close button */}
-                <button
-                  onClick={handleClose}
-                  className="absolute top-8 right-8 p-2 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)] transition-all"
-                >
-                  <X className="w-6 h-6" />
-                </button>
               </motion.div>
             )}
 
@@ -266,7 +358,7 @@ export function WalletOnboarding() {
                 initial={{ opacity: 0, x: 40 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -40 }}
-                className="space-y-8"
+                className="space-y-6"
               >
                 <button
                   onClick={() => setStep("choice")}
@@ -277,21 +369,68 @@ export function WalletOnboarding() {
                 </button>
 
                 <div>
-                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Name Your Wallet</h2>
-                  <p className="text-[var(--text-muted)]">Give it a name you&apos;ll recognize</p>
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Generate New Wallets</h2>
+                  <p className="text-[var(--text-muted)]">Create up to {maxNewWallets} new wallets at once</p>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-5">
+                  {/* Wallet Count Selector */}
                   <div>
                     <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
-                      Wallet Name
+                      How many wallets?
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => setWalletCount(Math.max(1, walletCount - 1))}
+                        disabled={walletCount <= 1}
+                        className="w-12 h-12 rounded-xl bg-[var(--ocean-surface)] border border-[var(--glass-border)] flex items-center justify-center text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Minus className="w-5 h-5" />
+                      </button>
+                      <div className="flex-1 h-12 rounded-xl bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)] flex items-center justify-center">
+                        <span className="text-2xl font-bold text-[var(--aqua-primary)]">{walletCount}</span>
+                      </div>
+                      <button
+                        onClick={() => setWalletCount(Math.min(maxNewWallets, walletCount + 1))}
+                        disabled={walletCount >= maxNewWallets}
+                        className="w-12 h-12 rounded-xl bg-[var(--ocean-surface)] border border-[var(--glass-border)] flex items-center justify-center text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]/80 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
+                    </div>
+                    <div className="flex justify-center gap-2 mt-3">
+                      {[1, 2, 3, 4, 5].slice(0, maxNewWallets).map((num) => (
+                        <button
+                          key={num}
+                          onClick={() => setWalletCount(num)}
+                          className={cn(
+                            "w-10 h-10 rounded-lg text-sm font-medium transition-all",
+                            walletCount === num
+                              ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                              : "bg-[var(--ocean-surface)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                          )}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
+                      Wallet Name Prefix {walletCount > 1 && <span className="text-[var(--text-dim)]">(will add numbers)</span>}
                     </label>
                     <Input
                       value={walletLabel}
                       onChange={(e) => setWalletLabel(e.target.value)}
-                      placeholder="Main Wallet"
+                      placeholder={walletCount === 1 ? "Main Wallet" : "Trading Wallet"}
                       className="h-14 text-lg bg-[var(--ocean-surface)]/50 border-[var(--glass-border)]"
                     />
+                    {walletCount > 1 && (
+                      <p className="text-xs text-[var(--text-dim)] mt-2">
+                        Example: &quot;{walletLabel || "Wallet"} 1&quot;, &quot;{walletLabel || "Wallet"} 2&quot;, etc.
+                      </p>
+                    )}
                   </div>
 
                   {error && (
@@ -302,7 +441,7 @@ export function WalletOnboarding() {
                   )}
 
                   <button
-                    onClick={handleGenerateWallet}
+                    onClick={handleGenerateWallets}
                     disabled={isProcessing}
                     className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                   >
@@ -312,12 +451,12 @@ export function WalletOnboarding() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        Generating...
+                        Generating {walletCount} wallet{walletCount > 1 ? 's' : ''}...
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-5 h-5" />
-                        Generate Wallet
+                        Generate {walletCount} Wallet{walletCount > 1 ? 's' : ''}
                       </>
                     )}
                   </button>
@@ -332,7 +471,7 @@ export function WalletOnboarding() {
                 initial={{ opacity: 0, x: 40 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -40 }}
-                className="space-y-8"
+                className="space-y-6"
               >
                 <button
                   onClick={() => setStep("choice")}
@@ -343,14 +482,14 @@ export function WalletOnboarding() {
                 </button>
 
                 <div>
-                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Import Your Wallet</h2>
-                  <p className="text-[var(--text-muted)]">Enter your private key or recovery phrase</p>
+                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Import Wallets</h2>
+                  <p className="text-[var(--text-muted)]">Enter one private key per line (max {maxNewWallets})</p>
                 </div>
 
-                <div className="space-y-6">
+                <div className="space-y-5">
                   <div>
                     <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
-                      Wallet Name
+                      Wallet Name Prefix
                     </label>
                     <Input
                       value={walletLabel}
@@ -361,16 +500,24 @@ export function WalletOnboarding() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-3">
-                      Private Key or Seed Phrase
-                    </label>
+                    <div className="flex items-center justify-between mb-3">
+                      <label className="block text-sm font-medium text-[var(--text-secondary)]">
+                        Private Keys (one per line)
+                      </label>
+                      <span className="text-xs text-[var(--text-dim)]">
+                        {importLines.trim().split('\n').filter(l => l.trim()).length} / {maxNewWallets} wallets
+                      </span>
+                    </div>
                     <Textarea
-                      value={importData}
-                      onChange={(e) => setImportData(e.target.value)}
-                      placeholder="Paste your base58 private key or 12/24 word seed phrase..."
-                      rows={4}
-                      className="bg-[var(--ocean-surface)]/50 border-[var(--glass-border)] resize-none"
+                      value={importLines}
+                      onChange={(e) => setImportLines(e.target.value)}
+                      placeholder={`Paste private keys here, one per line...\n\nExample:\n5abc...xyz\n4def...uvw\n3ghi...rst`}
+                      rows={8}
+                      className="bg-[var(--ocean-surface)]/50 border-[var(--glass-border)] resize-none font-mono text-sm"
                     />
+                    <p className="text-xs text-[var(--text-dim)] mt-2">
+                      Supports base58 private keys or seed phrases
+                    </p>
                   </div>
 
                   {error && (
@@ -381,8 +528,8 @@ export function WalletOnboarding() {
                   )}
 
                   <button
-                    onClick={handleImportWallet}
-                    disabled={isProcessing || !importData.trim()}
+                    onClick={handleImportWallets}
+                    disabled={isProcessing || !importLines.trim()}
                     className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-3"
                   >
                     {isProcessing ? (
@@ -391,12 +538,12 @@ export function WalletOnboarding() {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                        Importing...
+                        Importing wallets...
                       </>
                     ) : (
                       <>
                         <Upload className="w-5 h-5" />
-                        Import Wallet
+                        Import Wallet{importLines.trim().split('\n').filter(l => l.trim()).length > 1 ? 's' : ''}
                       </>
                     )}
                   </button>
@@ -404,70 +551,94 @@ export function WalletOnboarding() {
               </motion.div>
             )}
 
-            {/* BACKUP STEP - REDESIGNED */}
-            {step === "backup" && generatedWallet && (
+            {/* BACKUP STEP */}
+            {step === "backup" && currentWallet && (
               <motion.div
                 key="backup"
                 initial={{ opacity: 0, x: 40 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -40 }}
-                className="space-y-6"
+                className="space-y-5"
               >
+                {/* Progress indicator for multiple wallets */}
+                {generatedWallets.length > 1 && (
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    {generatedWallets.map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "w-3 h-3 rounded-full transition-all",
+                          idx < currentWalletIndex
+                            ? "bg-[var(--success)]"
+                            : idx === currentWalletIndex
+                            ? "bg-[var(--aqua-primary)] scale-125"
+                            : "bg-[var(--glass-border)]"
+                        )}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 {/* Warning header */}
-                <div className="text-center p-6 rounded-2xl bg-gradient-to-r from-[var(--warm-orange)]/10 to-[var(--warm-pink)]/10 border border-[var(--warm-orange)]/20">
-                  <AlertTriangle className="w-12 h-12 text-[var(--warm-orange)] mx-auto mb-4" />
-                  <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Secure Your Wallet</h2>
-                  <p className="text-[var(--text-muted)]">
-                    Save both your recovery phrase AND private key. Store them separately and securely.
+                <div className="text-center p-5 rounded-2xl bg-gradient-to-r from-[var(--warm-orange)]/10 to-[var(--warm-pink)]/10 border border-[var(--warm-orange)]/20">
+                  <AlertTriangle className="w-10 h-10 text-[var(--warm-orange)] mx-auto mb-3" />
+                  <h2 className="text-xl font-bold text-[var(--text-primary)] mb-1">
+                    {generatedWallets.length > 1 
+                      ? `Backup Wallet ${currentWalletIndex + 1} of ${generatedWallets.length}`
+                      : "Secure Your Wallet"
+                    }
+                  </h2>
+                  <p className="text-sm text-[var(--text-muted)]">
+                    {currentWallet.label}
                   </p>
                 </div>
 
                 {/* Wallet Address */}
-                <div className="p-5 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)]">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-[var(--text-muted)]">Your Wallet Address</span>
+                <div className="p-4 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)]">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-[var(--text-muted)]">Wallet Address</span>
                     <button
-                      onClick={() => copyToClipboard(generatedWallet.publicKey, 'address')}
+                      onClick={() => copyToClipboard(currentWallet.publicKey, 'address')}
                       className="text-xs text-[var(--aqua-primary)] hover:opacity-80 flex items-center gap-1"
                     >
                       {copiedField === 'address' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       {copiedField === 'address' ? 'Copied!' : 'Copy'}
                     </button>
                   </div>
-                  <code className="block text-[var(--aqua-primary)] font-mono text-sm break-all">
-                    {generatedWallet.publicKey}
+                  <code className="block text-[var(--aqua-primary)] font-mono text-xs break-all">
+                    {currentWallet.publicKey}
                   </code>
                 </div>
 
-                {/* Tabs for Phrase/Key */}
+                {/* Tabs */}
                 <div className="flex gap-2 p-1 rounded-xl bg-[var(--ocean-surface)]/50">
                   <button
                     onClick={() => setActiveTab("phrase")}
                     className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all",
+                      "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all text-sm",
                       activeTab === "phrase" 
                         ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]" 
-                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                     )}
                   >
                     <FileText className="w-4 h-4" />
-                    Recovery Phrase
+                    Phrase
                   </button>
                   <button
                     onClick={() => setActiveTab("key")}
                     className={cn(
-                      "flex-1 flex items-center justify-center gap-2 py-3 rounded-lg font-medium transition-all",
+                      "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-medium transition-all text-sm",
                       activeTab === "key" 
                         ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]" 
-                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--ocean-surface)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                     )}
                   >
                     <Key className="w-4 h-4" />
-                    Private Key
+                    Key
                   </button>
                 </div>
 
-                {/* Content based on tab */}
+                {/* Content */}
                 <AnimatePresence mode="wait">
                   {activeTab === "phrase" ? (
                     <motion.div
@@ -475,23 +646,23 @@ export function WalletOnboarding() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="p-5 rounded-xl bg-gradient-to-br from-[var(--warm-orange)]/5 to-[var(--warm-pink)]/5 border border-[var(--warm-orange)]/20"
+                      className="p-4 rounded-xl bg-gradient-to-br from-[var(--warm-orange)]/5 to-[var(--warm-pink)]/5 border border-[var(--warm-orange)]/20"
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm font-medium text-[var(--warm-orange)]">12-Word Recovery Phrase</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-medium text-[var(--warm-orange)]">Recovery Phrase</span>
                         <button
-                          onClick={() => copyToClipboard(generatedWallet.mnemonic, 'mnemonic')}
+                          onClick={() => copyToClipboard(currentWallet.mnemonic, 'mnemonic')}
                           className="text-xs text-[var(--warm-orange)] hover:opacity-80 flex items-center gap-1"
                         >
                           {copiedField === 'mnemonic' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                          {copiedField === 'mnemonic' ? 'Copied!' : 'Copy All'}
+                          {copiedField === 'mnemonic' ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        {generatedWallet.mnemonic.split(" ").map((word, i) => (
-                          <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
-                            <span className="text-xs text-[var(--text-muted)] w-5">{i + 1}.</span>
-                            <span className="text-[var(--warm-orange)] font-medium">{word}</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {currentWallet.mnemonic.split(" ").map((word, i) => (
+                          <div key={i} className="flex items-center gap-1.5 p-2 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
+                            <span className="text-[10px] text-[var(--text-muted)] w-4">{i + 1}.</span>
+                            <span className="text-[var(--warm-orange)] font-medium text-sm">{word}</span>
                           </div>
                         ))}
                       </div>
@@ -502,40 +673,37 @@ export function WalletOnboarding() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      className="p-5 rounded-xl bg-gradient-to-br from-[var(--warm-pink)]/5 to-[var(--error)]/5 border border-[var(--warm-pink)]/20"
+                      className="p-4 rounded-xl bg-gradient-to-br from-[var(--warm-pink)]/5 to-[var(--error)]/5 border border-[var(--warm-pink)]/20"
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <span className="text-sm font-medium text-[var(--warm-pink)]">Base58 Private Key</span>
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-medium text-[var(--warm-pink)]">Private Key</span>
                         <button
-                          onClick={() => copyToClipboard(generatedWallet.secretKey, 'secretKey')}
+                          onClick={() => copyToClipboard(currentWallet.secretKey, 'secretKey')}
                           className="text-xs text-[var(--warm-pink)] hover:opacity-80 flex items-center gap-1"
                         >
                           {copiedField === 'secretKey' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                           {copiedField === 'secretKey' ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
-                      <div className="p-4 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
+                      <div className="p-3 rounded-lg bg-[var(--ocean-deep)]/50 border border-[var(--glass-border)]">
                         <code className="text-[var(--warm-pink)] font-mono text-xs break-all leading-relaxed">
-                          {generatedWallet.secretKey || "Private key not available - use recovery phrase"}
+                          {currentWallet.secretKey || "Use recovery phrase"}
                         </code>
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] mt-3">
-                        ⚠️ Never share your private key. Anyone with this key has full control of your wallet.
-                      </p>
                     </motion.div>
                   )}
                 </AnimatePresence>
 
                 {/* Confirmation */}
-                <label className="flex items-center gap-4 p-4 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)] cursor-pointer hover:bg-[var(--ocean-surface)]/50 transition-colors">
+                <label className="flex items-center gap-3 p-3 rounded-xl bg-[var(--ocean-surface)]/30 border border-[var(--glass-border)] cursor-pointer hover:bg-[var(--ocean-surface)]/50 transition-colors">
                   <input
                     type="checkbox"
                     checked={backupConfirmed}
                     onChange={(e) => setBackupConfirmed(e.target.checked)}
-                    className="w-5 h-5 rounded border-[var(--glass-border)] bg-[var(--ocean-surface)] text-[var(--aqua-primary)] focus:ring-[var(--aqua-primary)]/30"
+                    className="w-5 h-5 rounded border-[var(--glass-border)] bg-[var(--ocean-surface)] text-[var(--aqua-primary)]"
                   />
-                  <span className="text-[var(--text-secondary)]">
-                    I have securely saved my recovery phrase and private key
+                  <span className="text-sm text-[var(--text-secondary)]">
+                    I have saved this wallet&apos;s credentials
                   </span>
                 </label>
 
@@ -544,9 +712,12 @@ export function WalletOnboarding() {
                 <button
                   onClick={handleBackupComplete}
                   disabled={!backupConfirmed}
-                  className="w-full h-14 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold text-lg hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full h-12 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] font-semibold hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Continue to Dashboard
+                  {currentWalletIndex < generatedWallets.length - 1
+                    ? `Next Wallet (${currentWalletIndex + 2}/${generatedWallets.length})`
+                    : "Continue to Dashboard"
+                  }
                 </button>
               </motion.div>
             )}
@@ -558,7 +729,7 @@ export function WalletOnboarding() {
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                className="text-center space-y-8"
+                className="text-center space-y-6"
               >
                 <motion.div
                   initial={{ scale: 0 }}
@@ -570,9 +741,55 @@ export function WalletOnboarding() {
                 </motion.div>
                 
                 <div>
-                  <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-3">You&apos;re All Set!</h2>
-                  <p className="text-[var(--text-muted)] text-lg">Your wallet is ready. Welcome to Propel.</p>
+                  <h2 className="text-3xl font-bold text-[var(--text-primary)] mb-3">
+                    {importedWallets.length > 0 ? "Import Complete!" : "You're All Set!"}
+                  </h2>
+                  <p className="text-[var(--text-muted)] text-lg">
+                    {generatedWallets.length > 1 
+                      ? `${generatedWallets.length} wallets created successfully`
+                      : importedWallets.length > 0
+                      ? `${importedWallets.filter(w => w.success).length} of ${importedWallets.length} wallets imported`
+                      : "Your wallet is ready. Welcome to Propel."
+                    }
+                  </p>
                 </div>
+
+                {/* Import results */}
+                {importedWallets.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto space-y-2 text-left">
+                    {importedWallets.map((wallet, idx) => (
+                      <div
+                        key={idx}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-lg border",
+                          wallet.success
+                            ? "bg-[var(--success)]/5 border-[var(--success)]/20"
+                            : "bg-[var(--error)]/5 border-[var(--error)]/20"
+                        )}
+                      >
+                        {wallet.success ? (
+                          <CheckCircle2 className="w-5 h-5 text-[var(--success)] shrink-0" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-[var(--error)] shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+                            {wallet.label}
+                          </p>
+                          {wallet.success ? (
+                            <p className="text-xs text-[var(--text-muted)] font-mono truncate">
+                              {wallet.publicKey}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-[var(--error)]">
+                              {wallet.error}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 
                 <button
                   onClick={handleClose}

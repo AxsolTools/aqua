@@ -77,7 +77,7 @@ async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): P
  * Note: This API may require authentication for some tokens - use quote API as primary
  */
 async function fetchFromJupiterPriceV2(tokenMint: string): Promise<PriceResult> {
-  const response = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`, {
+  const response = await fetch(`https://lite-api.jup.ag/price/v3?ids=${tokenMint}`, {
     headers: { 
       "Accept": "application/json",
       "User-Agent": "AQUA-Launchpad/1.0"

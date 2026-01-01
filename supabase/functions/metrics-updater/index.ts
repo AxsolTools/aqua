@@ -75,9 +75,9 @@ function getErrorMessage(error: unknown): string {
  */
 async function fetchPrice(mintAddress: string): Promise<number> {
   try {
-    // Try Jupiter Price API v2 first
+    // Try Jupiter Price API v3
     const response = await fetch(
-      `https://api.jup.ag/price/v2?ids=${mintAddress}`,
+      `https://lite-api.jup.ag/price/v3?ids=${mintAddress}`,
       { headers: { "Content-Type": "application/json" } }
     );
     
