@@ -7,11 +7,11 @@ import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { WalletSidebar } from "@/components/wallet/wallet-sidebar"
-import { ChevronDown, Sparkles, Coins, Dice6, Users } from "lucide-react"
+import { ChevronDown, Sparkles, Coins, Dice6, BarChart3 } from "lucide-react"
 
 const navItems = [
   { href: "/", label: "Discover" },
-  { href: "/kol-monitor", label: "KOL Monitor", icon: Users },
+  { href: "/kol-monitor", label: "Token Aggregator", icon: BarChart3 },
   { href: "/launch", label: "Launch" },
   { href: "/launch22", label: "TOKEN22" },
   { href: "/dice", label: "Dice", icon: Dice6 },

@@ -53,16 +53,19 @@ export interface TokenHolding {
 
 import { UNIQUE_KOL_DATABASE, type KOLProfile } from './kol-database'
 
-// Convert KOL profiles to wallet format for monitoring
-export const KNOWN_KOL_WALLETS: KOLWallet[] = UNIQUE_KOL_DATABASE
-  .filter(k => k.twitter) // Only include those with Twitter
-  .map(k => ({
-    address: k.address,
-    name: k.name,
-    twitter: k.twitter!,
-    tier: k.tier === 'legendary' ? 'diamond' : k.tier as KOLWallet['tier'],
-    verified: k.verified,
-  }))
+// Convert ALL KOL profiles to wallet format for monitoring
+// This includes ALL KOLs from the database, not just those with Twitter
+export const KNOWN_KOL_WALLETS: KOLWallet[] = UNIQUE_KOL_DATABASE.map(k => ({
+  address: k.address,
+  name: k.name,
+  twitter: k.twitter || k.name.toLowerCase().replace(/\s+/g, '_'), // Fallback to name-based handle
+  tier: k.tier === 'legendary' ? 'diamond' : 
+        k.tier === 'emerging' ? 'bronze' : k.tier as KOLWallet['tier'],
+  verified: k.verified,
+}))
+
+// Log how many KOL wallets are being monitored
+console.log(`[KOL Monitor] Tracking ${KNOWN_KOL_WALLETS.length} KOL wallets`)
 
 // Cache for wallet data
 const walletCache = new Map<string, { data: KOLStats; timestamp: number }>()

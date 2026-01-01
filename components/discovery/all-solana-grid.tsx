@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { motion } from "framer-motion"
-import { RefreshCw, TrendingUp, TrendingDown, ExternalLink, Copy } from "lucide-react"
+import { RefreshCw, TrendingUp, TrendingDown, ExternalLink, Copy, Clock } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface LiveToken {
@@ -29,7 +30,8 @@ interface AllSolanaGridProps {
 }
 
 const POLL_INTERVAL = 15000 // 15 seconds for live feel
-const MAX_TOKENS = 40
+const MAX_TOKENS = 100 // Increased to 100
+const TOKENS_PER_PAGE = 20
 
 export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   const [tokens, setTokens] = useState<LiveToken[]>([])
@@ -37,6 +39,7 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
   const [countdown, setCountdown] = useState(15)
+  const [currentPage, setCurrentPage] = useState(1)
   const lastFetchRef = useRef<number>(0)
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -58,8 +61,8 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
 
     try {
       const endpoint = source === 'trending' 
-        ? '/api/tokens/trending' 
-        : '/api/tokens/live?limit=40'
+        ? `/api/tokens/trending?limit=${MAX_TOKENS}` 
+        : `/api/tokens/live?limit=${MAX_TOKENS}`
       
       const res = await fetch(endpoint, {
         signal: abortControllerRef.current.signal,
@@ -112,6 +115,7 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   useEffect(() => {
     setIsLoading(true)
     setTokens([])
+    setCurrentPage(1)
     fetchTokens()
   }, [source])
 
@@ -146,126 +150,164 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
     return `$${num.toFixed(0)}`
   }
 
+  const getTokenAge = (timestamp: number) => {
+    if (!timestamp) return ''
+    const diff = Date.now() - timestamp
+    const hours = Math.floor(diff / 3600000)
+    const days = Math.floor(hours / 24)
+    
+    if (days > 0) return `${days}d`
+    if (hours > 0) return `${hours}h`
+    return `${Math.floor(diff / 60000)}m`
+  }
+
+  // Pagination
+  const totalPages = Math.ceil(tokens.length / TOKENS_PER_PAGE)
+  const paginatedTokens = tokens.slice((currentPage - 1) * TOKENS_PER_PAGE, currentPage * TOKENS_PER_PAGE)
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
-        {[...Array(18)].map((_, i) => (
-          <div key={i} className="h-[120px] skeleton rounded-lg" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+        {[...Array(15)].map((_, i) => (
+          <div key={i} className="h-[140px] skeleton rounded-lg" />
         ))}
       </div>
     )
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Minimal Header */}
-      <div className="flex items-center justify-end gap-3">
-        <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
-          {countdown}s
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-[var(--text-muted)]">
+          {tokens.length} tokens
         </span>
-        <button
-          onClick={handleManualRefresh}
-          disabled={isRefreshing}
-          className="p-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-all disabled:opacity-50"
-        >
-          <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isRefreshing && "animate-spin")} />
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
+            {countdown}s
+          </span>
+          <button
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            className="p-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isRefreshing && "animate-spin")} />
+          </button>
+        </div>
       </div>
 
-      {/* Compact Token Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
-        {tokens.map((token, index) => {
+      {/* Token Grid - Matching Aquarius Tab Layout */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+        {paginatedTokens.map((token, index) => {
           const isPositive = token.priceChange24h >= 0
           const buyRatio = token.txns24h.buys + token.txns24h.sells > 0 
             ? (token.txns24h.buys / (token.txns24h.buys + token.txns24h.sells)) * 100 
             : 50
+          const age = getTokenAge(token.pairCreatedAt)
 
           return (
             <motion.div
               key={`${token.address}-${index}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.15, delay: Math.min(index * 0.02, 0.3) }}
             >
               <Link href={`/token/${token.address}`}>
-                <div className="group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/40 rounded-lg p-2.5 transition-all cursor-pointer">
-                  {/* Header */}
-                  <div className="flex items-start gap-2 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
-                      <img
+                <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all">
+                  {/* Horizontal layout: Image on left, info on right - matching Aquarius */}
+                  <div className="flex gap-3 p-3">
+                    {/* Token Image - Square, left side */}
+                    <div className="relative w-20 h-20 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
+                      <Image
                         src={token.logo}
                         alt={token.symbol}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
+                        fill
+                        className="object-cover"
+                        unoptimized
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = 
-                            `https://ui-avatars.com/api/?name=${token.symbol}&background=1a1a1a&color=fff&size=32`
+                            `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=80`
                         }}
                       />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        <span className="font-bold text-xs text-[var(--text-primary)] truncate">
-                          ${token.symbol}
+
+                    {/* Token Info - Right side */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-between">
+                      {/* Top: Name + Symbol + Age */}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">{token.name}</h3>
+                          {age && (
+                            <span className="flex items-center gap-0.5 px-1.5 py-0.5 text-[8px] font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-dim)] flex-shrink-0">
+                              <Clock className="w-2.5 h-2.5" />
+                              {age}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-[var(--text-muted)]">${token.symbol}</p>
+                      </div>
+
+                      {/* Middle: Price + Change */}
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-[var(--text-primary)] font-medium">{formatPrice(token.price)}</span>
+                        <span className={cn(
+                          "flex items-center gap-0.5 font-semibold",
+                          isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
+                        )}>
+                          {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {isPositive ? '+' : ''}{token.priceChange24h?.toFixed(1) || '0'}%
                         </span>
                       </div>
-                      <div className={cn(
-                        "text-xs font-semibold flex items-center gap-0.5",
-                        isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
-                      )}>
-                        {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {isPositive ? '+' : ''}{token.priceChange24h?.toFixed(1) || '0'}%
+
+                      {/* Bottom: Market Cap + Volume + Buy/Sell Bar */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-[var(--text-muted)]">MC</span>
+                        <span className="text-sm font-bold text-[var(--aqua-primary)]">
+                          {formatCompact(token.marketCap)}
+                        </span>
+                        
+                        {/* Buy/Sell Pressure Bar */}
+                        <div className="flex-1 h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                          <div className="h-full bg-[var(--green)]" style={{ width: `${buyRatio}%` }} />
+                          <div className="h-full bg-[var(--red)]" style={{ width: `${100 - buyRatio}%` }} />
+                        </div>
+                        
+                        {/* Txns */}
+                        <span className="text-[10px] text-[var(--text-dim)]">
+                          {token.txns24h.buys + token.txns24h.sells}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Stats */}
-                  <div className="grid grid-cols-2 gap-1.5 mb-2 text-[9px]">
-                    <div className="bg-[var(--bg-secondary)] rounded px-1.5 py-1">
-                      <div className="text-[var(--text-dim)]">Price</div>
-                      <div className="text-[var(--text-primary)] font-medium truncate">{formatPrice(token.price)}</div>
-                    </div>
-                    <div className="bg-[var(--bg-secondary)] rounded px-1.5 py-1">
-                      <div className="text-[var(--text-dim)]">MC</div>
-                      <div className="text-[var(--text-primary)] font-medium">{formatCompact(token.marketCap)}</div>
-                    </div>
-                  </div>
-
-                  {/* Buy/Sell Pressure */}
-                  <div className="mb-2">
-                    <div className="flex items-center justify-between text-[8px] mb-0.5">
-                      <span className="text-[var(--green)]">{token.txns24h.buys || 0}</span>
-                      <span className="text-[var(--red)]">{token.txns24h.sells || 0}</span>
-                    </div>
-                    <div className="h-1 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
-                      <div className="h-full bg-[var(--green)]" style={{ width: `${buyRatio}%` }} />
-                      <div className="h-full bg-[var(--red)]" style={{ width: `${100 - buyRatio}%` }} />
-                    </div>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex gap-1">
+                  {/* Quick Actions - Bottom */}
+                  <div className="px-3 pb-2 flex gap-1">
                     <button
                       onClick={(e) => copyAddress(token.address, e)}
                       className={cn(
-                        "flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium transition-all",
+                        "flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium transition-all",
                         copiedAddress === token.address
                           ? "bg-[var(--green)] text-[var(--ocean-deep)]"
                           : "bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"
                       )}
                     >
-                      <Copy className="w-2.5 h-2.5" />
-                      {copiedAddress === token.address ? '✓' : 'CA'}
+                      <Copy className="w-3 h-3" />
+                      {copiedAddress === token.address ? 'Copied!' : 'Copy CA'}
                     </button>
                     <a
                       href={`https://dexscreener.com/solana/${token.address}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
+                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
                     >
                       Chart
-                      <ExternalLink className="w-2.5 h-2.5" />
+                      <ExternalLink className="w-3 h-3" />
                     </a>
                   </div>
                 </div>
@@ -274,6 +316,71 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
           )
         })}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+              currentPage === 1
+                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                : "bg-white/10 text-white/70 hover:bg-white/20"
+            )}
+          >
+            ← Prev
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum: number
+              if (totalPages <= 5) {
+                pageNum = i + 1
+              } else if (currentPage <= 3) {
+                pageNum = i + 1
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i
+              } else {
+                pageNum = currentPage - 2 + i
+              }
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={cn(
+                    "w-8 h-8 rounded-lg text-sm font-medium transition-all",
+                    currentPage === pageNum
+                      ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                      : "bg-white/5 text-white/60 hover:bg-white/10"
+                  )}
+                >
+                  {pageNum}
+                </button>
+              )
+            })}
+          </div>
+          
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+              currentPage === totalPages
+                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                : "bg-white/10 text-white/70 hover:bg-white/20"
+            )}
+          >
+            Next →
+          </button>
+          
+          <span className="ml-4 text-xs text-white/40">
+            {tokens.length} tokens
+          </span>
+        </div>
+      )}
 
       {tokens.length === 0 && !isLoading && (
         <div className="card p-8 text-center">

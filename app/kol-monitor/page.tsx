@@ -1,26 +1,31 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Header } from "@/components/layout/header"
 import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { KOLLeaderboard } from "@/components/kol/kol-leaderboard"
 import { KOLProfilePanel } from "@/components/kol/kol-profile-panel"
-import { WallOfShame } from "@/components/kol/wall-of-shame"
 import { TokenAggregator } from "@/components/kol/token-aggregator"
 import type { KOL } from "@/lib/kol-data"
+import { getKOLCount } from "@/lib/kol-data"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { Users, Skull, TrendingUp, Activity, BarChart3, Zap } from "lucide-react"
+import { Users, TrendingUp, Activity, BarChart3 } from "lucide-react"
 
 const tabs = [
   { id: "leaderboard", label: "Leaderboard", icon: TrendingUp },
   { id: "aggregator", label: "Token Aggregator", icon: BarChart3 },
-  { id: "shame", label: "Wall of Shame", icon: Skull },
 ]
 
 export default function KOLMonitorPage() {
   const [selectedKOL, setSelectedKOL] = useState<KOL | null>(null)
-  const [activeTab, setActiveTab] = useState<"leaderboard" | "aggregator" | "shame">("leaderboard")
+  const [activeTab, setActiveTab] = useState<"leaderboard" | "aggregator">("leaderboard")
+  const [totalKOLs, setTotalKOLs] = useState(0)
+
+  useEffect(() => {
+    // Get total KOL count from database
+    setTotalKOLs(getKOLCount())
+  }, [])
 
   return (
     <main className="min-h-screen bg-[var(--bg-primary)]">
@@ -38,7 +43,7 @@ export default function KOLMonitorPage() {
               <div>
                 <h1 className="text-2xl font-bold text-[var(--text-primary)]">KOL Monitor</h1>
                 <p className="text-sm text-[var(--text-muted)]">
-                  Track influential traders, smart money flows, and wallet activity
+                  Track {totalKOLs}+ influential traders, smart money flows, and wallet activity
                 </p>
               </div>
             </div>
@@ -49,6 +54,10 @@ export default function KOLMonitorPage() {
                 <Activity className="w-4 h-4 text-[var(--aqua-primary)]" />
                 <span className="text-xs text-[var(--text-muted)]">Live Tracking</span>
                 <span className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
+                <Users className="w-4 h-4 text-[var(--aqua-primary)]" />
+                <span className="text-xs text-[var(--text-muted)]">{totalKOLs} KOLs</span>
               </div>
             </div>
           </div>
@@ -123,41 +132,9 @@ export default function KOLMonitorPage() {
                 <TokenAggregator />
               </div>
             )}
-
-            {activeTab === "shame" && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
-                <div className="xl:col-span-2 h-[calc(100vh-280px)]">
-                  <WallOfShame />
-                </div>
-                <div className="bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-xl p-6">
-                  <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4">About Wall of Shame</h3>
-                  <div className="space-y-4 text-sm text-[var(--text-secondary)]">
-                    <p>
-                      The Wall of Shame highlights wallets that exhibit suspicious trading patterns, 
-                      including wash trading, pump and dump schemes, and coordinated exit strategies.
-                    </p>
-                    <p>
-                      <strong className="text-[var(--text-primary)]">Scam Score</strong> is calculated based on:
-                    </p>
-                    <ul className="list-disc list-inside space-y-1 text-[var(--text-muted)]">
-                      <li>Frequency of dumps after announcements</li>
-                      <li>Coordinated trading with other wallets</li>
-                      <li>Self-trading patterns (wash trading)</li>
-                      <li>Exit timing relative to followers</li>
-                    </ul>
-                    <div className="pt-4 border-t border-[var(--border-subtle)]">
-                      <p className="text-xs text-[var(--text-dim)]">
-                        This data is for educational purposes. Always DYOR before following any trader.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </motion.div>
         </div>
       </div>
     </main>
   )
 }
-
