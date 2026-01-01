@@ -1,6 +1,5 @@
 import { Header } from "@/components/layout/header"
-import { TokenFilters } from "@/components/discovery/token-filters"
-import { TokenGrid } from "@/components/discovery/token-grid"
+import { DiscoverContent } from "@/components/discovery/discover-content"
 import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 
 export default function HomePage() {
@@ -9,11 +8,10 @@ export default function HomePage() {
       <GlobalPourEffect />
       <Header />
 
-      {/* Main Content - No hero, straight to tokens like pump.fun */}
+      {/* Main Content */}
       <section className="px-3 sm:px-4 lg:px-6 py-4">
         <div className="max-w-[1920px] mx-auto">
-          <TokenFilters />
-          <TokenGrid />
+          <DiscoverContent />
         </div>
       </section>
     </main>
