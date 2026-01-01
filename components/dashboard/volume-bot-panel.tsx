@@ -1,7 +1,7 @@
 "use client"
 
 /**
- * AQUA Launchpad - Volume Bot Control Panel
+ * PROPEL Launchpad - Volume Bot Control Panel
  * 
  * Allows users to configure and control:
  * - Volume generation strategies (DBPM, PLD, CMWA)
@@ -146,7 +146,14 @@ export function VolumeBotPanel({
   tokenDecimals = 9,
   currentPrice = 0,
 }: VolumeBotPanelProps) {
-  const { sessionId, activeWallet, userId, wallets } = useAuth()
+  const { 
+    sessionId, 
+    activeWallet, 
+    userId, 
+    wallets,
+    toggledWallets,
+    isMultiWalletMode,
+  } = useAuth()
   
   // State
   const [settings, setSettings] = useState<VolumeBotSettings>(DEFAULT_SETTINGS)
@@ -160,8 +167,15 @@ export function VolumeBotPanel({
   const [success, setSuccess] = useState<string | null>(null)
   const [expandedSection, setExpandedSection] = useState<string | null>('strategy')
   
-  // Selected wallets for trading
+  // Selected wallets for trading - sync with multi-wallet mode
   const [selectedWalletIds, setSelectedWalletIds] = useState<string[]>([])
+
+  // Sync with multi-wallet mode from TradePanel
+  useEffect(() => {
+    if (isMultiWalletMode && toggledWallets.size > 0) {
+      setSelectedWalletIds(Array.from(toggledWallets))
+    }
+  }, [isMultiWalletMode, toggledWallets])
 
   // Load settings on mount
   useEffect(() => {

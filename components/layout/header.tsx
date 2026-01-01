@@ -7,7 +7,7 @@ import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { WalletSidebar } from "@/components/wallet/wallet-sidebar"
-import { ChevronDown, Sparkles, Coins, Dice6, BarChart3 } from "lucide-react"
+import { ChevronDown, Sparkles, Coins, Dice6, BarChart3, Zap } from "lucide-react"
 
 const navItems = [
   { href: "/", label: "Discover" },
@@ -15,6 +15,7 @@ const navItems = [
   { href: "/launch", label: "Launch" },
   { href: "/launch22", label: "TOKEN22" },
   { href: "/dice", label: "Dice", icon: Dice6 },
+  { href: "/volume-bot", label: "Volume Bot", icon: Zap },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
 ]
@@ -34,8 +35,8 @@ export function Header() {
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
             <Link href="/" className="flex items-center gap-2">
-              <Image src="/propelweblogo.png" alt="Propel" width={32} height={32} className="w-8 h-8" priority />
-              <span className="text-base font-semibold text-[var(--text-primary)]">propel</span>
+              <Image src="/proplogotransparent.png" alt="PROPEL" width={32} height={32} className="w-8 h-8" priority />
+              <span className="text-base font-bold tracking-wider text-[var(--text-primary)]">PROPEL</span>
             </Link>
 
             {/* Center Nav */}
@@ -48,7 +49,7 @@ export function Header() {
                     pathname === item.href
                       ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
+                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${item.href === "/volume-bot" ? "text-purple-400" : ""}`}
                 >
                   {item.icon && <item.icon className="w-4 h-4" />}
                   {item.label}
@@ -147,7 +148,7 @@ export function Header() {
                       pathname === item.href
                         ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
+                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${item.href === "/volume-bot" ? "text-purple-400" : ""}`}
                   >
                     {item.icon && <item.icon className="w-4 h-4" />}
                     {item.label}

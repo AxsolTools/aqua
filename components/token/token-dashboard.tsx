@@ -16,6 +16,7 @@ import { TokenChat } from "@/components/token/token-chat"
 import { TokenComments } from "@/components/token/token-comments"
 import { Token22SettingsPanel } from "@/components/dashboard/token22-settings-panel"
 import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
+import { VolumeBotQuickControls } from "@/components/token/volume-bot-quick-controls"
 import { useAuth } from "@/components/providers/auth-provider"
 import Link from "next/link"
 
@@ -303,7 +304,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
           </svg>
           <div>
             <p className="text-sm font-medium text-amber-400">External Token</p>
-            <p className="text-xs text-amber-400/70">This token was not created on AQUA. Some features may be limited.</p>
+            <p className="text-xs text-amber-400/70">This token was not created on PROPEL. Some features may be limited.</p>
           </div>
         </div>
       )}
@@ -324,9 +325,14 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
           <TransactionHistory tokenAddress={token.mint_address} tokenId={token.id} />
         </div>
 
-        {/* Right Side: Trade Panel + Live Chat */}
+        {/* Right Side: Trade Panel + Volume Bot + Live Chat */}
         <div className="lg:col-span-5 xl:col-span-4 space-y-3">
           <TradePanel token={token} />
+          <VolumeBotQuickControls 
+            tokenMint={token.mint_address} 
+            tokenSymbol={token.symbol}
+            currentPrice={token.price_sol || 0}
+          />
           <TokenChat tokenAddress={token.mint_address} />
         </div>
       </div>
