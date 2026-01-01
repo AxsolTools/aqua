@@ -208,14 +208,35 @@ export async function POST(request: NextRequest) {
     const bundleKeypairs: Map<string, { keypair: Keypair; amount: number }> = new Map()
     const limitedWallets = bundleWallets.slice(0, MAX_BUNDLE_WALLETS)
 
+    console.log(`[BUNDLE-CREATE] Loading ${limitedWallets.length} bundle wallets...`)
+
     for (const bw of limitedWallets) {
       try {
-        const { data: wallet } = await adminClient
+        // Query by address OR by wallet ID (frontend may send either)
+        let walletQuery = adminClient
           .from("wallets")
-          .select("encrypted_private_key")
+          .select("encrypted_private_key, public_key")
           .eq("session_id", sessionId)
-          .eq("public_key", bw.address)
-          .single()
+        
+        if (bw.address) {
+          walletQuery = walletQuery.eq("public_key", bw.address)
+        } else if (bw.walletId) {
+          walletQuery = walletQuery.eq("id", bw.walletId)
+        } else {
+          console.warn(`[BUNDLE-CREATE] Bundle wallet missing address and walletId`)
+          continue
+        }
+
+        const { data: wallet, error: walletErr } = await walletQuery.single()
+
+        if (walletErr) {
+          console.warn(`[BUNDLE-CREATE] Failed to find bundle wallet:`, { 
+            address: bw.address?.slice(0, 8), 
+            walletId: bw.walletId, 
+            error: walletErr.message 
+          })
+          continue
+        }
 
         if (wallet) {
           const privateKey = decryptPrivateKey(
@@ -223,17 +244,19 @@ export async function POST(request: NextRequest) {
             sessionId,
             serviceSalt
           )
-          bundleKeypairs.set(bw.address, {
+          const walletAddress = bw.address || wallet.public_key
+          bundleKeypairs.set(walletAddress, {
             keypair: Keypair.fromSecretKey(bs58.decode(privateKey)),
             amount: bw.buyAmountSol,
           })
+          console.log(`[BUNDLE-CREATE] Loaded bundle wallet ${walletAddress.slice(0, 8)} with ${bw.buyAmountSol} SOL`)
         }
       } catch (error) {
-        console.warn(`[BUNDLE-CREATE] Failed to load bundle wallet ${bw.address}:`, error)
+        console.error(`[BUNDLE-CREATE] Failed to load bundle wallet ${bw.address}:`, error)
       }
     }
 
-    console.log(`[BUNDLE-CREATE] Loaded ${bundleKeypairs.size} bundle wallets`)
+    console.log(`[BUNDLE-CREATE] Successfully loaded ${bundleKeypairs.size}/${limitedWallets.length} bundle wallets`)
 
     // =========================================================================
     // STEP 3: Build bundle transactions via PumpPortal

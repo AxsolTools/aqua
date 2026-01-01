@@ -184,8 +184,11 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================================================
-// MONITORING LOGIC
+// MONITORING LOGIC - Uses Helius WebSocket for real-time monitoring
 // ============================================================================
+
+// Store active WebSocket connections for cleanup
+const activeWebSockets = new Map<string, WebSocket>()
 
 async function startTradeMonitoring(tokenMint: string): Promise<void> {
   const monitor = activeMonitors.get(tokenMint)
@@ -195,72 +198,84 @@ async function startTradeMonitoring(tokenMint: string): Promise<void> {
   }
 
   const connection = new Connection(HELIUS_RPC_URL, 'confirmed')
-  const mintPubkey = new PublicKey(tokenMint)
 
-  console.log(`[ANTI-SNIPER] Starting trade polling for ${tokenMint}`)
+  console.log(`[ANTI-SNIPER] Starting real-time WebSocket monitoring for ${tokenMint}`)
 
-  // Poll for transactions (industrial-grade would use Helius WebSocket)
-  const pollInterval = 200 // Poll every 200ms for low latency
-  let lastSignature: string | undefined
+  // Set up expiration timeout
+  const timeoutId = setTimeout(async () => {
+    console.log(`[ANTI-SNIPER] Monitor expired for ${tokenMint}`)
+    await cleanupMonitor(tokenMint, 'expired')
+  }, monitor.expiresAt - Date.now())
 
-  const poll = async () => {
-    const currentMonitor = activeMonitors.get(tokenMint)
-    if (!currentMonitor) {
-      console.log(`[ANTI-SNIPER] Monitor removed for ${tokenMint}`)
-      return
-    }
-
-    // Check if expired by time
-    if (Date.now() > currentMonitor.expiresAt) {
-      console.log(`[ANTI-SNIPER] Monitor expired for ${tokenMint}`)
-      await cleanupMonitor(tokenMint, 'expired')
-      return
-    }
-
-    // Check if already triggered
-    if (currentMonitor.triggered) {
-      console.log(`[ANTI-SNIPER] Monitor already triggered for ${tokenMint}`)
-      return
-    }
+  // Use Helius WebSocket for real-time logs subscription
+  // This is MUCH faster than polling (instant notifications)
+  try {
+    const wsUrl = `wss://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
+    const ws = new WebSocket(wsUrl)
     
-    // Check if exceeded max blocks (hard stop at 8 blocks)
-    try {
-      const currentSlot = await connection.getSlot('confirmed')
-      const blocksPassed = currentSlot - currentMonitor.launchSlot
-      if (blocksPassed > MAX_MONITOR_BLOCKS) {
-        console.log(`[ANTI-SNIPER] Max blocks (${MAX_MONITOR_BLOCKS}) exceeded for ${tokenMint}, stopping`)
-        await cleanupMonitor(tokenMint, 'expired')
-        return
+    activeWebSockets.set(tokenMint, ws)
+
+    ws.onopen = () => {
+      console.log(`[ANTI-SNIPER] WebSocket connected for ${tokenMint}`)
+      
+      // Subscribe to logs mentioning this token mint
+      // This will notify us of ANY transaction involving this token
+      const subscribeMessage = {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'logsSubscribe',
+        params: [
+          { mentions: [tokenMint] },
+          { commitment: 'confirmed' }
+        ]
       }
-    } catch {
-      // Continue if slot check fails
+      ws.send(JSON.stringify(subscribeMessage))
     }
 
-    try {
-      // Get recent signatures for the token
-      const signatures = await connection.getSignaturesForAddress(
-        mintPubkey,
-        { limit: 20, until: lastSignature },
-        'confirmed'
-      )
+    ws.onmessage = async (event) => {
+      try {
+        const message = JSON.parse(event.data.toString())
+        
+        // Handle subscription confirmation
+        if (message.result && typeof message.result === 'number') {
+          console.log(`[ANTI-SNIPER] Subscribed with ID: ${message.result}`)
+          return
+        }
 
-      if (signatures.length > 0) {
-        lastSignature = signatures[0].signature
-
-        for (const sig of signatures) {
-          // Skip if outside monitoring window
-          if (sig.slot && sig.slot > currentMonitor.launchSlot + currentMonitor.config.monitorBlocksWindow) {
-            continue
+        // Handle log notification
+        if (message.method === 'logsNotification' && message.params?.result) {
+          const currentMonitor = activeMonitors.get(tokenMint)
+          if (!currentMonitor || currentMonitor.triggered) {
+            return
           }
 
-          // Analyze the transaction
-          const tradeEvent = await analyzeTransaction(connection, sig.signature, tokenMint, currentMonitor)
+          const logResult = message.params.result
+          const signature = logResult.value?.signature
+          const logs = logResult.value?.logs || []
+          const slot = logResult.context?.slot
+
+          // Quick check: look for buy-related logs
+          const isBuy = logs.some((log: string) => 
+            log.includes('Buy') || 
+            log.includes('swap') || 
+            log.includes('Transfer') ||
+            log.includes('TokenInstruction')
+          )
+
+          if (!isBuy || !signature) {
+            return
+          }
+
+          console.log(`[ANTI-SNIPER] Potential buy detected in slot ${slot}, analyzing...`)
+
+          // Analyze the full transaction
+          const tradeEvent = await analyzeTransaction(connection, signature, tokenMint, currentMonitor)
           
           if (tradeEvent && tradeEvent.type === 'buy') {
             // Check if this is a user's own wallet (ignore)
             if (currentMonitor.userWallets.has(tradeEvent.traderWallet)) {
               console.log(`[ANTI-SNIPER] Ignoring user's own trade from ${tradeEvent.traderWallet.slice(0, 8)}`)
-              continue
+              return
             }
 
             // Check thresholds
@@ -268,7 +283,7 @@ async function startTradeMonitoring(tokenMint: string): Promise<void> {
             const exceedsSupplyThreshold = supplyPercent > currentMonitor.config.maxSupplyPercentThreshold
             const exceedsSolThreshold = tradeEvent.solAmount > currentMonitor.config.maxSolAmountThreshold
 
-            console.log(`[ANTI-SNIPER] Trade detected:`, {
+            console.log(`[ANTI-SNIPER] Trade detected via WebSocket:`, {
               trader: tradeEvent.traderWallet.slice(0, 8),
               solAmount: tradeEvent.solAmount,
               tokenAmount: tradeEvent.tokenAmount,
@@ -286,6 +301,9 @@ async function startTradeMonitoring(tokenMint: string): Promise<void> {
               currentMonitor.triggered = true
               activeMonitors.set(tokenMint, currentMonitor)
 
+              // Clear timeout and close WebSocket
+              clearTimeout(timeoutId)
+
               // Trigger auto-sell
               await triggerAutoSell(tokenMint, tradeEvent, currentMonitor)
               
@@ -298,20 +316,106 @@ async function startTradeMonitoring(tokenMint: string): Promise<void> {
                 triggered_at: new Date().toISOString(),
               }).eq('token_mint', tokenMint)
 
+              // Cleanup
+              await cleanupMonitor(tokenMint, 'triggered')
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[ANTI-SNIPER] WebSocket message error:`, error)
+      }
+    }
+
+    ws.onerror = (error) => {
+      console.error(`[ANTI-SNIPER] WebSocket error for ${tokenMint}:`, error)
+      // Fall back to polling if WebSocket fails
+      startPollingFallback(tokenMint, connection, timeoutId)
+    }
+
+    ws.onclose = () => {
+      console.log(`[ANTI-SNIPER] WebSocket closed for ${tokenMint}`)
+      activeWebSockets.delete(tokenMint)
+    }
+
+  } catch (error) {
+    console.error(`[ANTI-SNIPER] Failed to connect WebSocket:`, error)
+    // Fall back to polling
+    startPollingFallback(tokenMint, connection, timeoutId)
+  }
+}
+
+// Fallback polling for when WebSocket fails
+async function startPollingFallback(
+  tokenMint: string, 
+  connection: Connection,
+  timeoutId: ReturnType<typeof setTimeout>
+): Promise<void> {
+  const mintPubkey = new PublicKey(tokenMint)
+  console.log(`[ANTI-SNIPER] Falling back to polling for ${tokenMint}`)
+
+  const pollInterval = 200
+  let lastSignature: string | undefined
+
+  const poll = async () => {
+    const currentMonitor = activeMonitors.get(tokenMint)
+    if (!currentMonitor) return
+
+    if (Date.now() > currentMonitor.expiresAt || currentMonitor.triggered) {
+      clearTimeout(timeoutId)
+      return
+    }
+
+    try {
+      const signatures = await connection.getSignaturesForAddress(
+        mintPubkey,
+        { limit: 10, until: lastSignature },
+        'confirmed'
+      )
+
+      if (signatures.length > 0) {
+        lastSignature = signatures[0].signature
+
+        for (const sig of signatures) {
+          if (sig.slot && sig.slot > currentMonitor.launchSlot + currentMonitor.config.monitorBlocksWindow) {
+            continue
+          }
+
+          const tradeEvent = await analyzeTransaction(connection, sig.signature, tokenMint, currentMonitor)
+          
+          if (tradeEvent && tradeEvent.type === 'buy') {
+            if (currentMonitor.userWallets.has(tradeEvent.traderWallet)) continue
+
+            const supplyPercent = (tradeEvent.tokenAmount / currentMonitor.totalSupply) * 100
+            const exceedsSupplyThreshold = supplyPercent > currentMonitor.config.maxSupplyPercentThreshold
+            const exceedsSolThreshold = tradeEvent.solAmount > currentMonitor.config.maxSolAmountThreshold
+
+            if (exceedsSupplyThreshold || exceedsSolThreshold) {
+              currentMonitor.triggered = true
+              activeMonitors.set(tokenMint, currentMonitor)
+              clearTimeout(timeoutId)
+              await triggerAutoSell(tokenMint, tradeEvent, currentMonitor)
+              
+              const adminClient = getAdminClient()
+              await adminClient.from('anti_sniper_monitors').update({
+                status: 'triggered',
+                triggered: true,
+                trigger_trade: tradeEvent,
+                triggered_at: new Date().toISOString(),
+              }).eq('token_mint', tokenMint)
+
+              await cleanupMonitor(tokenMint, 'triggered')
               return
             }
           }
         }
       }
     } catch (error) {
-      console.error(`[ANTI-SNIPER] Poll error for ${tokenMint}:`, error)
+      console.error(`[ANTI-SNIPER] Poll error:`, error)
     }
 
-    // Continue polling
     setTimeout(poll, pollInterval)
   }
 
-  // Start polling
   poll()
 }
 
@@ -422,6 +526,17 @@ async function triggerAutoSell(
 
 async function cleanupMonitor(tokenMint: string, reason: string): Promise<void> {
   activeMonitors.delete(tokenMint)
+  
+  // Close WebSocket if active
+  const ws = activeWebSockets.get(tokenMint)
+  if (ws) {
+    try {
+      ws.close(1000, 'Monitor ended')
+    } catch {
+      // Ignore close errors
+    }
+    activeWebSockets.delete(tokenMint)
+  }
   
   const adminClient = getAdminClient()
   await adminClient.from('anti_sniper_monitors').update({
