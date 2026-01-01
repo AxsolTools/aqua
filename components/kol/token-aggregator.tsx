@@ -1,35 +1,33 @@
 "use client"
 
-import { useState, useEffect, useCallback, useMemo } from "react"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"
+import Link from "next/link"
 import Image from "next/image"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 import {
   TrendingUp,
   TrendingDown,
-  Activity,
-  Zap,
-  Target,
   AlertTriangle,
-  Crown,
-  ChevronUp,
-  ChevronDown,
   Search,
   Filter,
   RefreshCw,
   ExternalLink,
   Copy,
-  Eye,
-  Users,
   BarChart3,
   Flame,
   Clock,
-  DollarSign,
-  Percent,
-  ArrowUpRight,
-  ArrowDownRight,
+  Zap,
   Shield,
+  Activity,
+  Droplets,
+  DollarSign,
+  ArrowUpDown,
   Sparkles,
+  Target,
+  Gauge,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 
 interface TokenData {
@@ -50,8 +48,6 @@ interface TokenData {
   txns1h: { buys: number; sells: number }
   holders?: number
   source?: string
-  // Computed metrics
-  kolBuyers?: number
   smartMoneyFlow?: number
   riskScore?: number
   momentumScore?: number
@@ -61,67 +57,71 @@ interface TokenData {
 interface AggregatorFilters {
   minLiquidity: number
   minVolume: number
-  maxAge: number // hours
-  showKolBuys: boolean
-  hideRugs: boolean
-  sortBy: 'trending' | 'volume' | 'priceChange' | 'kolBuyers' | 'smartMoney' | 'new'
+  minMarketCap: number
+  maxAge: number
+  hideHighRisk: boolean
+  sortBy: 'trending' | 'volume' | 'priceChange' | 'marketCap' | 'liquidity' | 'new' | 'momentum'
   sortDir: 'desc' | 'asc'
 }
 
 const DEFAULT_FILTERS: AggregatorFilters = {
-  minLiquidity: 5000,
-  minVolume: 1000,
-  maxAge: 168, // 7 days
-  showKolBuys: false,
-  hideRugs: true,
+  minLiquidity: 0,
+  minVolume: 0,
+  minMarketCap: 0,
+  maxAge: 720, // 30 days
+  hideHighRisk: false,
   sortBy: 'trending',
   sortDir: 'desc',
 }
 
+const TOKENS_PER_PAGE = 20
+const MAX_TOKENS = 100
+const POLL_INTERVAL = 15000
+
 export function TokenAggregator() {
   const [tokens, setTokens] = useState<TokenData[]>([])
-  const [kolConvergence, setKolConvergence] = useState<Map<string, number>>(new Map())
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState<AggregatorFilters>(DEFAULT_FILTERS)
   const [search, setSearch] = useState("")
   const [countdown, setCountdown] = useState(15)
   const [showFilters, setShowFilters] = useState(false)
-  const [selectedToken, setSelectedToken] = useState<TokenData | null>(null)
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [viewMode, setViewMode] = useState<'grid' | 'compact'>('grid')
+  const lastFetchRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  // Fetch tokens from aggregated feed
-  const fetchTokens = useCallback(async () => {
+  // Fetch tokens from API
+  const fetchTokens = useCallback(async (showRefresh = false) => {
+    const now = Date.now()
+    if (now - lastFetchRef.current < 5000 && tokens.length > 0 && !showRefresh) {
+      return
+    }
+    lastFetchRef.current = now
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    abortControllerRef.current = new AbortController()
+
+    if (showRefresh) setIsRefreshing(true)
+    if (tokens.length === 0) setIsLoading(true)
+
     try {
-      setIsLoading(true)
-      
-      // Fetch tokens and KOL convergence in parallel
-      const [tokensRes, kolRes] = await Promise.all([
-        fetch(`/api/tokens/trending?limit=100`),
-        fetch(`/api/kol/activity?action=convergence&lookback=24`).catch(() => null),
-      ])
+      const res = await fetch(`/api/tokens/trending?limit=${MAX_TOKENS}`, {
+        signal: abortControllerRef.current.signal,
+        cache: 'no-store',
+      })
 
-      if (!tokensRes.ok) throw new Error('Failed to fetch tokens')
+      if (!res.ok) throw new Error('Failed to fetch tokens')
       
-      const tokensData = await tokensRes.json()
-      
-      // Process KOL convergence data
-      if (kolRes) {
-        const kolData = await kolRes.json()
-        if (kolData.success && kolData.data) {
-          const convergenceMap = new Map<string, number>()
-          for (const item of kolData.data) {
-            convergenceMap.set(item.token, item.kols?.length || 0)
-          }
-          setKolConvergence(convergenceMap)
-        }
-      }
+      const data = await res.json()
 
-      if (tokensData.success && tokensData.data) {
-        // Enrich tokens with computed metrics
-        const enrichedTokens = tokensData.data.map((token: TokenData) => ({
+      if (data.success && data.data) {
+        const enrichedTokens = data.data.map((token: TokenData) => ({
           ...token,
-          kolBuyers: kolConvergence.get(token.address) || 0,
           smartMoneyFlow: calculateSmartMoneyFlow(token),
           riskScore: calculateRiskScore(token),
           momentumScore: calculateMomentumScore(token),
@@ -132,34 +132,40 @@ export function TokenAggregator() {
         setError(null)
       }
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return
       setError(err instanceof Error ? err.message : 'Failed to fetch tokens')
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
     }
-  }, [kolConvergence])
+  }, [tokens.length])
 
   // Initial fetch and polling
   useEffect(() => {
     fetchTokens()
     
-    const timer = setInterval(() => {
-      setCountdown(prev => {
-        if (prev <= 1) {
-          fetchTokens()
-          return 15
-        }
-        return prev - 1
-      })
+    const pollTimer = setInterval(() => {
+      fetchTokens()
+      setCountdown(15)
+    }, POLL_INTERVAL)
+
+    const countdownTimer = setInterval(() => {
+      setCountdown(prev => prev > 0 ? prev - 1 : 15)
     }, 1000)
 
-    return () => clearInterval(timer)
+    return () => {
+      clearInterval(pollTimer)
+      clearInterval(countdownTimer)
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
   }, [fetchTokens])
 
   // Filter and sort tokens
   const filteredTokens = useMemo(() => {
     let result = [...tokens]
 
-    // Apply search filter
     if (search) {
       const q = search.toLowerCase()
       result = result.filter(t =>
@@ -169,37 +175,37 @@ export function TokenAggregator() {
       )
     }
 
-    // Apply filters
     result = result.filter(t => {
-      if (t.liquidity < filters.minLiquidity) return false
-      if (t.volume24h < filters.minVolume) return false
+      if (filters.minLiquidity > 0 && t.liquidity < filters.minLiquidity) return false
+      if (filters.minVolume > 0 && t.volume24h < filters.minVolume) return false
+      if (filters.minMarketCap > 0 && t.marketCap < filters.minMarketCap) return false
       
       const ageHours = (Date.now() - t.pairCreatedAt) / 3600000
       if (ageHours > filters.maxAge) return false
       
-      if (filters.showKolBuys && (t.kolBuyers || 0) < 1) return false
-      if (filters.hideRugs && (t.riskScore || 0) > 80) return false
+      if (filters.hideHighRisk && (t.riskScore || 0) > 70) return false
       
       return true
     })
 
-    // Sort
     result.sort((a, b) => {
-      const multiplier = filters.sortDir === 'desc' ? -1 : 1
+      const dir = filters.sortDir === 'desc' ? 1 : -1
       
       switch (filters.sortBy) {
         case 'trending':
-          return ((a.trendingScore || 0) - (b.trendingScore || 0)) * multiplier
+          return ((b.trendingScore || 0) - (a.trendingScore || 0)) * dir
         case 'volume':
-          return (a.volume24h - b.volume24h) * multiplier
+          return (b.volume24h - a.volume24h) * dir
         case 'priceChange':
-          return (a.priceChange24h - b.priceChange24h) * multiplier
-        case 'kolBuyers':
-          return ((a.kolBuyers || 0) - (b.kolBuyers || 0)) * multiplier
-        case 'smartMoney':
-          return ((a.smartMoneyFlow || 0) - (b.smartMoneyFlow || 0)) * multiplier
+          return (b.priceChange24h - a.priceChange24h) * dir
+        case 'marketCap':
+          return (b.marketCap - a.marketCap) * dir
+        case 'liquidity':
+          return (b.liquidity - a.liquidity) * dir
+        case 'momentum':
+          return ((b.momentumScore || 0) - (a.momentumScore || 0)) * dir
         case 'new':
-          return (a.pairCreatedAt - b.pairCreatedAt) * multiplier
+          return (b.pairCreatedAt - a.pairCreatedAt) * dir
         default:
           return 0
       }
@@ -207,6 +213,14 @@ export function TokenAggregator() {
 
     return result
   }, [tokens, search, filters])
+
+  // Pagination
+  const totalPages = Math.ceil(filteredTokens.length / TOKENS_PER_PAGE)
+  const paginatedTokens = filteredTokens.slice((currentPage - 1) * TOKENS_PER_PAGE, currentPage * TOKENS_PER_PAGE)
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, filters])
 
   // Stats
   const stats = useMemo(() => {
@@ -216,80 +230,149 @@ export function TokenAggregator() {
     return {
       totalTokens: filteredTokens.length,
       newTokens1h: filteredTokens.filter(t => t.pairCreatedAt > oneHourAgo).length,
-      kolBuySignals: filteredTokens.filter(t => (t.kolBuyers || 0) >= 2).length,
       highMomentum: filteredTokens.filter(t => (t.momentumScore || 0) > 70).length,
       totalVolume: filteredTokens.reduce((sum, t) => sum + t.volume24h, 0),
+      avgLiquidity: filteredTokens.length > 0 ? filteredTokens.reduce((sum, t) => sum + t.liquidity, 0) / filteredTokens.length : 0,
+      positiveTokens: filteredTokens.filter(t => t.priceChange24h > 0).length,
     }
   }, [filteredTokens])
 
-  const copyAddress = (address: string) => {
+  const copyAddress = (address: string, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     navigator.clipboard.writeText(address)
     setCopiedAddress(address)
-    setTimeout(() => setCopiedAddress(null), 2000)
+    setTimeout(() => setCopiedAddress(null), 1500)
   }
 
   const getAgeDisplay = (timestamp: number) => {
+    if (!timestamp) return ''
     const hours = (Date.now() - timestamp) / 3600000
     if (hours < 1) return `${Math.floor(hours * 60)}m`
     if (hours < 24) return `${Math.floor(hours)}h`
     return `${Math.floor(hours / 24)}d`
   }
 
-  return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-[var(--border-subtle)]">
-        <div className="flex items-center justify-between mb-4">
+  const formatPrice = (price: number) => {
+    if (!price || price === 0) return '$0'
+    if (price < 0.0000001) return `$${price.toExponential(1)}`
+    if (price < 0.00001) return `$${price.toExponential(2)}`
+    if (price < 0.001) return `$${price.toFixed(6)}`
+    if (price < 1) return `$${price.toFixed(4)}`
+    if (price < 100) return `$${price.toFixed(2)}`
+    return `$${price.toFixed(0)}`
+  }
+
+  const formatCompact = (num: number) => {
+    if (!num || num === 0) return '$0'
+    if (num >= 1_000_000_000) return `$${(num / 1_000_000_000).toFixed(1)}B`
+    if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`
+    if (num >= 1_000) return `$${(num / 1_000).toFixed(0)}K`
+    return `$${num.toFixed(0)}`
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+  }
+
+  const handleManualRefresh = () => {
+    setCountdown(15)
+    fetchTokens(true)
+  }
+
+  if (isLoading && tokens.length === 0) {
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-4 border-b border-[var(--border-subtle)]">
           <div className="flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-[var(--aqua-primary)]" />
-            <h2 className="text-lg font-bold text-[var(--text-primary)]">TOKEN AGGREGATOR</h2>
+            <h2 className="text-lg font-bold text-[var(--text-primary)]">Loading tokens...</h2>
+          </div>
+        </div>
+        <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 p-4">
+          {[...Array(12)].map((_, i) => (
+            <div key={i} className="h-[160px] skeleton rounded-lg" />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header with Stats */}
+      <div className="p-3 border-b border-[var(--border-subtle)] flex-shrink-0">
+        {/* Top Bar */}
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
             <span className="text-xs bg-[var(--green)]/20 text-[var(--green)] px-2 py-0.5 rounded flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />
               LIVE
             </span>
+            <span className="text-sm font-bold text-[var(--text-primary)]">{filteredTokens.length} tokens</span>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-xs">
-              <Clock className="w-3 h-3 text-[var(--text-muted)]" />
-              <span className="text-[var(--aqua-primary)] font-mono tabular-nums">{countdown}s</span>
+          <div className="flex items-center gap-2">
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-0.5 bg-[var(--bg-secondary)] rounded-lg p-0.5">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={cn(
+                  "p-1.5 rounded text-xs transition-all",
+                  viewMode === 'grid' ? "bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]" : "text-[var(--text-muted)]"
+                )}
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setViewMode('compact')}
+                className={cn(
+                  "p-1.5 rounded text-xs transition-all",
+                  viewMode === 'compact' ? "bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]" : "text-[var(--text-muted)]"
+                )}
+              >
+                <Activity className="w-3.5 h-3.5" />
+              </button>
             </div>
+            <span className="text-[10px] text-[var(--text-dim)] tabular-nums">{countdown}s</span>
             <button
-              onClick={fetchTokens}
-              disabled={isLoading}
-              className="p-1.5 rounded bg-[var(--bg-secondary)] hover:bg-[var(--bg-elevated)] transition-colors"
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="p-1.5 rounded bg-[var(--bg-secondary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-50"
             >
-              <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isLoading && "animate-spin")} />
+              <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isRefreshing && "animate-spin")} />
             </button>
           </div>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-5 gap-2 mb-4">
+        {/* Stats Row */}
+        <div className="grid grid-cols-6 gap-2 mb-3">
           <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-            <div className="text-xs text-[var(--text-muted)]">Tokens</div>
-            <div className="text-lg font-bold text-[var(--text-primary)]">{stats.totalTokens}</div>
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><Target className="w-3 h-3" /> Total</div>
+            <div className="text-sm font-bold text-[var(--text-primary)]">{stats.totalTokens}</div>
           </div>
           <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-            <div className="text-xs text-[var(--text-muted)]">New (1h)</div>
-            <div className="text-lg font-bold text-[var(--aqua-primary)]">{stats.newTokens1h}</div>
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><Sparkles className="w-3 h-3" /> New 1h</div>
+            <div className="text-sm font-bold text-[var(--aqua-primary)]">{stats.newTokens1h}</div>
           </div>
           <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-            <div className="text-xs text-[var(--text-muted)]">KOL Signals</div>
-            <div className="text-lg font-bold text-yellow-400">{stats.kolBuySignals}</div>
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><Flame className="w-3 h-3" /> Hot</div>
+            <div className="text-sm font-bold text-orange-400">{stats.highMomentum}</div>
           </div>
           <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-            <div className="text-xs text-[var(--text-muted)]">High Mom.</div>
-            <div className="text-lg font-bold text-[var(--green)]">{stats.highMomentum}</div>
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><TrendingUp className="w-3 h-3" /> Green</div>
+            <div className="text-sm font-bold text-[var(--green)]">{stats.positiveTokens}</div>
           </div>
           <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-            <div className="text-xs text-[var(--text-muted)]">24h Vol</div>
-            <div className="text-lg font-bold text-[var(--text-primary)]">
-              ${(stats.totalVolume / 1000000).toFixed(1)}M
-            </div>
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><DollarSign className="w-3 h-3" /> Vol</div>
+            <div className="text-sm font-bold text-[var(--text-primary)]">${(stats.totalVolume / 1000000).toFixed(1)}M</div>
+          </div>
+          <div className="p-2 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
+            <div className="text-[9px] text-[var(--text-muted)] flex items-center gap-1"><Droplets className="w-3 h-3" /> Avg Liq</div>
+            <div className="text-sm font-bold text-[var(--text-primary)]">{formatCompact(stats.avgLiquidity)}</div>
           </div>
         </div>
 
-        {/* Search and Filters */}
+        {/* Search and Filter Row */}
         <div className="flex gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
@@ -297,25 +380,56 @@ export function TokenAggregator() {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, symbol, or address..."
+              placeholder="Search tokens..."
               className="w-full pl-9 pr-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-[var(--aqua-primary)]/50"
             />
           </div>
+          
+          {/* Quick Sort Buttons */}
+          <div className="flex items-center gap-1">
+            {[
+              { key: 'trending', label: 'Hot', icon: Flame },
+              { key: 'volume', label: 'Vol', icon: DollarSign },
+              { key: 'priceChange', label: '%', icon: TrendingUp },
+              { key: 'new', label: 'New', icon: Sparkles },
+            ].map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setFilters(f => ({ 
+                  ...f, 
+                  sortBy: key as AggregatorFilters['sortBy'],
+                  sortDir: f.sortBy === key ? (f.sortDir === 'desc' ? 'asc' : 'desc') : 'desc'
+                }))}
+                className={cn(
+                  "flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium transition-all",
+                  filters.sortBy === key 
+                    ? "bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)]"
+                    : "bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                <Icon className="w-3 h-3" />
+                {label}
+                {filters.sortBy === key && (
+                  <ArrowUpDown className="w-2.5 h-2.5" />
+                )}
+              </button>
+            ))}
+          </div>
+          
           <button
             onClick={() => setShowFilters(!showFilters)}
             className={cn(
-              "flex items-center gap-2 px-3 py-2 rounded-lg border transition-colors",
+              "flex items-center gap-1.5 px-3 py-2 rounded-lg border transition-colors",
               showFilters 
                 ? "bg-[var(--aqua-primary)]/20 border-[var(--aqua-primary)]/50 text-[var(--aqua-primary)]"
                 : "bg-[var(--bg-secondary)] border-[var(--border-subtle)] text-[var(--text-muted)]"
             )}
           >
             <Filter className="w-4 h-4" />
-            Filters
           </button>
         </div>
 
-        {/* Filter Panel */}
+        {/* Advanced Filters */}
         <AnimatePresence>
           {showFilters && (
             <motion.div
@@ -324,106 +438,77 @@ export function TokenAggregator() {
               exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden"
             >
-              <div className="pt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div>
-                  <label className="text-xs text-[var(--text-muted)] mb-1 block">Min Liquidity</label>
-                  <select
-                    value={filters.minLiquidity}
-                    onChange={(e) => setFilters(f => ({ ...f, minLiquidity: parseInt(e.target.value) }))}
-                    className="w-full px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-sm text-[var(--text-primary)]"
-                  >
-                    <option value={0}>Any</option>
-                    <option value={1000}>$1K+</option>
-                    <option value={5000}>$5K+</option>
-                    <option value={10000}>$10K+</option>
-                    <option value={50000}>$50K+</option>
-                    <option value={100000}>$100K+</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--text-muted)] mb-1 block">Min Volume</label>
-                  <select
-                    value={filters.minVolume}
-                    onChange={(e) => setFilters(f => ({ ...f, minVolume: parseInt(e.target.value) }))}
-                    className="w-full px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-sm text-[var(--text-primary)]"
-                  >
-                    <option value={0}>Any</option>
-                    <option value={1000}>$1K+</option>
-                    <option value={10000}>$10K+</option>
-                    <option value={50000}>$50K+</option>
-                    <option value={100000}>$100K+</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--text-muted)] mb-1 block">Max Age</label>
-                  <select
-                    value={filters.maxAge}
-                    onChange={(e) => setFilters(f => ({ ...f, maxAge: parseInt(e.target.value) }))}
-                    className="w-full px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-sm text-[var(--text-primary)]"
-                  >
-                    <option value={1}>1 hour</option>
-                    <option value={6}>6 hours</option>
-                    <option value={24}>24 hours</option>
-                    <option value={72}>3 days</option>
-                    <option value={168}>7 days</option>
-                    <option value={720}>30 days</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-[var(--text-muted)] mb-1 block">Sort By</label>
-                  <select
-                    value={filters.sortBy}
-                    onChange={(e) => setFilters(f => ({ ...f, sortBy: e.target.value as AggregatorFilters['sortBy'] }))}
-                    className="w-full px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-sm text-[var(--text-primary)]"
-                  >
-                    <option value="trending">Trending Score</option>
-                    <option value="volume">Volume</option>
-                    <option value="priceChange">Price Change</option>
-                    <option value="kolBuyers">KOL Buyers</option>
-                    <option value="smartMoney">Smart Money</option>
-                    <option value="new">Newest</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 mt-3">
-                <label className="flex items-center gap-2 text-xs text-[var(--text-muted)] cursor-pointer">
+              <div className="pt-3 flex flex-wrap gap-2">
+                <select
+                  value={filters.minLiquidity}
+                  onChange={(e) => setFilters(f => ({ ...f, minLiquidity: parseInt(e.target.value) }))}
+                  className="px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-xs text-[var(--text-primary)]"
+                >
+                  <option value={0}>Any Liquidity</option>
+                  <option value={5000}>$5K+ Liq</option>
+                  <option value={10000}>$10K+ Liq</option>
+                  <option value={50000}>$50K+ Liq</option>
+                  <option value={100000}>$100K+ Liq</option>
+                </select>
+                <select
+                  value={filters.minVolume}
+                  onChange={(e) => setFilters(f => ({ ...f, minVolume: parseInt(e.target.value) }))}
+                  className="px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-xs text-[var(--text-primary)]"
+                >
+                  <option value={0}>Any Volume</option>
+                  <option value={10000}>$10K+ Vol</option>
+                  <option value={50000}>$50K+ Vol</option>
+                  <option value={100000}>$100K+ Vol</option>
+                </select>
+                <select
+                  value={filters.minMarketCap}
+                  onChange={(e) => setFilters(f => ({ ...f, minMarketCap: parseInt(e.target.value) }))}
+                  className="px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-xs text-[var(--text-primary)]"
+                >
+                  <option value={0}>Any MC</option>
+                  <option value={10000}>$10K+ MC</option>
+                  <option value={100000}>$100K+ MC</option>
+                  <option value={1000000}>$1M+ MC</option>
+                </select>
+                <select
+                  value={filters.maxAge}
+                  onChange={(e) => setFilters(f => ({ ...f, maxAge: parseInt(e.target.value) }))}
+                  className="px-2 py-1.5 bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded text-xs text-[var(--text-primary)]"
+                >
+                  <option value={6}>6 hours</option>
+                  <option value={24}>24 hours</option>
+                  <option value={72}>3 days</option>
+                  <option value={168}>7 days</option>
+                  <option value={720}>30 days</option>
+                </select>
+                <label className="flex items-center gap-1.5 text-[10px] text-[var(--text-muted)] cursor-pointer px-2">
                   <input
                     type="checkbox"
-                    checked={filters.showKolBuys}
-                    onChange={(e) => setFilters(f => ({ ...f, showKolBuys: e.target.checked }))}
-                    className="rounded"
-                  />
-                  KOL Buys Only
-                </label>
-                <label className="flex items-center gap-2 text-xs text-[var(--text-muted)] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.hideRugs}
-                    onChange={(e) => setFilters(f => ({ ...f, hideRugs: e.target.checked }))}
-                    className="rounded"
+                    checked={filters.hideHighRisk}
+                    onChange={(e) => setFilters(f => ({ ...f, hideHighRisk: e.target.checked }))}
+                    className="rounded w-3 h-3"
                   />
                   Hide High Risk
                 </label>
+                <button
+                  onClick={() => setFilters(DEFAULT_FILTERS)}
+                  className="px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                >
+                  Reset
+                </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      {/* Token List */}
-      <div className="flex-1 overflow-y-auto">
-        {isLoading && tokens.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <RefreshCw className="w-6 h-6 text-[var(--aqua-primary)] animate-spin" />
-          </div>
-        ) : error ? (
+      {/* Token Grid */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {error ? (
           <div className="flex flex-col items-center justify-center h-full text-[var(--text-muted)]">
             <AlertTriangle className="w-8 h-8 mb-2 text-[var(--red)]" />
             <p>{error}</p>
-            <button
-              onClick={fetchTokens}
-              className="mt-4 px-4 py-2 bg-[var(--aqua-primary)] text-[var(--ocean-deep)] rounded-lg text-sm font-medium"
-            >
+            <button onClick={handleManualRefresh} className="mt-4 px-4 py-2 bg-[var(--aqua-primary)] text-[var(--ocean-deep)] rounded-lg text-sm font-medium">
               Retry
             </button>
           </div>
@@ -433,18 +518,110 @@ export function TokenAggregator() {
             <p>No tokens match your filters</p>
           </div>
         ) : (
-          <div className="divide-y divide-[var(--border-subtle)]">
-            {filteredTokens.map((token, index) => (
-              <TokenRow 
-                key={token.address} 
-                token={token}
-                rank={index + 1}
-                onCopy={copyAddress}
-                isCopied={copiedAddress === token.address}
-                kolBuyers={kolConvergence.get(token.address) || 0}
-                getAgeDisplay={getAgeDisplay}
-              />
-            ))}
+          <div className="space-y-4">
+            <div className={cn(
+              "grid gap-3",
+              viewMode === 'grid' 
+                ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+                : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+            )}>
+              {paginatedTokens.map((token, index) => (
+                <TokenCard
+                  key={token.address}
+                  token={token}
+                  index={index}
+                  viewMode={viewMode}
+                  copiedAddress={copiedAddress}
+                  onCopy={copyAddress}
+                  formatPrice={formatPrice}
+                  formatCompact={formatCompact}
+                  getAgeDisplay={getAgeDisplay}
+                />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-center gap-2 pt-4">
+                <button
+                  onClick={() => handlePageChange(1)}
+                  disabled={currentPage === 1}
+                  className={cn(
+                    "p-2 rounded-lg transition-all",
+                    currentPage === 1 ? "text-white/20" : "text-white/60 hover:bg-white/10"
+                  )}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <ChevronLeft className="w-4 h-4 -ml-2" />
+                </button>
+                <button
+                  onClick={() => handlePageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                    currentPage === 1 ? "bg-white/5 text-white/30" : "bg-white/10 text-white/70 hover:bg-white/20"
+                  )}
+                >
+                  Prev
+                </button>
+                
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                    let pageNum: number
+                    if (totalPages <= 7) {
+                      pageNum = i + 1
+                    } else if (currentPage <= 4) {
+                      pageNum = i + 1
+                    } else if (currentPage >= totalPages - 3) {
+                      pageNum = totalPages - 6 + i
+                    } else {
+                      pageNum = currentPage - 3 + i
+                    }
+                    
+                    return (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={cn(
+                          "w-8 h-8 rounded-lg text-sm font-medium transition-all",
+                          currentPage === pageNum
+                            ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                            : "bg-white/5 text-white/60 hover:bg-white/10"
+                        )}
+                      >
+                        {pageNum}
+                      </button>
+                    )
+                  })}
+                </div>
+                
+                <button
+                  onClick={() => handlePageChange(currentPage + 1)}
+                  disabled={currentPage === totalPages}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                    currentPage === totalPages ? "bg-white/5 text-white/30" : "bg-white/10 text-white/70 hover:bg-white/20"
+                  )}
+                >
+                  Next
+                </button>
+                <button
+                  onClick={() => handlePageChange(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className={cn(
+                    "p-2 rounded-lg transition-all",
+                    currentPage === totalPages ? "text-white/20" : "text-white/60 hover:bg-white/10"
+                  )}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                  <ChevronRight className="w-4 h-4 -ml-2" />
+                </button>
+                
+                <span className="ml-4 text-xs text-white/40">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -466,175 +643,148 @@ export function TokenAggregator() {
   )
 }
 
-// Token Row Component
-function TokenRow({ 
-  token, 
-  rank, 
-  onCopy, 
-  isCopied,
-  kolBuyers,
+// Token Card Component
+function TokenCard({
+  token,
+  index,
+  viewMode,
+  copiedAddress,
+  onCopy,
+  formatPrice,
+  formatCompact,
   getAgeDisplay,
-}: { 
+}: {
   token: TokenData
-  rank: number
-  onCopy: (address: string) => void
-  isCopied: boolean
-  kolBuyers: number
-  getAgeDisplay: (ts: number) => string
+  index: number
+  viewMode: 'grid' | 'compact'
+  copiedAddress: string | null
+  onCopy: (address: string, e: React.MouseEvent) => void
+  formatPrice: (price: number) => string
+  formatCompact: (num: number) => string
+  getAgeDisplay: (timestamp: number) => string
 }) {
   const isPositive = token.priceChange24h >= 0
-  
+  const buyRatio = token.txns24h.buys + token.txns24h.sells > 0 
+    ? (token.txns24h.buys / (token.txns24h.buys + token.txns24h.sells)) * 100 
+    : 50
+  const age = getAgeDisplay(token.pairCreatedAt)
+
   return (
-    <div className="p-3 hover:bg-[var(--bg-secondary)]/50 transition-colors group">
-      <div className="flex items-center gap-3">
-        {/* Rank */}
-        <div className={cn(
-          "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
-          rank === 1 ? "bg-yellow-500/20 text-yellow-500" :
-          rank === 2 ? "bg-gray-400/20 text-gray-400" :
-          rank === 3 ? "bg-amber-600/20 text-amber-600" :
-          "bg-[var(--bg-secondary)] text-[var(--text-muted)]"
-        )}>
-          {rank}
-        </div>
-
-        {/* Logo */}
-        <div className="relative">
-          <Image
-            src={token.logo || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`}
-            alt={token.symbol}
-            width={36}
-            height={36}
-            className="rounded-full bg-[var(--bg-secondary)]"
-            unoptimized
-          />
-          {kolBuyers >= 2 && (
-            <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center">
-              <Crown className="w-2.5 h-2.5 text-[var(--ocean-deep)]" />
-            </div>
-          )}
-        </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-[var(--text-primary)] truncate">{token.symbol}</span>
-            {token.momentumScore && token.momentumScore > 70 && (
-              <Flame className="w-3.5 h-3.5 text-orange-500" />
-            )}
-            {token.riskScore && token.riskScore > 60 && (
-              <AlertTriangle className="w-3.5 h-3.5 text-[var(--red)]" />
-            )}
-            <span className="text-xs text-[var(--text-dim)]">
-              {getAgeDisplay(token.pairCreatedAt)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-            <span className="truncate">{token.name}</span>
-          </div>
-        </div>
-
-        {/* Price & Change */}
-        <div className="text-right">
-          <div className="text-sm font-medium text-[var(--text-primary)]">
-            ${token.price < 0.0001 ? token.price.toExponential(2) : token.price.toFixed(6)}
-          </div>
-          <div className={cn(
-            "text-xs flex items-center justify-end gap-0.5",
-            isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
-          )}>
-            {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            {Math.abs(token.priceChange24h).toFixed(1)}%
-          </div>
-        </div>
-
-        {/* Metrics */}
-        <div className="hidden md:flex items-center gap-4 text-xs text-[var(--text-muted)]">
-          <div className="text-center">
-            <div className="text-[var(--text-dim)]">Vol</div>
-            <div className="text-[var(--text-primary)] font-medium">
-              ${token.volume24h >= 1000000 
-                ? `${(token.volume24h / 1000000).toFixed(1)}M`
-                : `${(token.volume24h / 1000).toFixed(0)}K`
-              }
-            </div>
-          </div>
-          <div className="text-center">
-            <div className="text-[var(--text-dim)]">Liq</div>
-            <div className="text-[var(--text-primary)] font-medium">
-              ${token.liquidity >= 1000000 
-                ? `${(token.liquidity / 1000000).toFixed(1)}M`
-                : `${(token.liquidity / 1000).toFixed(0)}K`
-              }
-            </div>
-          </div>
-          <div className="text-center">
-            <div className="text-[var(--text-dim)]">Txns</div>
-            <div className="text-[var(--text-primary)] font-medium">
-              {token.txns24h.buys + token.txns24h.sells}
-            </div>
-          </div>
-          {kolBuyers > 0 && (
-            <div className="text-center">
-              <div className="text-[var(--text-dim)]">KOLs</div>
-              <div className="text-yellow-500 font-bold">{kolBuyers}</div>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button
-            onClick={() => onCopy(token.address)}
-            className="p-1.5 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-dim)] hover:text-[var(--text-primary)]"
-            title="Copy address"
-          >
-            <Copy className="w-3.5 h-3.5" />
-          </button>
-          <a
-            href={`https://dexscreener.com/solana/${token.address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="p-1.5 rounded hover:bg-[var(--bg-elevated)] text-[var(--text-dim)] hover:text-[var(--text-primary)]"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-          </a>
-        </div>
-      </div>
-
-      {/* Momentum Bar */}
-      {token.momentumScore !== undefined && (
-        <div className="mt-2 flex items-center gap-2">
-          <span className="text-xs text-[var(--text-dim)]">Momentum</span>
-          <div className="flex-1 h-1 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
-            <div 
-              className={cn(
-                "h-full rounded-full transition-all",
-                token.momentumScore > 70 ? "bg-[var(--green)]" :
-                token.momentumScore > 40 ? "bg-yellow-500" :
-                "bg-[var(--red)]"
+    <motion.div
+      initial={{ opacity: 0, y: 5 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.15, delay: Math.min(index * 0.015, 0.2) }}
+    >
+      <Link href={`/token/${token.address}`}>
+        <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all">
+          {/* Horizontal layout matching Aquarius */}
+          <div className="flex gap-3 p-3">
+            {/* Token Image */}
+            <div className="relative w-16 h-16 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
+              <Image
+                src={token.logo || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.address}.png`}
+                alt={token.symbol}
+                fill
+                className="object-cover"
+                unoptimized
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = 
+                    `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=64`
+                }}
+              />
+              {token.momentumScore && token.momentumScore > 70 && (
+                <div className="absolute top-0.5 right-0.5 w-4 h-4 bg-orange-500 rounded-full flex items-center justify-center">
+                  <Flame className="w-2.5 h-2.5 text-white" />
+                </div>
               )}
-              style={{ width: `${Math.min(100, token.momentumScore)}%` }}
-            />
+            </div>
+
+            {/* Token Info */}
+            <div className="flex-1 min-w-0 flex flex-col justify-between">
+              {/* Top: Name + Badges */}
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">{token.symbol}</h3>
+                  {token.riskScore && token.riskScore > 60 && (
+                    <Shield className="w-3 h-3 text-yellow-500 flex-shrink-0" title="Medium Risk" />
+                  )}
+                  {age && (
+                    <span className="flex items-center gap-0.5 px-1 py-0.5 text-[8px] font-medium rounded bg-[var(--bg-secondary)] text-[var(--text-dim)] flex-shrink-0">
+                      {age}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-[var(--text-muted)] truncate">{token.name}</p>
+              </div>
+
+              {/* Middle: Price + Change */}
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-[var(--text-primary)]">{formatPrice(token.price)}</span>
+                <span className={cn(
+                  "flex items-center gap-0.5 text-xs font-semibold",
+                  isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
+                )}>
+                  {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {isPositive ? '+' : ''}{token.priceChange24h?.toFixed(1) || '0'}%
+                </span>
+              </div>
+
+              {/* Bottom: MC + Liq + Progress */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-[var(--text-dim)]">MC</span>
+                  <span className="text-[11px] font-bold text-[var(--aqua-primary)]">{formatCompact(token.marketCap)}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] text-[var(--text-dim)]">Liq</span>
+                  <span className="text-[11px] font-medium text-[var(--text-muted)]">{formatCompact(token.liquidity)}</span>
+                </div>
+                
+                {/* Buy/Sell Bar */}
+                <div className="flex-1 h-1 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                  <div className="h-full bg-[var(--green)]" style={{ width: `${buyRatio}%` }} />
+                  <div className="h-full bg-[var(--red)]" style={{ width: `${100 - buyRatio}%` }} />
+                </div>
+              </div>
+            </div>
           </div>
-          <span className="text-xs font-medium text-[var(--text-muted)]">{token.momentumScore}</span>
+
+          {/* Actions */}
+          <div className="px-3 pb-2 flex gap-1">
+            <button
+              onClick={(e) => onCopy(token.address, e)}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium transition-all",
+                copiedAddress === token.address
+                  ? "bg-[var(--green)] text-[var(--ocean-deep)]"
+                  : "bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"
+              )}
+            >
+              <Copy className="w-3 h-3" />
+              {copiedAddress === token.address ? '✓' : 'Copy'}
+            </button>
+            <a
+              href={`https://dexscreener.com/solana/${token.address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
+            >
+              Chart <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
         </div>
-      )}
-    </div>
+      </Link>
+    </motion.div>
   )
 }
 
 // ============== ANALYTICS ALGORITHMS ==============
 
 function calculateSmartMoneyFlow(token: TokenData): number {
-  // Algorithm: Analyze buy/sell ratio and volume concentration
   const buyRatio = token.txns24h.buys / Math.max(token.txns24h.buys + token.txns24h.sells, 1)
   const volumeToMcap = token.marketCap > 0 ? token.volume24h / token.marketCap : 0
   
-  // Higher smart money score for:
-  // - More buys than sells
-  // - High volume relative to market cap
-  // - Good liquidity
   const score = (
     buyRatio * 40 +
     Math.min(volumeToMcap * 100, 30) +
@@ -647,32 +797,27 @@ function calculateSmartMoneyFlow(token: TokenData): number {
 function calculateRiskScore(token: TokenData): number {
   let risk = 0
   
-  // Low liquidity = high risk
   if (token.liquidity < 1000) risk += 40
   else if (token.liquidity < 5000) risk += 25
   else if (token.liquidity < 10000) risk += 10
   
-  // Very new = higher risk
   const ageHours = (Date.now() - token.pairCreatedAt) / 3600000
   if (ageHours < 1) risk += 30
   else if (ageHours < 6) risk += 20
   else if (ageHours < 24) risk += 10
   
-  // Sell pressure
   const sellRatio = token.txns24h.sells / Math.max(token.txns24h.buys + token.txns24h.sells, 1)
   if (sellRatio > 0.7) risk += 20
   else if (sellRatio > 0.6) risk += 10
   
-  // Very low volume = suspicious
   if (token.volume24h < 1000) risk += 15
   
   return Math.min(100, risk)
 }
 
 function calculateMomentumScore(token: TokenData): number {
-  let score = 50 // Neutral base
+  let score = 50
   
-  // Price momentum
   if (token.priceChange1h > 20) score += 25
   else if (token.priceChange1h > 10) score += 15
   else if (token.priceChange1h > 5) score += 10
@@ -680,13 +825,11 @@ function calculateMomentumScore(token: TokenData): number {
   else if (token.priceChange1h < -10) score -= 15
   else if (token.priceChange1h < -5) score -= 10
   
-  // Volume momentum (1h vs 24h average)
   const avgHourlyVol = token.volume24h / 24
   if (token.volume1h > avgHourlyVol * 3) score += 20
   else if (token.volume1h > avgHourlyVol * 2) score += 10
   else if (token.volume1h < avgHourlyVol * 0.5) score -= 10
   
-  // Buy pressure
   const buyRatio1h = token.txns1h.buys / Math.max(token.txns1h.buys + token.txns1h.sells, 1)
   if (buyRatio1h > 0.7) score += 15
   else if (buyRatio1h > 0.6) score += 10
@@ -699,18 +842,14 @@ function calculateMomentumScore(token: TokenData): number {
 function calculateTrendingScore(token: TokenData): number {
   let score = 0
   
-  // Volume factor
   score += Math.min((token.volume24h / 100000) * 30, 30)
   score += Math.min((token.volume1h / 10000) * 20, 20)
   
-  // Activity factor
   const totalTxns = token.txns24h.buys + token.txns24h.sells
   score += Math.min(totalTxns / 100, 20)
   
-  // Price change factor
   score += Math.min(Math.abs(token.priceChange24h), 15)
   score += Math.min(Math.abs(token.priceChange1h) * 2, 15)
   
   return Math.round(score)
 }
-
