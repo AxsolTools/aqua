@@ -103,63 +103,96 @@ async function fetchDatabaseTransactions(
 }
 
 /**
- * Fetch transactions from Helius API
- * Note: Uses the correct Helius API endpoint (api.helius.xyz not api-mainnet.helius-rpc.com)
+ * Fetch transactions from Helius using getTransactionsForAddress API
+ * 
+ * CREDIT EFFICIENCY:
+ * - getTransactionsForAddress: 100 credits for up to 100 full transactions (ONE call)
+ * - Old method (getSignaturesForAddress + getTransaction): 10 + (10 × N) = 510+ credits for 50 txs
+ * 
+ * This is 5x more efficient for fetching transaction history!
+ * Requires Developer plan or higher.
  */
 async function fetchHeliusTransactions(
   tokenAddress: string,
   limit: number,
   beforeSignature?: string | null
 ): Promise<Transaction[]> {
-  if (!HELIUS_API_KEY) {
-    // Don't log on every call - key not configured is expected in dev
+  // Build RPC URL - use HELIUS_RPC_URL if available, otherwise construct from API key
+  const rpcUrl = HELIUS_RPC || (HELIUS_API_KEY ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}` : null)
+  
+  if (!rpcUrl) {
     return []
   }
 
   try {
-    // Use correct Helius Enhanced Transactions API endpoint
-    // The URL should be api.helius.xyz/v0 not api-mainnet.helius-rpc.com/v0
-    const url = `https://api.helius.xyz/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}&type=SWAP`
-    
-    const response = await fetch(url, {
+    // Use Helius getTransactionsForAddress - most efficient method!
+    // 100 credits = 100 full transactions in ONE call
+    // vs old method: 10 credits (signatures) + 10 credits × N transactions = 510+ credits
+    const response = await fetch(rpcUrl, {
+      method: "POST",
       headers: {
-        "Accept": "application/json",
-        "User-Agent": "AQUA-Launchpad/1.0"
+        "Content-Type": "application/json",
       },
-      signal: AbortSignal.timeout(5000)
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "tx-history",
+        method: "getTransactionsForAddress",
+        params: [
+          tokenAddress,
+          {
+            transactionDetails: "full", // Get complete transaction data
+            sortOrder: "desc", // Newest first
+            limit: Math.min(limit, 100), // Max 100 with full details
+            ...(beforeSignature ? { 
+              filters: { 
+                before: { signature: beforeSignature } 
+              } 
+            } : {}),
+            // Only get successful transactions
+            filters: {
+              status: "succeeded"
+            }
+          }
+        ]
+      }),
+      signal: AbortSignal.timeout(15000)
     })
-    
-    // 401 = invalid API key - log once and return empty
-    if (response.status === 401) {
-      console.warn("[TOKEN-TRANSACTIONS] Helius API key invalid or expired")
-      return []
-    }
-    
+
     if (!response.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Helius API error:", response.status)
-      return []
+      // If getTransactionsForAddress fails (e.g., older Helius plan), fall back to standard RPC
+      console.warn("[TOKEN-TRANSACTIONS] getTransactionsForAddress error:", response.status, "- falling back to standard RPC")
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
     }
 
     const data = await response.json()
     
-    const transactions = Array.isArray(data) ? data : (data?.transactions || [])
+    // Check for RPC error (method not found on older plans)
+    if (data.error) {
+      console.warn("[TOKEN-TRANSACTIONS] Helius RPC error:", data.error.message, "- falling back to standard RPC")
+      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
+    }
+    
+    const txs = data.result?.data || []
 
-    return transactions.slice(0, limit).map((tx: HelixTransaction) => {
-      // Determine if buy or sell based on token movements
-      const isBuy = isTokenBuy(tx, tokenAddress)
-      
-      return {
-        signature: tx.signature,
-        type: isBuy ? "buy" : "sell",
-        walletAddress: tx.feePayer || tx.signer || "",
-        amountSol: extractSolAmount(tx),
-        amountTokens: extractTokenAmount(tx, tokenAddress),
-        timestamp: tx.timestamp * 1000,
-        status: "confirmed" as const,
-      }
-    })
+    return txs
+      .slice(0, limit)
+      .map((tx: HeliusFullTransaction) => {
+        const isBuy = isTokenBuyHelius(tx, tokenAddress)
+        const solAmount = extractSolAmountHelius(tx)
+        const tokenAmount = extractTokenAmountHelius(tx, tokenAddress)
+        
+        return {
+          signature: tx.signature || "",
+          type: isBuy ? "buy" : "sell",
+          walletAddress: tx.feePayer || "",
+          amountSol: solAmount,
+          amountTokens: tokenAmount,
+          timestamp: (tx.blockTime || 0) * 1000,
+          status: "confirmed" as const,
+        }
+      })
+      .filter((tx: Transaction) => tx.amountSol > 0 || tx.amountTokens > 0)
   } catch (error) {
-    // Don't spam console on timeout/network errors
     if (error instanceof Error && error.name !== 'AbortError') {
       console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
     }
@@ -167,57 +200,285 @@ async function fetchHeliusTransactions(
   }
 }
 
-interface HelixTransaction {
+/**
+ * Fallback to standard RPC methods if getTransactionsForAddress is not available
+ * Uses getSignaturesForAddress (10 credits) + individual getTransaction calls (10 credits each)
+ * Less efficient but works on all Helius plans
+ */
+async function fetchHeliusTransactionsFallback(
+  tokenAddress: string,
+  limit: number,
+  beforeSignature?: string | null
+): Promise<Transaction[]> {
+  const rpcUrl = HELIUS_RPC || (HELIUS_API_KEY ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}` : null)
+  
+  if (!rpcUrl) return []
+
+  try {
+    // Get signatures first (10 credits)
+    const signaturesResponse = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "sigs",
+        method: "getSignaturesForAddress",
+        params: [
+          tokenAddress,
+          { limit: Math.min(limit, 50), before: beforeSignature || undefined }
+        ]
+      }),
+      signal: AbortSignal.timeout(8000)
+    })
+
+    if (!signaturesResponse.ok) return []
+
+    const signaturesData = await signaturesResponse.json()
+    const signatures = signaturesData.result || []
+    
+    if (signatures.length === 0) return []
+
+    // Batch get transactions (10 credits each, but necessary fallback)
+    const txResponse = await fetch(rpcUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "txs",
+        method: "getMultipleTransactions", // Batch call - more efficient
+        params: [
+          signatures.slice(0, 20).map((s: { signature: string }) => s.signature), // Limit to 20 to save credits
+          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 }
+        ]
+      }),
+      signal: AbortSignal.timeout(10000)
+    })
+
+    if (!txResponse.ok) return []
+
+    const txData = await txResponse.json()
+    const parsedTxs = txData.result || []
+
+    return parsedTxs
+      .filter((tx: ParsedTransaction | null) => tx !== null)
+      .map((tx: ParsedTransaction) => {
+        const isBuy = isTokenBuyParsed(tx, tokenAddress)
+        const solAmount = extractSolAmountParsed(tx)
+        const tokenAmount = extractTokenAmountParsed(tx, tokenAddress)
+        
+        return {
+          signature: tx.transaction?.signatures?.[0] || "",
+          type: isBuy ? "buy" : "sell",
+          walletAddress: tx.transaction?.message?.accountKeys?.[0]?.pubkey || "",
+          amountSol: solAmount,
+          amountTokens: tokenAmount,
+          timestamp: (tx.blockTime || 0) * 1000,
+          status: "confirmed" as const,
+        }
+      })
+      .filter((tx: Transaction) => tx.amountSol > 0 || tx.amountTokens > 0)
+  } catch (error) {
+    if (error instanceof Error && error.name !== 'AbortError') {
+      console.error("[TOKEN-TRANSACTIONS] Fallback fetch error:", error)
+    }
+    return []
+  }
+}
+
+// Helius getTransactionsForAddress response types
+interface HeliusFullTransaction {
   signature: string
-  timestamp: number
+  blockTime?: number
+  slot?: number
   feePayer?: string
-  signer?: string
+  source?: string
   type?: string
+  nativeTransfers?: Array<{
+    amount: number
+    fromUserAccount: string
+    toUserAccount: string
+  }>
   tokenTransfers?: Array<{
     mint: string
     tokenAmount: number
-    fromUserAccount?: string
-    toUserAccount?: string
+    fromUserAccount: string
+    toUserAccount: string
   }>
-  nativeTransfers?: Array<{
-    amount: number
-    fromUserAccount?: string
-    toUserAccount?: string
+  accountData?: Array<{
+    account: string
+    nativeBalanceChange: number
+    tokenBalanceChanges: Array<{
+      mint: string
+      rawTokenAmount: { tokenAmount: string; decimals: number }
+      userAccount: string
+    }>
   }>
 }
 
 /**
- * Determine if a transaction is a buy (receiving tokens)
+ * Determine if transaction is a buy using Helius enhanced format
  */
-function isTokenBuy(tx: HelixTransaction, tokenAddress: string): boolean {
-  if (!tx.tokenTransfers) return false
+function isTokenBuyHelius(tx: HeliusFullTransaction, tokenAddress: string): boolean {
+  // Check token transfers
+  if (tx.tokenTransfers) {
+    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
+    if (tokenTransfer) {
+      // If tokens go TO the fee payer, it's a buy
+      return tokenTransfer.toUserAccount === tx.feePayer
+    }
+  }
   
-  const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
-  if (!tokenTransfer) return false
+  // Check account data for balance changes
+  if (tx.accountData) {
+    const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
+    if (feePayerData?.tokenBalanceChanges) {
+      const tokenChange = feePayerData.tokenBalanceChanges.find(t => t.mint === tokenAddress)
+      if (tokenChange) {
+        return parseFloat(tokenChange.rawTokenAmount.tokenAmount) > 0
+      }
+    }
+  }
   
-  // If tokens are going TO the fee payer, it's a buy
-  return tokenTransfer.toUserAccount === tx.feePayer
+  return false
 }
 
 /**
- * Extract SOL amount from transaction
+ * Extract SOL amount from Helius enhanced format
  */
-function extractSolAmount(tx: HelixTransaction): number {
-  if (!tx.nativeTransfers || tx.nativeTransfers.length === 0) return 0
+function extractSolAmountHelius(tx: HeliusFullTransaction): number {
+  if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
+    // Sum absolute SOL transfers
+    const total = tx.nativeTransfers.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
+    return total / 1e9
+  }
   
-  // Sum all SOL transfers
-  const totalLamports = tx.nativeTransfers.reduce((sum, t) => sum + (t.amount || 0), 0)
-  return totalLamports / 1e9 // Convert lamports to SOL
+  // Fallback to account data
+  if (tx.accountData) {
+    const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
+    if (feePayerData) {
+      return Math.abs(feePayerData.nativeBalanceChange || 0) / 1e9
+    }
+  }
+  
+  return 0
 }
 
 /**
- * Extract token amount from transaction
+ * Extract token amount from Helius enhanced format
  */
-function extractTokenAmount(tx: HelixTransaction, tokenAddress: string): number {
-  if (!tx.tokenTransfers) return 0
+function extractTokenAmountHelius(tx: HeliusFullTransaction, tokenAddress: string): number {
+  if (tx.tokenTransfers) {
+    const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
+    if (tokenTransfer) {
+      return Math.abs(tokenTransfer.tokenAmount || 0)
+    }
+  }
   
-  const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
-  return tokenTransfer?.tokenAmount || 0
+  if (tx.accountData) {
+    for (const account of tx.accountData) {
+      if (account.tokenBalanceChanges) {
+        const tokenChange = account.tokenBalanceChanges.find(t => t.mint === tokenAddress)
+        if (tokenChange) {
+          return Math.abs(parseFloat(tokenChange.rawTokenAmount.tokenAmount))
+        }
+      }
+    }
+  }
+  
+  return 0
+}
+
+interface ParsedTransaction {
+  blockTime?: number
+  transaction?: {
+    signatures?: string[]
+    message?: {
+      accountKeys?: Array<{ pubkey: string; signer?: boolean; writable?: boolean }>
+      instructions?: Array<{
+        program?: string
+        programId?: string
+        parsed?: {
+          type?: string
+          info?: {
+            source?: string
+            destination?: string
+            amount?: string
+            lamports?: number
+            mint?: string
+            tokenAmount?: { amount: string; decimals: number; uiAmount: number }
+          }
+        }
+      }>
+    }
+  }
+  meta?: {
+    preBalances?: number[]
+    postBalances?: number[]
+    preTokenBalances?: Array<{
+      mint: string
+      owner: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number }
+    }>
+    postTokenBalances?: Array<{
+      mint: string
+      owner: string
+      uiTokenAmount: { amount: string; decimals: number; uiAmount: number }
+    }>
+  }
+}
+
+/**
+ * Determine if a parsed transaction is a buy
+ */
+function isTokenBuyParsed(tx: ParsedTransaction, tokenAddress: string): boolean {
+  const preBalances = tx.meta?.preTokenBalances || []
+  const postBalances = tx.meta?.postTokenBalances || []
+  const signer = tx.transaction?.message?.accountKeys?.[0]?.pubkey
+  
+  if (!signer) return false
+  
+  // Find token balance changes for the signer
+  const preBal = preBalances.find(b => b.mint === tokenAddress && b.owner === signer)
+  const postBal = postBalances.find(b => b.mint === tokenAddress && b.owner === signer)
+  
+  const preAmount = preBal ? parseFloat(preBal.uiTokenAmount.amount) : 0
+  const postAmount = postBal ? parseFloat(postBal.uiTokenAmount.amount) : 0
+  
+  // If signer's token balance increased, it's a buy
+  return postAmount > preAmount
+}
+
+/**
+ * Extract SOL amount from parsed transaction
+ */
+function extractSolAmountParsed(tx: ParsedTransaction): number {
+  const preBalances = tx.meta?.preBalances || []
+  const postBalances = tx.meta?.postBalances || []
+  
+  if (preBalances.length === 0 || postBalances.length === 0) return 0
+  
+  // First account is typically the fee payer/signer
+  const solChange = Math.abs(preBalances[0] - postBalances[0])
+  return solChange / 1e9 // Convert lamports to SOL
+}
+
+/**
+ * Extract token amount from parsed transaction
+ */
+function extractTokenAmountParsed(tx: ParsedTransaction, tokenAddress: string): number {
+  const preBalances = tx.meta?.preTokenBalances || []
+  const postBalances = tx.meta?.postTokenBalances || []
+  const signer = tx.transaction?.message?.accountKeys?.[0]?.pubkey
+  
+  if (!signer) return 0
+  
+  const preBal = preBalances.find(b => b.mint === tokenAddress && b.owner === signer)
+  const postBal = postBalances.find(b => b.mint === tokenAddress && b.owner === signer)
+  
+  const preAmount = preBal?.uiTokenAmount?.uiAmount || 0
+  const postAmount = postBal?.uiTokenAmount?.uiAmount || 0
+  
+  return Math.abs(postAmount - preAmount)
 }
 
 /**
