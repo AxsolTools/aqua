@@ -1,206 +1,114 @@
 import { NextResponse } from 'next/server'
+import { fetchTrendingAggregated, getSourceHealth, type TokenData } from '@/lib/api/multi-source-feed'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-interface TokenPair {
-  chainId: string
-  dexId: string
-  url: string
-  pairAddress: string
-  baseToken: {
-    address: string
-    name: string
-    symbol: string
-  }
-  priceUsd: string
-  txns: {
-    h24: { buys: number; sells: number }
-  }
-  volume: {
-    h24: number
-    h6: number
-    h1: number
-  }
-  priceChange: {
-    h24: number
-    h6: number
-    h1: number
-  }
-  liquidity: {
-    usd: number
-  }
-  fdv: number
-  marketCap: number
-  pairCreatedAt: number
-  info?: {
-    imageUrl?: string
-  }
-  boosts?: {
-    active: number
-  }
-}
-
-interface FormattedToken {
-  symbol: string
-  name: string
-  address: string
-  price: number
-  priceChange24h: number
-  volume24h: number
-  liquidity: number
-  marketCap: number
-  pairCreatedAt: number
-  logo: string
-  txns24h: { buys: number; sells: number }
-  trendingScore: number
-}
-
-// Cache for rate limiting
-const cache: Map<string, { data: unknown; timestamp: number }> = new Map()
+// Server-side cache
+let trendingCache: { data: TokenData[]; timestamp: number } | null = null
 const CACHE_TTL = 15000 // 15 seconds
 
-function getCached<T>(key: string): T | null {
-  const cached = cache.get(key)
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data as T
-  }
-  return null
-}
-
-function setCache(key: string, data: unknown) {
-  cache.set(key, { data, timestamp: Date.now() })
-}
-
-function formatPair(pair: TokenPair): FormattedToken {
-  // Calculate trending score based on volume, price change, and activity
-  const volumeScore = Math.min((pair.volume?.h24 || 0) / 100000, 100)
-  const changeScore = Math.min(Math.abs(pair.priceChange?.h24 || 0), 100)
-  const activityScore = Math.min(((pair.txns?.h24?.buys || 0) + (pair.txns?.h24?.sells || 0)) / 100, 100)
-  const boostScore = (pair.boosts?.active || 0) * 10
-  const trendingScore = volumeScore + changeScore + activityScore + boostScore
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const limit = Math.min(parseInt(searchParams.get('limit') || '40'), 100)
   
-  return {
-    symbol: pair.baseToken?.symbol || 'UNKNOWN',
-    name: pair.baseToken?.name || 'Unknown Token',
-    address: pair.baseToken?.address || pair.pairAddress,
-    price: Number.parseFloat(pair.priceUsd) || 0,
-    priceChange24h: pair.priceChange?.h24 || 0,
-    volume24h: pair.volume?.h24 || 0,
-    liquidity: pair.liquidity?.usd || 0,
-    marketCap: pair.marketCap || pair.fdv || 0,
-    pairCreatedAt: pair.pairCreatedAt || Date.now(),
-    logo: pair.info?.imageUrl || `https://dd.dexscreener.com/ds-data/tokens/solana/${pair.baseToken?.address}.png`,
-    txns24h: {
-      buys: pair.txns?.h24?.buys || 0,
-      sells: pair.txns?.h24?.sells || 0,
-    },
-    trendingScore,
-  }
-}
-
-async function fetchWithTimeout(url: string, timeout = 8000): Promise<Response> {
-  const controller = new AbortController()
-  const id = setTimeout(() => controller.abort(), timeout)
+  const now = Date.now()
   
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    })
-    clearTimeout(id)
-    return response
-  } catch (error) {
-    clearTimeout(id)
-    throw error
-  }
-}
-
-export async function GET() {
-  const cacheKey = 'trending-tokens'
-  const cached = getCached<FormattedToken[]>(cacheKey)
-  if (cached) {
+  // Return cached data if fresh
+  if (trendingCache && now - trendingCache.timestamp < CACHE_TTL) {
     return NextResponse.json({
       success: true,
-      data: cached,
-      count: cached.length,
+      data: trendingCache.data.slice(0, limit),
+      count: Math.min(trendingCache.data.length, limit),
       cached: true,
+      cacheAge: now - trendingCache.timestamp,
     })
   }
   
   try {
-    const tokens: FormattedToken[] = []
-    const seenAddresses = new Set<string>()
+    const tokens = await fetchTrendingAggregated(Math.max(limit, 50))
     
-    // Fetch top boosted tokens (most promoted = trending indicator)
-    try {
-      const topBoostRes = await fetchWithTimeout('https://api.dexscreener.com/token-boosts/top/v1')
-      if (topBoostRes.ok) {
-        const boostData = await topBoostRes.json()
-        const solanaBoosts = (boostData || [])
-          .filter((t: { chainId: string }) => t.chainId === 'solana')
-          .slice(0, 30)
-        
-        const addresses = solanaBoosts.map((t: { tokenAddress: string }) => t.tokenAddress)
-        if (addresses.length > 0) {
-          const batchRes = await fetchWithTimeout(
-            `https://api.dexscreener.com/tokens/v1/solana/${addresses.join(',')}`
-          )
-          if (batchRes.ok) {
-            const pairsData: TokenPair[] = await batchRes.json()
-            for (const pair of pairsData || []) {
-              if (pair?.baseToken?.address && !seenAddresses.has(pair.baseToken.address)) {
-                seenAddresses.add(pair.baseToken.address)
-                tokens.push(formatPair(pair))
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Top boost fetch error:', e)
-    }
-    
-    // Also fetch high volume Solana pairs
-    try {
-      const searchRes = await fetchWithTimeout('https://api.dexscreener.com/latest/dex/search?q=solana')
-      if (searchRes.ok) {
-        const searchData = await searchRes.json()
-        const highVolumePairs = ((searchData?.pairs || []) as TokenPair[])
-          .filter((p) => p.chainId === 'solana' && !seenAddresses.has(p.baseToken?.address))
-          .filter((p) => (p.volume?.h24 || 0) > 50000) // Min $50k volume
-          .sort((a, b) => (b.volume?.h24 || 0) - (a.volume?.h24 || 0))
-          .slice(0, 20)
-        
-        for (const pair of highVolumePairs) {
-          if (pair?.baseToken?.address && !seenAddresses.has(pair.baseToken.address)) {
-            seenAddresses.add(pair.baseToken.address)
-            tokens.push(formatPair(pair))
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Search fetch error:', e)
-    }
-    
+    // Calculate trending score for each token
+    const scoredTokens = tokens.map(token => ({
+      ...token,
+      trendingScore: calculateTrendingScore(token),
+    }))
+
     // Sort by trending score
-    const trendingTokens = tokens
-      .filter(t => t.marketCap > 0 && t.price > 0)
-      .sort((a, b) => b.trendingScore - a.trendingScore)
-      .slice(0, 40)
+    scoredTokens.sort((a, b) => b.trendingScore - a.trendingScore)
     
-    setCache(cacheKey, trendingTokens)
+    const result = scoredTokens.slice(0, limit)
+    
+    // Update cache
+    trendingCache = {
+      data: scoredTokens,
+      timestamp: now,
+    }
     
     return NextResponse.json({
       success: true,
-      data: trendingTokens,
-      count: trendingTokens.length,
+      data: result,
+      count: result.length,
+      sourceHealth: getSourceHealth(),
     })
   } catch (error) {
     console.error('Error fetching trending tokens:', error)
+    
+    // Return stale cache if available
+    if (trendingCache) {
+      return NextResponse.json({
+        success: true,
+        data: trendingCache.data.slice(0, limit),
+        count: Math.min(trendingCache.data.length, limit),
+        stale: true,
+        cacheAge: now - trendingCache.timestamp,
+      })
+    }
+    
     return NextResponse.json(
       { success: false, error: 'Failed to fetch trending tokens', data: [] },
       { status: 500 }
     )
   }
+}
+
+function calculateTrendingScore(token: TokenData): number {
+  let score = 0
+  
+  // Volume score (up to 100 points)
+  const volumeScore = Math.min((token.volume24h || 0) / 100000, 100)
+  score += volumeScore
+  
+  // 1h volume is more indicative of current trend (up to 50 points)
+  const volume1hScore = Math.min((token.volume1h || 0) / 10000, 50)
+  score += volume1hScore
+  
+  // Price change score (up to 50 points for big movers)
+  const changeScore = Math.min(Math.abs(token.priceChange24h || 0), 50)
+  score += changeScore
+  
+  // 1h change is more relevant for trending (up to 30 points)
+  const change1hScore = Math.min(Math.abs(token.priceChange1h || 0) * 2, 30)
+  score += change1hScore
+  
+  // Activity score (transactions, up to 50 points)
+  const txns24h = (token.txns24h?.buys || 0) + (token.txns24h?.sells || 0)
+  const txns1h = (token.txns1h?.buys || 0) + (token.txns1h?.sells || 0)
+  const activityScore = Math.min(txns24h / 100 + txns1h / 10, 50)
+  score += activityScore
+  
+  // Liquidity factor (prefer tokens with reasonable liquidity)
+  if (token.liquidity >= 10000 && token.liquidity <= 1000000) {
+    score += 20 // Sweet spot
+  } else if (token.liquidity >= 5000) {
+    score += 10
+  }
+  
+  // Recency bonus for new tokens
+  const ageHours = (Date.now() - token.pairCreatedAt) / 3600000
+  if (ageHours < 1) score += 30
+  else if (ageHours < 6) score += 20
+  else if (ageHours < 24) score += 10
+  
+  return Math.round(score)
 }

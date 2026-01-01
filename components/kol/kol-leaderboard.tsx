@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Image from "next/image"
-import { KOL_DATABASE, type KOL, formatUSD } from "@/lib/kol-data"
+import { KOL_DATABASE, type KOL, formatUSD, getKolAvatar } from "@/lib/kol-data"
 import { cn } from "@/lib/utils"
 import {
   Trophy,
@@ -24,7 +24,15 @@ import {
   Target,
   BarChart2,
   Users,
+  RefreshCw,
+  Wifi,
+  WifiOff,
 } from "lucide-react"
+
+interface KOLWithLiveData extends KOL {
+  isLive?: boolean
+  lastFetched?: number
+}
 
 interface Props {
   onSelectKOL: (kol: KOL) => void
@@ -32,7 +40,9 @@ interface Props {
 }
 
 export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
-  const [kols, setKols] = useState<KOL[]>(KOL_DATABASE)
+  const [kols, setKols] = useState<KOLWithLiveData[]>(KOL_DATABASE)
+  const [isLoading, setIsLoading] = useState(false)
+  const [liveDataEnabled, setLiveDataEnabled] = useState(true)
   const [sortBy, setSortBy] = useState<"pnl" | "winRate" | "trades" | "followers" | "roi7d" | "roi30d">("pnl")
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc")
   const [search, setSearch] = useState("")
@@ -41,29 +51,67 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
   const [showOnlyVerified, setShowOnlyVerified] = useState(false)
   const [hideWashTraders, setHideWashTraders] = useState(false)
   const [watchlist, setWatchlist] = useState<Set<string>>(new Set())
-  const [countdown, setCountdown] = useState(300)
+  const [countdown, setCountdown] = useState(60)
   const [copiedWallet, setCopiedWallet] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const perPage = 20
 
+  // Fetch live KOL data from API
+  const fetchLiveData = useCallback(async () => {
+    if (!liveDataEnabled) return
+    
+    setIsLoading(true)
+    try {
+      const res = await fetch('/api/kol/activity?action=list')
+      const data = await res.json()
+      
+      if (data.success && data.data) {
+        // Merge live data with static KOL database
+        const liveKols = data.data
+        const mergedKols = KOL_DATABASE.map(kol => {
+          const liveData = liveKols.find((l: { address?: string; twitter?: string }) => 
+            l.address === kol.wallet || l.twitter === kol.twitter
+          )
+          
+          if (liveData?.stats) {
+            return {
+              ...kol,
+              pnl: liveData.stats.estimatedPnl * 170 || kol.pnl, // Convert SOL to USD estimate
+              totalTrades: liveData.stats.totalTransactions || kol.totalTrades,
+              winRate: liveData.stats.winRate || kol.winRate,
+              lastActive: formatTimeAgo(liveData.stats.lastActive),
+              isLive: true,
+              lastFetched: Date.now(),
+            }
+          }
+          return { ...kol, isLive: false }
+        })
+        
+        setKols(mergedKols)
+      }
+    } catch (error) {
+      console.error('Failed to fetch live KOL data:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [liveDataEnabled])
+
+  // Initial fetch and polling
   useEffect(() => {
+    fetchLiveData()
+    
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          setKols(
-            KOL_DATABASE.map((kol) => ({
-              ...kol,
-              pnl: kol.pnl + (Math.random() - 0.4) * 50000,
-              pnl7d: kol.pnl7d + (Math.random() - 0.4) * 10000,
-            })),
-          )
-          return 300
+          fetchLiveData()
+          return 60
         }
         return prev - 1
       })
     }, 1000)
+    
     return () => clearInterval(timer)
-  }, [])
+  }, [fetchLiveData])
 
   const toggleWatchlist = (id: string) => {
     setWatchlist((prev) => {
@@ -170,12 +218,39 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
               {filteredKols.length} of {KOL_DATABASE.length}
             </span>
           </div>
-          <div className="flex items-center gap-2 text-xs">
-            <Clock className="w-3 h-3 text-[var(--text-muted)]" />
-            <span className="text-[var(--text-muted)]">Refresh in</span>
-            <span className="text-[var(--aqua-primary)] font-mono">
-              {Math.floor(countdown / 60)}:{(countdown % 60).toString().padStart(2, "0")}
-            </span>
+          <div className="flex items-center gap-3">
+            {/* Live indicator */}
+            <button
+              onClick={() => setLiveDataEnabled(!liveDataEnabled)}
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-all",
+                liveDataEnabled 
+                  ? "bg-[var(--green)]/10 text-[var(--green)]" 
+                  : "bg-[var(--bg-secondary)] text-[var(--text-muted)]"
+              )}
+            >
+              {liveDataEnabled ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {liveDataEnabled ? 'Live' : 'Offline'}
+            </button>
+            
+            <div className="flex items-center gap-2 text-xs">
+              <Clock className="w-3 h-3 text-[var(--text-muted)]" />
+              <span className="text-[var(--text-muted)]">Refresh in</span>
+              <span className="text-[var(--aqua-primary)] font-mono tabular-nums">
+                {countdown}s
+              </span>
+            </div>
+            
+            <button
+              onClick={() => {
+                setCountdown(60)
+                fetchLiveData()
+              }}
+              disabled={isLoading}
+              className="p-1.5 rounded bg-[var(--bg-secondary)] hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isLoading && "animate-spin")} />
+            </button>
           </div>
         </div>
 
@@ -307,7 +382,7 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
 
                 <div className="relative">
                   <Image
-                    src={kol.avatar}
+                    src={getKolAvatar(kol.twitter)}
                     alt={kol.name}
                     width={48}
                     height={48}
@@ -326,6 +401,9 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
                       <AlertTriangle className="w-3 h-3 text-white" />
                     </div>
                   )}
+                  {kol.isLive && (
+                    <div className="absolute -bottom-1 -left-1 w-3 h-3 bg-[var(--green)] rounded-full border border-[var(--bg-primary)]" />
+                  )}
                 </div>
 
                 <div className="flex-1 min-w-0">
@@ -340,7 +418,7 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
                   </div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <a
-                      href={`https://twitter.com/${kol.twitter}`}
+                      href={`https://x.com/${kol.twitter}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
@@ -473,3 +551,14 @@ export function KOLLeaderboard({ onSelectKOL, selectedKOL }: Props) {
   )
 }
 
+function formatTimeAgo(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  return `${days}d ago`
+}

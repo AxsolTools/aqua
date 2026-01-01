@@ -12,12 +12,16 @@ interface LiveToken {
   address: string
   price: number
   priceChange24h: number
+  priceChange1h?: number
   volume24h: number
+  volume1h?: number
   liquidity: number
   marketCap: number
   pairCreatedAt: number
   logo: string
   txns24h: { buys: number; sells: number }
+  txns1h?: { buys: number; sells: number }
+  source?: string
 }
 
 interface AllSolanaGridProps {
