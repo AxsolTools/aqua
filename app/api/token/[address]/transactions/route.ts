@@ -102,20 +102,18 @@ async function fetchDatabaseTransactions(
 }
 
 /**
- * Fetch transactions from Helius getTransactionsForAddress RPC method
+ * Fetch transactions using two-step approach (works on ALL Helius plans):
+ * 1. getSignaturesForAddress (standard RPC) - get signatures
+ * 2. POST /v0/transactions (Enhanced API) - parse into rich data
  * 
- * CREDIT COSTS:
- * - getTransactionsForAddress: 100 credits per call (Developer plan+)
- * - Returns full transaction data with filtering and sorting
- * 
- * Docs: https://www.helius.dev/docs/rpc/gettransactionsforaddress
+ * Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
  */
 async function fetchHeliusTransactions(
   tokenAddress: string,
   limit: number,
   beforeSignature?: string | null
 ): Promise<Transaction[]> {
-  if (!HELIUS_API_KEY) {
+  if (!HELIUS_API_KEY || !HELIUS_RPC) {
     console.log("[TOKEN-TRANSACTIONS] No HELIUS_API_KEY configured")
     return []
   }
@@ -123,123 +121,8 @@ async function fetchHeliusTransactions(
   console.log("[TOKEN-TRANSACTIONS] Fetching for token:", tokenAddress.slice(0, 8))
 
   try {
-    // Use getTransactionsForAddress RPC method (Helius Developer plan+)
-    // Docs: https://www.helius.dev/docs/rpc/gettransactionsforaddress
-    const rpcUrl = `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`
-    
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getTransactionsForAddress",
-        params: [
-          tokenAddress,
-          {
-            transactionDetails: "full",
-            encoding: "jsonParsed",
-            maxSupportedTransactionVersion: 0,
-            sortOrder: "desc",
-            limit: Math.min(limit, 100),
-            filters: { status: "succeeded" }
-          }
-        ]
-      }),
-      signal: AbortSignal.timeout(15000)
-    })
-
-    if (!response.ok) {
-      console.warn("[TOKEN-TRANSACTIONS] Helius RPC error:", response.status)
-      // Fall back to standard RPC if enhanced API fails
-      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
-    }
-
-    const data = await response.json()
-    
-    if (data.error) {
-      console.warn("[TOKEN-TRANSACTIONS] RPC error:", data.error.message || data.error)
-      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
-    }
-    
-    const transactions = data.result?.data || []
-    
-    if (!Array.isArray(transactions)) {
-      console.warn("[TOKEN-TRANSACTIONS] Unexpected response format")
-      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
-    }
-    
-    console.log("[TOKEN-TRANSACTIONS] Found", transactions.length, "transactions")
-
-    if (transactions.length === 0) {
-      return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
-    }
-
-    // Map getTransactionsForAddress response to our format
-    // Response format: { slot, blockTime, transaction, meta }
-    const mappedTxs = transactions
-      .slice(0, limit)
-      .map((tx: FullTransactionResponse): Transaction => {
-        const signature = tx.transaction?.signatures?.[0] || ""
-        const blockTime = tx.blockTime || 0
-        const meta = tx.meta
-        const message = tx.transaction?.message
-        
-        // Get fee payer (first account in message)
-        const feePayer = message?.accountKeys?.[0]?.pubkey || ""
-        
-        // Analyze balance changes to determine buy/sell
-        const { isBuy, solAmount, tokenAmount } = analyzeBalanceChanges(
-          meta, 
-          message, 
-          tokenAddress, 
-          feePayer
-        )
-        
-        // Debug log for first few transactions
-        if (transactions.indexOf(tx) < 3) {
-          console.log("[TOKEN-TRANSACTIONS] TX:", signature?.slice(0, 12), 
-            "isBuy:", isBuy,
-            "SOL:", solAmount.toFixed(6),
-            "tokens:", tokenAmount
-          )
-        }
-        
-        return {
-          signature,
-          type: isBuy ? "buy" as const : "sell" as const,
-          walletAddress: feePayer,
-          amountSol: solAmount,
-          amountTokens: tokenAmount,
-          timestamp: blockTime * 1000,
-          status: "confirmed" as const,
-        }
-      })
-      .filter((tx) => tx.signature) // Only include valid txs
-    
-    return mappedTxs
-  } catch (error) {
-    if (error instanceof Error && error.name !== 'AbortError') {
-      console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
-    }
-    return await fetchHeliusTransactionsFallback(tokenAddress, limit, beforeSignature)
-  }
-}
-
-/**
- * Fallback to standard RPC if Enhanced API fails
- */
-async function fetchHeliusTransactionsFallback(
-  tokenAddress: string,
-  limit: number,
-  beforeSignature?: string | null
-): Promise<Transaction[]> {
-  if (!HELIUS_RPC) return []
-
-  console.log("[TOKEN-TRANSACTIONS] Using fallback RPC method")
-
-  try {
-    const response = await fetch(HELIUS_RPC, {
+    // Step 1: Get signatures using standard RPC (works on all plans)
+    const sigResponse = await fetch(HELIUS_RPC, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -249,7 +132,7 @@ async function fetchHeliusTransactionsFallback(
         params: [
           tokenAddress,
           { 
-            limit: Math.min(limit, 100),
+            limit: Math.min(limit, 50),
             ...(beforeSignature ? { before: beforeSignature } : {})
           }
         ]
@@ -257,17 +140,39 @@ async function fetchHeliusTransactionsFallback(
       signal: AbortSignal.timeout(10000)
     })
 
-    if (!response.ok) return []
+    if (!sigResponse.ok) {
+      console.warn("[TOKEN-TRANSACTIONS] getSignaturesForAddress error:", sigResponse.status)
+      return []
+    }
 
-    const data = await response.json()
-    const signatures = data.result || []
+    const sigData = await sigResponse.json()
+    const signatures: SignatureInfo[] = (sigData.result || []).filter((s: SignatureInfo) => s.err === null)
     
-    console.log("[TOKEN-TRANSACTIONS] Fallback found", signatures.length, "signatures")
+    if (signatures.length === 0) {
+      console.log("[TOKEN-TRANSACTIONS] No signatures found")
+      return []
+    }
+    
+    console.log("[TOKEN-TRANSACTIONS] Found", signatures.length, "signatures")
 
-    return signatures
-      .filter((sig: SignatureInfo) => sig.err === null)
-      .slice(0, limit)
-      .map((sig: SignatureInfo) => ({
+    // Step 2: Get enhanced transaction data using POST /v0/transactions
+    // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
+    const enhancedResponse = await fetch(
+      `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${HELIUS_API_KEY}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactions: signatures.map(s => s.signature)
+        }),
+        signal: AbortSignal.timeout(15000)
+      }
+    )
+
+    if (!enhancedResponse.ok) {
+      console.warn("[TOKEN-TRANSACTIONS] Enhanced API error:", enhancedResponse.status)
+      // Return basic data from signatures
+      return signatures.slice(0, limit).map((sig) => ({
         signature: sig.signature,
         type: "unknown" as const,
         walletAddress: "",
@@ -276,152 +181,217 @@ async function fetchHeliusTransactionsFallback(
         timestamp: (sig.blockTime || 0) * 1000,
         status: "confirmed" as const,
       }))
+    }
+
+    const enhancedTxs: EnhancedTransaction[] = await enhancedResponse.json()
+    
+    if (!Array.isArray(enhancedTxs)) {
+      console.warn("[TOKEN-TRANSACTIONS] Unexpected enhanced response format")
+      return signatures.slice(0, limit).map((sig) => ({
+        signature: sig.signature,
+        type: "unknown" as const,
+        walletAddress: "",
+        amountSol: 0,
+        amountTokens: 0,
+        timestamp: (sig.blockTime || 0) * 1000,
+        status: "confirmed" as const,
+      }))
+    }
+
+    console.log("[TOKEN-TRANSACTIONS] Enhanced data for", enhancedTxs.length, "transactions")
+
+    // Map enhanced transactions to our format
+    return enhancedTxs
+      .slice(0, limit)
+      .map((tx): Transaction => {
+        const isBuy = isTokenBuy(tx, tokenAddress)
+        const solAmount = extractSolAmount(tx)
+        const tokenAmount = extractTokenAmount(tx, tokenAddress)
+        
+        // Debug log for first few transactions
+        if (enhancedTxs.indexOf(tx) < 3) {
+          console.log("[TOKEN-TRANSACTIONS] TX:", tx.signature?.slice(0, 12), 
+            "type:", tx.type,
+            "isBuy:", isBuy,
+            "SOL:", solAmount.toFixed(6),
+            "tokens:", tokenAmount
+          )
+        }
+        
+        return {
+          signature: tx.signature || "",
+          type: isBuy ? "buy" as const : "sell" as const,
+          walletAddress: tx.feePayer || "",
+          amountSol: solAmount,
+          amountTokens: tokenAmount,
+          timestamp: (tx.timestamp || 0) * 1000,
+          status: "confirmed" as const,
+        }
+      })
+      .filter((tx) => tx.signature)
   } catch (error) {
-    console.error("[TOKEN-TRANSACTIONS] Fallback error:", error)
+    if (error instanceof Error && error.name !== 'AbortError') {
+      console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
+    }
     return []
   }
 }
 
-// Full transaction response from getTransactionsForAddress
-interface FullTransactionResponse {
-  slot: number
-  blockTime: number | null
-  transaction: {
-    signatures: string[]
-    message: {
-      accountKeys: Array<{ pubkey: string; signer: boolean; writable: boolean }>
-      instructions: Array<{
-        programId: string
-        accounts?: string[]
-        data?: string
-        parsed?: {
-          type: string
-          info: Record<string, unknown>
-        }
-      }>
+// Enhanced Transaction format from Helius POST /v0/transactions API
+interface EnhancedTransaction {
+  signature: string
+  timestamp?: number
+  slot?: number
+  feePayer?: string
+  type?: string
+  description?: string
+  nativeTransfers?: Array<{
+    amount: number
+    fromUserAccount: string
+    toUserAccount: string
+  }>
+  tokenTransfers?: Array<{
+    mint: string
+    tokenAmount: number
+    fromUserAccount: string
+    toUserAccount: string
+  }>
+  accountData?: Array<{
+    account: string
+    nativeBalanceChange: number
+    tokenBalanceChanges?: Array<{
+      mint: string
+      rawTokenAmount: { tokenAmount: string; decimals: number }
+      userAccount: string
+    }>
+  }>
+  events?: {
+    swap?: {
+      nativeInput?: { account: string; amount: number }
+      nativeOutput?: { account: string; amount: number }
+      tokenInputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
+      tokenOutputs?: Array<{ mint: string; rawTokenAmount: { tokenAmount: string; decimals: number } }>
     }
-  }
-  meta: {
-    err: unknown | null
-    fee: number
-    preBalances: number[]
-    postBalances: number[]
-    preTokenBalances?: Array<{
-      accountIndex: number
-      mint: string
-      uiTokenAmount: { amount: string; decimals: number; uiAmount: number | null }
-      owner?: string
-    }>
-    postTokenBalances?: Array<{
-      accountIndex: number
-      mint: string
-      uiTokenAmount: { amount: string; decimals: number; uiAmount: number | null }
-      owner?: string
-    }>
   }
 }
 
 /**
- * Analyze balance changes to determine buy/sell and amounts
+ * Determine if transaction is a buy (tokens going to the fee payer)
  */
-function analyzeBalanceChanges(
-  meta: FullTransactionResponse["meta"],
-  message: FullTransactionResponse["transaction"]["message"],
-  tokenAddress: string,
-  feePayer: string
-): { isBuy: boolean; solAmount: number; tokenAmount: number } {
-  let isBuy = false
-  let solAmount = 0
-  let tokenAmount = 0
-
-  if (!meta || !message) {
-    return { isBuy, solAmount, tokenAmount }
-  }
-
-  // Calculate SOL change for fee payer (index 0)
-  if (meta.preBalances && meta.postBalances && meta.preBalances.length > 0) {
-    const solChange = (meta.postBalances[0] - meta.preBalances[0]) / 1e9
-    // If SOL decreased significantly (more than just fees), they spent SOL = buy
-    // Account for fees (~0.000005 SOL) by checking if change is significant
-    if (solChange < -0.0001) {
-      // Spent SOL = likely buying tokens
-      solAmount = Math.abs(solChange)
-    } else if (solChange > 0.0001) {
-      // Received SOL = likely selling tokens
-      solAmount = solChange
+function isTokenBuy(tx: EnhancedTransaction, tokenAddress: string): boolean {
+  // Check swap events first
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    if (swap.nativeInput && swap.tokenOutputs && swap.tokenOutputs.length > 0) {
+      return true // SOL in, tokens out = buy
+    }
+    if (swap.nativeOutput && swap.tokenInputs && swap.tokenInputs.length > 0) {
+      return false // tokens in, SOL out = sell
     }
   }
 
-  // Check token balance changes for the specific token
-  const preTokens = meta.preTokenBalances || []
-  const postTokens = meta.postTokenBalances || []
-
-  // Find token balance for fee payer
-  for (const post of postTokens) {
-    if (post.mint !== tokenAddress) continue
-    
-    const postAmount = parseFloat(post.uiTokenAmount.amount) / Math.pow(10, post.uiTokenAmount.decimals)
-    
-    // Find matching pre balance
-    const pre = preTokens.find(p => 
-      p.accountIndex === post.accountIndex && p.mint === tokenAddress
-    )
-    const preAmount = pre 
-      ? parseFloat(pre.uiTokenAmount.amount) / Math.pow(10, pre.uiTokenAmount.decimals)
-      : 0
-    
-    const tokenChange = postAmount - preAmount
-    
-    if (tokenChange > 0) {
-      // Received tokens = buy
-      isBuy = true
-      tokenAmount = tokenChange
-    } else if (tokenChange < 0) {
-      // Sent tokens = sell
-      isBuy = false
-      tokenAmount = Math.abs(tokenChange)
+  // Check token transfers
+  if (tx.tokenTransfers) {
+    const transfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
+    if (transfer) {
+      return transfer.toUserAccount === tx.feePayer
     }
-    break
   }
-
-  // If we didn't find token changes, check if fee payer got new token account
-  if (tokenAmount === 0) {
-    for (const post of postTokens) {
-      if (post.mint !== tokenAddress) continue
-      
-      const hasPreBalance = preTokens.some(p => 
-        p.accountIndex === post.accountIndex && p.mint === tokenAddress
-      )
-      
-      if (!hasPreBalance && post.uiTokenAmount.uiAmount && post.uiTokenAmount.uiAmount > 0) {
-        // New token account with balance = buy
-        isBuy = true
-        tokenAmount = post.uiTokenAmount.uiAmount
-        break
+  
+  // Check account data
+  if (tx.accountData) {
+    const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
+    if (feePayerData?.tokenBalanceChanges) {
+      const tokenChange = feePayerData.tokenBalanceChanges.find(t => t.mint === tokenAddress)
+      if (tokenChange) {
+        return parseFloat(tokenChange.rawTokenAmount.tokenAmount) > 0
       }
     }
   }
-
-  // If we found no token amount but significant SOL change, check any token
-  if (tokenAmount === 0 && solAmount > 0) {
-    for (const post of postTokens) {
-      const pre = preTokens.find(p => p.accountIndex === post.accountIndex && p.mint === post.mint)
-      const postAmt = parseFloat(post.uiTokenAmount.amount) / Math.pow(10, post.uiTokenAmount.decimals)
-      const preAmt = pre ? parseFloat(pre.uiTokenAmount.amount) / Math.pow(10, pre.uiTokenAmount.decimals) : 0
-      const change = postAmt - preAmt
-      
-      if (Math.abs(change) > 0) {
-        tokenAmount = Math.abs(change)
-        isBuy = change > 0
-        break
-      }
-    }
-  }
-
-  return { isBuy, solAmount, tokenAmount }
+  
+  return false
 }
 
-// Signature info from getSignaturesForAddress fallback
+/**
+ * Extract SOL amount from transaction
+ */
+function extractSolAmount(tx: EnhancedTransaction): number {
+  // Check swap events
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    if (swap.nativeInput?.amount) return swap.nativeInput.amount / 1e9
+    if (swap.nativeOutput?.amount) return swap.nativeOutput.amount / 1e9
+  }
+
+  // Check native transfers
+  if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
+    let maxAmount = 0
+    for (const transfer of tx.nativeTransfers) {
+      if (transfer.amount > 1_000_000) { // > 0.001 SOL
+        maxAmount = Math.max(maxAmount, transfer.amount)
+      }
+    }
+    if (maxAmount > 0) return maxAmount / 1e9
+  }
+  
+  // Check account data
+  if (tx.accountData) {
+    let maxChange = 0
+    for (const account of tx.accountData) {
+      const change = Math.abs(account.nativeBalanceChange || 0)
+      if (change > 1_000_000) {
+        maxChange = Math.max(maxChange, change)
+      }
+    }
+    if (maxChange > 0) return maxChange / 1e9
+  }
+  
+  return 0
+}
+
+/**
+ * Extract token amount from transaction
+ */
+function extractTokenAmount(tx: EnhancedTransaction, tokenAddress: string): number {
+  // Check swap events
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    if (swap.tokenOutputs) {
+      const out = swap.tokenOutputs.find(t => t.mint === tokenAddress) || swap.tokenOutputs[0]
+      if (out?.rawTokenAmount) {
+        return Math.abs(parseFloat(out.rawTokenAmount.tokenAmount) / Math.pow(10, out.rawTokenAmount.decimals))
+      }
+    }
+    if (swap.tokenInputs) {
+      const inp = swap.tokenInputs.find(t => t.mint === tokenAddress) || swap.tokenInputs[0]
+      if (inp?.rawTokenAmount) {
+        return Math.abs(parseFloat(inp.rawTokenAmount.tokenAmount) / Math.pow(10, inp.rawTokenAmount.decimals))
+      }
+    }
+  }
+
+  // Check token transfers
+  if (tx.tokenTransfers) {
+    const transfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
+    if (transfer?.tokenAmount) return Math.abs(transfer.tokenAmount)
+  }
+  
+  // Check account data
+  if (tx.accountData) {
+    for (const account of tx.accountData) {
+      if (account.tokenBalanceChanges) {
+        const change = account.tokenBalanceChanges.find(t => t.mint === tokenAddress)
+        if (change?.rawTokenAmount) {
+          return Math.abs(parseFloat(change.rawTokenAmount.tokenAmount) / Math.pow(10, change.rawTokenAmount.decimals))
+        }
+      }
+    }
+  }
+  
+  return 0
+}
+
+// Signature info from getSignaturesForAddress
 interface SignatureInfo {
   signature: string
   slot: number
