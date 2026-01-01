@@ -23,16 +23,13 @@ import {
   Wallet, 
   Coins, 
   TrendingUp, 
-  Users, 
   Droplets, 
-  Flame, 
-  Star,
-  Gift,
   ExternalLink,
   Settings,
   Plus,
   BarChart3,
   Activity,
+  Gift,
   X
 } from "lucide-react"
 import { TokenParametersPanel } from "@/components/dashboard/token-parameters-panel"
@@ -40,7 +37,6 @@ import { WaterLevelMeter } from "@/components/metrics/water-level-meter"
 import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
 import { EvaporationTracker } from "@/components/metrics/evaporation-tracker"
 import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
-import { TideHarvestCard } from "@/components/metrics/tide-harvest-card"
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding } = useAuth()
@@ -266,99 +262,87 @@ export default function DashboardPage() {
                 />
               </motion.div>
 
-              {/* Aqua Metrics */}
+              {/* Aqua Metrics - Compact with Inline Animated Elements */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.15 }}
-                className="mb-8"
+                className="mb-6"
               >
                 <FintechCard>
-                  <FintechHeader 
-                    title="Liquidity Health" 
-                    subtitle="Live stats from your active tokens"
-                  />
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                    {/* Water Level - Animated */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Droplets className="w-4 h-4 text-teal-400" />
-                        <span className="text-xs font-medium text-zinc-400">Water Level</span>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-semibold text-zinc-300">Liquidity Health</h3>
+                    <span className="text-[10px] text-zinc-500">Live metrics</span>
+                  </div>
+                  <div className="grid grid-cols-5 gap-3">
+                    {/* Water Level - Compact */}
+                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-teal-400">💧</span>
+                        <span className="text-[10px] text-zinc-400">Level</span>
                       </div>
-                      <WaterLevelMeter 
-                        level={createdTokens[0]?.water_level || 75} 
-                        size="md" 
-                        showLabel={true}
-                      />
-                      <p className="text-xs text-zinc-500 mt-2 text-center">Liquidity Depth</p>
+                      <div className="h-16">
+                        <WaterLevelMeter level={createdTokens[0]?.water_level || 75} size="sm" showLabel={true} />
+                      </div>
                     </div>
 
-                    {/* Pour Rate - Animated */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
-                      <div className="flex items-center gap-2 mb-3">
-                        <TrendingUp className="w-4 h-4 text-cyan-400" />
-                        <span className="text-xs font-medium text-zinc-400">Pour Rate</span>
+                    {/* Pour Rate - Compact */}
+                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-cyan-400">💦</span>
+                        <span className="text-[10px] text-zinc-400">Pour</span>
                       </div>
-                      <PourRateVisualizer rate={createdTokens[0]?.pour_rate || 1.5} />
+                      <div className="h-16">
+                        <PourRateVisualizer rate={createdTokens[0]?.pour_rate || 1.5} />
+                      </div>
                     </div>
 
-                    {/* Evaporation - Animated */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Flame className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-medium text-zinc-400">Evaporation</span>
+                    {/* Evaporation - Compact */}
+                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-amber-400">🔥</span>
+                        <span className="text-[10px] text-zinc-400">Burn</span>
                       </div>
-                      <EvaporationTracker 
-                        totalEvaporated={createdTokens[0]?.total_evaporated || 0}
-                        evaporationRate={createdTokens[0]?.evaporation_rate || 0.5}
-                        symbol={createdTokens[0]?.symbol || "TOKEN"}
-                      />
+                      <div className="h-16">
+                        <EvaporationTracker 
+                          totalEvaporated={createdTokens[0]?.total_evaporated || 0}
+                          evaporationRate={createdTokens[0]?.evaporation_rate || 0.5}
+                          symbol={createdTokens[0]?.symbol || "TOKEN"}
+                        />
+                      </div>
                     </div>
 
-                    {/* Constellation - Animated */}
-                    <div className="p-4 rounded-lg bg-zinc-800/50 border border-zinc-700 overflow-hidden">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Star className="w-4 h-4 text-purple-400" />
-                        <span className="text-xs font-medium text-zinc-400">Health Score</span>
+                    {/* Health Score - Compact */}
+                    <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-purple-400">⭐</span>
+                        <span className="text-[10px] text-zinc-400">Health</span>
                       </div>
-                      <div className="h-28">
+                      <div className="h-16">
                         <ConstellationGauge strength={createdTokens[0]?.constellation_strength || 85} />
                       </div>
                     </div>
 
-                    {/* Tide Harvest - Animated */}
-                    <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20 overflow-hidden">
-                      <div className="flex items-center gap-2 mb-3">
-                        <Gift className="w-4 h-4 text-amber-400" />
-                        <span className="text-xs font-medium text-amber-400">Harvest</span>
+                    {/* Harvest - Compact */}
+                    <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-amber-400">🎁</span>
+                        <span className="text-[10px] text-amber-400">Harvest</span>
                       </div>
-                      {createdTokens[0] ? (
-                        <TideHarvestCard 
-                          tokenId={createdTokens[0].id}
-                          creatorId={createdTokens[0].creator_id || ""}
-                          tokenAddress={createdTokens[0].mint_address}
-                        />
-                      ) : (
-                        <div className="h-32 flex flex-col items-center justify-center">
-                          <span className="text-2xl font-bold text-amber-400">
-                            {formatNumber(totalRewards)}
-                          </span>
-                          <span className="text-xs text-zinc-500 mt-1">SOL</span>
-                          <ActionButton variant="outline" size="sm" className="w-full mt-3 text-amber-400 border-amber-500/30 hover:bg-amber-500/10">
-                            Claim
-                          </ActionButton>
-                        </div>
-                      )}
+                      <div className="h-16 flex flex-col items-center justify-center">
+                        <span className="text-lg font-bold text-amber-400">{formatNumber(totalRewards)}</span>
+                        <span className="text-[10px] text-zinc-500">SOL</span>
+                      </div>
                     </div>
                   </div>
                 </FintechCard>
               </motion.div>
 
-              {/* Token List */}
+              {/* Token List - Compact */}
               {dataLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <div className="flex items-center gap-3 text-zinc-500">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                <div className="flex items-center justify-center py-8">
+                  <div className="flex items-center gap-2 text-zinc-500 text-sm">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
@@ -368,7 +352,7 @@ export default function DashboardPage() {
               ) : createdTokens.length === 0 ? (
                 <FintechCard>
                   <EmptyState
-                    icon={<Coins className="w-8 h-8" />}
+                    icon={<Coins className="w-6 h-6" />}
                     title="Ready to Launch?"
                     description="Drop your first token and start collecting rewards."
                     action={
@@ -381,109 +365,81 @@ export default function DashboardPage() {
                   />
                 </FintechCard>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
                   {createdTokens.map((token, index) => (
                     <motion.div
                       key={token.id}
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 + index * 0.1 }}
+                      transition={{ delay: 0.1 + index * 0.05 }}
                     >
-                      <FintechCard hover>
-                        {/* Token Header */}
-                        <div className="flex items-start justify-between mb-5">
-                          <div className="flex items-center gap-3">
-                            <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden">
+                      <FintechCard hover className="!p-4">
+                        {/* Compact Header */}
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="relative w-8 h-8 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden flex-shrink-0">
                               {token.image_url ? (
-                                <Image
-                                  src={token.image_url}
-                                  alt={token.name}
-                                  fill
-                                  className="object-cover"
-                                />
+                                <Image src={token.image_url} alt={token.name} fill className="object-cover" />
                               ) : (
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                  <span className="text-lg font-bold text-teal-400">
-                                    {token.symbol.slice(0, 2)}
-                                  </span>
+                                  <span className="text-xs font-bold text-teal-400">{token.symbol.slice(0, 2)}</span>
                                 </div>
                               )}
                             </div>
-                            <div>
-                              <h3 className="font-semibold text-zinc-100">{token.name}</h3>
-                              <p className="text-sm text-teal-400">${token.symbol}</p>
+                            <div className="min-w-0">
+                              <h3 className="font-semibold text-sm text-zinc-100 truncate">{token.name}</h3>
+                              <p className="text-xs text-teal-400">${token.symbol}</p>
                             </div>
                           </div>
-                          <span
-                            className={cn(
-                              "px-2.5 py-1 rounded-full text-xs font-medium",
-                              token.stage === "bonding"
-                                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                : "bg-green-500/10 text-green-400 border border-green-500/20"
-                            )}
-                          >
-                            {token.stage === "bonding" ? "Bonding" : "Migrated"}
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-medium flex-shrink-0",
+                            token.stage === "bonding" ? "bg-amber-500/10 text-amber-400" : "bg-green-500/10 text-green-400"
+                          )}>
+                            {token.stage === "bonding" ? "Bonding" : "DEX"}
                           </span>
                         </div>
 
-                        {/* Token Metrics */}
-                        <div className="grid grid-cols-3 gap-3 mb-5">
-                          <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                            <p className="text-xs text-zinc-500 mb-1">Market Cap</p>
+                        {/* Compact Metrics Row */}
+                        <div className="flex items-center gap-2 mb-3 text-xs">
+                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
+                            <p className="text-zinc-500 text-[10px]">MCap</p>
                             <p className="font-semibold text-teal-400">${formatNumber(token.market_cap || 0)}</p>
                           </div>
-                          <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                            <p className="text-xs text-zinc-500 mb-1">24h Volume</p>
-                            <p className="font-semibold text-zinc-200">{formatNumber(token.volume_24h || 0)} SOL</p>
+                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
+                            <p className="text-zinc-500 text-[10px]">Vol 24h</p>
+                            <p className="font-semibold text-zinc-200">{formatNumber(token.volume_24h || 0)}</p>
                           </div>
-                          <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                            <p className="text-xs text-zinc-500 mb-1">Holders</p>
+                          <div className="flex-1 p-2 rounded bg-zinc-800/50 text-center">
+                            <p className="text-zinc-500 text-[10px]">Holders</p>
                             <p className="font-semibold text-zinc-200">{token.holders || 0}</p>
                           </div>
                         </div>
 
-                        {/* Water Level */}
-                        <div className="mb-5">
-                          <ProgressBar
-                            value={token.water_level}
-                            label="Water Level"
-                            color="teal"
-                          />
+                        {/* Progress Bar */}
+                        <div className="mb-3">
+                          <ProgressBar value={token.water_level} label="Water Level" color="teal" />
                         </div>
 
-                        {/* Claimable Rewards */}
-                        {token.harvest && (
-                          <div className="p-4 rounded-lg bg-amber-500/5 border border-amber-500/20 mb-5">
-                            <div className="flex items-center justify-between">
+                        {/* Rewards + Actions Row */}
+                        <div className="flex items-center gap-2">
+                          {token.harvest && (
+                            <div className="flex-1 p-2 rounded bg-amber-500/5 border border-amber-500/20 flex items-center justify-between">
                               <div>
-                                <p className="text-xs text-zinc-500 mb-1">Claimable Rewards</p>
-                                <p className="text-xl font-bold text-amber-400">
-                                  {formatNumber(token.harvest.total_accumulated - token.harvest.total_claimed)} SOL
-                                </p>
+                                <p className="text-[10px] text-zinc-500">Rewards</p>
+                                <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated - token.harvest.total_claimed)} SOL</p>
                               </div>
-                              <ActionButton size="sm" className="bg-amber-500 hover:bg-amber-400">
-                                Harvest
-                              </ActionButton>
+                              <button className="px-2 py-1 rounded bg-amber-500 text-[10px] font-semibold text-zinc-900 hover:bg-amber-400">Claim</button>
                             </div>
-                          </div>
-                        )}
-
-                        {/* Actions */}
-                        <div className="flex gap-3">
-                          <Link href={`/token/${token.mint_address}`} className="flex-1">
-                            <ActionButton variant="outline" className="w-full">
-                              <ExternalLink className="w-4 h-4" />
-                              View
-                            </ActionButton>
+                          )}
+                          <Link href={`/token/${token.mint_address}`} className="p-2 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors">
+                            <ExternalLink className="w-4 h-4 text-zinc-400" />
                           </Link>
-                          <ActionButton 
-                            variant="secondary" 
-                            className="flex-1"
+                          <button 
                             onClick={() => setSelectedTokenForManage(token.mint_address)}
+                            className="p-2 rounded bg-zinc-800 hover:bg-zinc-700 transition-colors"
                           >
-                            <Settings className="w-4 h-4" />
-                            Manage
-                          </ActionButton>
+                            <Settings className="w-4 h-4 text-zinc-400" />
+                          </button>
                         </div>
                       </FintechCard>
                     </motion.div>

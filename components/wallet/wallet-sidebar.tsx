@@ -520,18 +520,24 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
 
               {/* Actions */}
               <div className="p-6 border-t border-[var(--glass-border)] space-y-3">
-                <button
-                  onClick={() => {
-                    onClose()
-                    setIsOnboarding(true)
-                  }}
-                  className="w-full btn-primary"
-                >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M8 3v10M3 8h10" strokeLinecap="round" />
-                  </svg>
-                  Add Wallet
-                </button>
+                {wallets.length >= 25 ? (
+                  <div className="text-center py-2 px-3 rounded-lg bg-amber-500/10 border border-amber-500/30">
+                    <p className="text-sm text-amber-400">Maximum 25 wallets reached</p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      onClose()
+                      setIsOnboarding(true)
+                    }}
+                    className="w-full btn-primary"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M8 3v10M3 8h10" strokeLinecap="round" />
+                    </svg>
+                    Add Wallet ({wallets.length}/25)
+                  </button>
+                )}
                 <button
                   onClick={disconnect}
                   className="w-full py-3 rounded-xl text-sm font-medium text-[var(--text-muted)] hover:text-[var(--error)] hover:bg-[var(--error)]/10 transition-all"

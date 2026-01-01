@@ -3,7 +3,6 @@
 import type { TokenFormData } from "./launch-wizard"
 import { useAuth } from "@/components/providers/auth-provider"
 import { GlassButton } from "@/components/ui/glass-panel"
-import { Copy, RefreshCw, AlertTriangle, Rocket, Check } from "lucide-react"
 import { useState } from "react"
 
 interface StepReviewProps {
@@ -119,7 +118,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
                 className="text-xs px-3 py-1.5 rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-colors flex items-center gap-1.5"
                 title="Copy to clipboard"
               >
-                {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                {copied ? "✓" : "📋"}
                 {copied ? "Copied!" : "Copy"}
               </button>
               <button
@@ -128,8 +127,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
                 className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                 title="Generate new address"
               >
-                <RefreshCw className="w-3 h-3" />
-                New
+                🔄 New
               </button>
             </div>
           </div>
@@ -163,7 +161,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
       {/* Error */}
       {error && (
         <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 flex items-start gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+          <span className="text-lg flex-shrink-0">⚠️</span>
           <div>
             <p className="text-sm font-medium text-red-400">Deployment failed</p>
             <p className="text-sm text-red-400/70 mt-1">{error}</p>
@@ -173,7 +171,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
 
       {/* Warning */}
       <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3">
-        <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+        <span className="text-lg flex-shrink-0">⚠️</span>
         <p className="text-sm text-amber-400/90">
           Token deployment is permanent. Once live, settings cannot be changed. Make sure everything is correct!
         </p>
@@ -194,8 +192,7 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
             "Deploying..."
           ) : (
             <span className="flex items-center gap-2">
-              <Rocket className="w-4 h-4" />
-              Launch Token
+              🚀 Launch Token
             </span>
           )}
         </GlassButton>

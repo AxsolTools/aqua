@@ -7,7 +7,6 @@ import { Keypair } from "@solana/web3.js"
 import bs58 from "bs58"
 import { GlassPanel, StepIndicator } from "@/components/ui/glass-panel"
 import { StepBasics } from "@/components/launch/step-basics"
-import { StepTokenomics } from "@/components/launch/step-tokenomics"
 import { StepAquaSettings } from "@/components/launch/step-aqua-settings"
 import { StepBundle } from "@/components/launch/step-bundle"
 import { StepReview } from "@/components/launch/step-review"
@@ -57,11 +56,6 @@ export interface TokenFormData {
   claimThreshold: number
   claimInterval: 'hourly' | 'daily' | 'weekly'
   
-  // Advanced Settings
-  migrationTarget: 'raydium' | 'meteora' | 'orca' | 'pumpswap'
-  treasuryWallet: string
-  devWallet: string
-  
   // Bundle Launch Options
   launchWithBundle: boolean
   bundleWallets: BundleWalletConfig[]
@@ -99,11 +93,6 @@ const initialFormData: TokenFormData = {
   claimThreshold: 0.1,
   claimInterval: 'daily',
   
-  // Advanced defaults
-  migrationTarget: 'raydium',
-  treasuryWallet: '',
-  devWallet: '',
-  
   // Bundle defaults
   launchWithBundle: false,
   bundleWallets: [],
@@ -111,10 +100,9 @@ const initialFormData: TokenFormData = {
 
 const steps = [
   { id: 1, name: "Basics", description: "Token identity" },
-  { id: 2, name: "Supply", description: "Tokenomics" },
-  { id: 3, name: "Liquidity", description: "AQUA settings" },
-  { id: 4, name: "Bundle", description: "Launch options" },
-  { id: 5, name: "Review", description: "Deploy token" },
+  { id: 2, name: "Liquidity", description: "AQUA settings" },
+  { id: 3, name: "Bundle", description: "Launch options" },
+  { id: 4, name: "Review", description: "Deploy token" },
 ]
 
 interface LaunchWizardProps {
@@ -151,11 +139,11 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
   }
 
   const nextStep = () => {
-    if (currentStep < 5) {
+    if (currentStep < 4) {
       const newStep = currentStep + 1
       setCurrentStep(newStep)
-      // Generate mint keypair when entering review step
-      if (newStep === 5 && !mintKeypair) {
+      // Generate mint keypair when entering review step (now step 4)
+      if (newStep === 4 && !mintKeypair) {
         generateMintKeypair()
       }
     }
@@ -241,10 +229,6 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           claimThreshold: formData.claimThreshold,
           claimInterval: formData.claimInterval,
           
-          migrationTarget: formData.migrationTarget,
-          treasuryWallet: formData.treasuryWallet || creatorWallet,
-          devWallet: formData.devWallet || creatorWallet,
-          
           // Send pre-generated mint keypair so backend uses the same address
           mintSecretKey: mintSecretKey,
           mintAddress: currentMintKeypair.publicKey.toBase58(),
@@ -314,14 +298,6 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                 <StepBasics formData={formData} updateFormData={updateFormData} onNext={nextStep} />
               )}
               {currentStep === 2 && (
-                <StepTokenomics
-                  formData={formData}
-                  updateFormData={updateFormData}
-                  onNext={nextStep}
-                  onBack={prevStep}
-                />
-              )}
-              {currentStep === 3 && (
                 <StepAquaSettings
                   formData={formData}
                   updateFormData={updateFormData}
@@ -329,7 +305,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                   onBack={prevStep}
                 />
               )}
-              {currentStep === 4 && (
+              {currentStep === 3 && (
                 <div className="space-y-4">
                   <StepBundle
                     launchWithBundle={formData.launchWithBundle}
@@ -356,7 +332,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                   </div>
                 </div>
               )}
-              {currentStep === 5 && (
+              {currentStep === 4 && (
                 <StepReview
                   formData={formData}
                   onBack={prevStep}

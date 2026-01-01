@@ -1,9 +1,7 @@
 "use client"
 
-import { useState } from "react"
 import type { TokenFormData } from "./launch-wizard"
 import { GlassButton } from "@/components/ui/glass-panel"
-import { Droplets, Flame, Waves, Gift, ChevronDown, ChevronUp, Zap, PieChart, Target } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface StepAquaSettingsProps {
@@ -14,8 +12,6 @@ interface StepAquaSettingsProps {
 }
 
 export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: StepAquaSettingsProps) {
-  const [showAdvanced, setShowAdvanced] = useState(false)
-
   // Calculate projected metrics
   const dailyLiquidityGrowth = formData.pourEnabled 
     ? formData.pourInterval === 'hourly' ? formData.pourRate * 24 : formData.pourRate 
@@ -36,11 +32,11 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
       <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
-              <Droplets className="w-5 h-5 text-cyan-400" />
+            <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg">
+              💧
             </div>
             <div>
-              <div className="text-sm font-medium text-white">💧 Liquidity Engine</div>
+              <div className="text-sm font-medium text-white">Liquidity Engine</div>
               <div className="text-xs text-white/40">Auto-pump liquidity into your pool</div>
             </div>
           </div>
@@ -133,11 +129,11 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
       <div className="p-5 rounded-xl bg-white/5 border border-orange-500/20">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
-              <Flame className="w-5 h-5 text-orange-400" />
+            <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center text-lg">
+              🔥
             </div>
             <div>
-              <div className="text-sm font-medium text-white">🔥 Burn Mechanics</div>
+              <div className="text-sm font-medium text-white">Burn Mechanics</div>
               <div className="text-xs text-white/40">Auto-burn when dev wallet buys</div>
             </div>
           </div>
@@ -191,11 +187,11 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
       {/* Section 3: Fee Distribution */}
       <div className="p-5 rounded-xl bg-white/5 border border-purple-500/20">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
-            <PieChart className="w-5 h-5 text-purple-400" />
+          <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center text-lg">
+            💰
           </div>
           <div>
-            <div className="text-sm font-medium text-white">💰 Fee Distribution</div>
+            <div className="text-sm font-medium text-white">Fee Distribution</div>
             <div className="text-xs text-white/40">Split your trading fees</div>
           </div>
         </div>
@@ -257,11 +253,11 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
       <div className="p-5 rounded-xl bg-white/5 border border-amber-500/20">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-              <Gift className="w-5 h-5 text-amber-400" />
+            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center text-lg">
+              🌊
             </div>
             <div>
-              <div className="text-sm font-medium text-white">🌊 Auto-Harvest</div>
+              <div className="text-sm font-medium text-white">Auto-Harvest</div>
               <div className="text-xs text-white/40">Automatically collect your rewards</div>
             </div>
           </div>
@@ -313,91 +309,9 @@ export function StepAquaSettings({ formData, updateFormData, onNext, onBack }: S
         </p>
       </div>
 
-      {/* Section 5: Advanced Settings (Collapsible) */}
-      <div className="rounded-xl bg-white/5 border border-zinc-700 overflow-hidden">
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-zinc-700 flex items-center justify-center">
-              <Zap className="w-5 h-5 text-zinc-400" />
-            </div>
-            <div className="text-left">
-              <div className="text-sm font-medium text-white">⚙️ Advanced Settings</div>
-              <div className="text-xs text-white/40">Migration target, wallets</div>
-            </div>
-          </div>
-          {showAdvanced ? (
-            <ChevronUp className="w-5 h-5 text-white/40" />
-          ) : (
-            <ChevronDown className="w-5 h-5 text-white/40" />
-          )}
-        </button>
-
-        {showAdvanced && (
-          <div className="p-4 border-t border-zinc-700 space-y-4">
-            {/* Migration Target */}
-            <div>
-              <label className="block text-xs text-white/60 mb-2">
-                <Target className="w-3 h-3 inline mr-1" />
-                Migration Target DEX
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {(['raydium', 'meteora', 'orca', 'pumpswap'] as const).map((dex) => (
-                  <button
-                    key={dex}
-                    onClick={() => updateFormData({ migrationTarget: dex })}
-                    className={cn(
-                      "py-2 px-3 rounded-lg text-xs font-medium transition-all border capitalize",
-                      formData.migrationTarget === dex
-                        ? "bg-teal-500/20 border-teal-500/50 text-teal-400"
-                        : "bg-white/5 border-white/10 text-white/60 hover:border-white/20"
-                    )}
-                  >
-                    {dex}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-white/40 mt-2">
-                When your bonding curve graduates, migrate to this DEX.
-              </p>
-            </div>
-
-            {/* Treasury & Dev Wallets */}
-            <div className="grid grid-cols-1 gap-3">
-              <div>
-                <label className="block text-xs text-white/60 mb-2">Treasury Wallet (optional)</label>
-                <input
-                  type="text"
-                  placeholder="Leave empty to use your wallet"
-                  value={formData.treasuryWallet}
-                  onChange={(e) => updateFormData({ treasuryWallet: e.target.value })}
-                  className="w-full py-2 px-3 rounded-lg text-sm font-mono bg-white/5 border border-white/10 text-white/80 placeholder:text-white/30"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-white/60 mb-2">Dev Wallet (for burns)</label>
-                <input
-                  type="text"
-                  placeholder="Leave empty to use your wallet"
-                  value={formData.devWallet}
-                  onChange={(e) => updateFormData({ devWallet: e.target.value })}
-                  className="w-full py-2 px-3 rounded-lg text-sm font-mono bg-white/5 border border-white/10 text-white/80 placeholder:text-white/30"
-                />
-                <p className="text-xs text-white/40 mt-1">
-                  Buys from this wallet trigger the burn mechanism.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
       {/* Projected Metrics Summary */}
       <div className="p-5 rounded-xl bg-gradient-to-r from-green-500/10 to-cyan-500/10 border border-green-500/20">
         <div className="flex items-center gap-2 mb-4">
-          <Waves className="w-4 h-4 text-green-400" />
           <span className="text-sm font-medium text-white">📊 Your Token Mechanics Summary</span>
         </div>
         <div className="grid grid-cols-3 gap-4">

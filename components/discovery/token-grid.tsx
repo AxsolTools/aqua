@@ -16,9 +16,14 @@ interface TokenWithCreator extends Token {
   live_market_cap?: number // Live market cap from API
 }
 
+const TOKENS_PER_PAGE = 20
+const MAX_TOKENS = 100
+
 export function TokenGrid() {
   const [tokens, setTokens] = useState<TokenWithCreator[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalCount, setTotalCount] = useState(0)
 
   // Fetch live market caps for all tokens
   const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithCreator[]) => {
@@ -51,41 +56,55 @@ export function TokenGrid() {
     }
   }, [])
 
-  useEffect(() => {
-    const fetchData = async () => {
-      const supabase = createClient()
-      
-      // Fetch tokens with creator info
-      const { data: tokenData } = await supabase
-        .from("tokens")
-        .select(`
-          *,
-          creator:users!tokens_creator_id_fkey (
-            username,
-            avatar_url
-          )
-        `)
-        .order("created_at", { ascending: false })
-        .limit(32)
+  const fetchTokens = useCallback(async (page: number) => {
+    setIsLoading(true)
+    const supabase = createClient()
+    
+    // Calculate pagination range
+    const from = (page - 1) * TOKENS_PER_PAGE
+    const to = from + TOKENS_PER_PAGE - 1
+    
+    // Fetch total count (capped at MAX_TOKENS)
+    const { count } = await supabase
+      .from("tokens")
+      .select("*", { count: "exact", head: true })
+    
+    const cappedTotal = Math.min(count || 0, MAX_TOKENS)
+    setTotalCount(cappedTotal)
+    
+    // Fetch tokens with creator info for current page
+    const { data: tokenData } = await supabase
+      .from("tokens")
+      .select(`
+        *,
+        creator:users!tokens_creator_id_fkey (
+          username,
+          avatar_url
+        )
+      `)
+      .order("created_at", { ascending: false })
+      .range(from, Math.min(to, MAX_TOKENS - 1))
 
-      if (tokenData) {
-        const typedTokens = tokenData as TokenWithCreator[]
-        setTokens(typedTokens)
-        // Fetch live market caps after initial load
-        fetchLiveMarketCaps(typedTokens)
-      }
-      setIsLoading(false)
+    if (tokenData) {
+      const typedTokens = tokenData as TokenWithCreator[]
+      setTokens(typedTokens)
+      // Fetch live market caps after initial load
+      fetchLiveMarketCaps(typedTokens)
     }
+    setIsLoading(false)
+  }, [fetchLiveMarketCaps])
 
-    fetchData()
+  useEffect(() => {
+    fetchTokens(currentPage)
 
-    // Real-time subscription
+    // Real-time subscription for new tokens (only affects first page)
     const supabase = createClient()
     const channel = supabase
       .channel("tokens-realtime")
       .on("postgres_changes", { event: "*", schema: "public", table: "tokens" }, (payload) => {
-        if (payload.eventType === "INSERT") {
-          setTokens((prev) => [payload.new as TokenWithCreator, ...prev].slice(0, 32))
+        if (payload.eventType === "INSERT" && currentPage === 1) {
+          setTokens((prev) => [payload.new as TokenWithCreator, ...prev].slice(0, TOKENS_PER_PAGE))
+          setTotalCount((prev) => Math.min(prev + 1, MAX_TOKENS))
         } else if (payload.eventType === "UPDATE") {
           setTokens((prev) => prev.map((t) => (t.id === (payload.new as Token).id ? { ...t, ...(payload.new as Token) } : t)))
         }
@@ -95,7 +114,7 @@ export function TokenGrid() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchLiveMarketCaps])
+  }, [currentPage, fetchTokens])
 
   // Refresh market caps every 30 seconds
   useEffect(() => {
@@ -176,8 +195,16 @@ export function TokenGrid() {
     )
   }
 
+  const totalPages = Math.ceil(totalCount / TOKENS_PER_PAGE)
+  
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       {tokens.map((token, index) => {
         const progress = getMigrationProgress(token)
         const isLive = token.stage === "bonding"
@@ -293,6 +320,72 @@ export function TokenGrid() {
           </motion.div>
         )
       })}
+      </div>
+      
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-4">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+              currentPage === 1
+                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                : "bg-white/10 text-white/70 hover:bg-white/20"
+            )}
+          >
+            ← Prev
+          </button>
+          
+          <div className="flex items-center gap-1">
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              let pageNum: number
+              if (totalPages <= 5) {
+                pageNum = i + 1
+              } else if (currentPage <= 3) {
+                pageNum = i + 1
+              } else if (currentPage >= totalPages - 2) {
+                pageNum = totalPages - 4 + i
+              } else {
+                pageNum = currentPage - 2 + i
+              }
+              
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={cn(
+                    "w-8 h-8 rounded-lg text-sm font-medium transition-all",
+                    currentPage === pageNum
+                      ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
+                      : "bg-white/5 text-white/60 hover:bg-white/10"
+                  )}
+                >
+                  {pageNum}
+                </button>
+              )
+            })}
+          </div>
+          
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+              currentPage === totalPages
+                ? "bg-white/5 text-white/30 cursor-not-allowed"
+                : "bg-white/10 text-white/70 hover:bg-white/20"
+            )}
+          >
+            Next →
+          </button>
+          
+          <span className="ml-4 text-xs text-white/40">
+            {totalCount} tokens (max 100)
+          </span>
+        </div>
+      )}
     </div>
   )
 }

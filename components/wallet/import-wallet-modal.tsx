@@ -22,6 +22,11 @@ export function ImportWalletModal({ open, onClose }: ImportWalletModalProps) {
   if (!open) return null
 
   const handleImport = async () => {
+    if (wallets.length >= 25) {
+      setError("Maximum 25 wallets reached. Remove a wallet to add a new one.")
+      return
+    }
+    
     if (!input.trim()) {
       setError("Please enter your recovery phrase or private key")
       return

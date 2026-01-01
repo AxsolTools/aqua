@@ -102,9 +102,9 @@ export default function ProfilePage() {
   
   // Save priority fee to localStorage
   const handlePriorityFeeChange = (value: number) => {
-    setPriorityFee(value)
-    setIsCustomPriorityFee(false)
-    setCustomPriorityFee("")
+      setPriorityFee(value)
+      setIsCustomPriorityFee(false)
+      setCustomPriorityFee("")
     localStorage.setItem("aqua_priority_fee", value.toString())
   }
   
@@ -322,92 +322,74 @@ export default function ProfilePage() {
                   )}
 
                   {activeTab === "portfolio" && (
-                    <div className="space-y-6">
-                      {/* Wallet Overview */}
-                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                        <GlassPanel className="p-6">
-                          <p className="text-sm text-[var(--text-muted)] mb-1">Total Wallets</p>
-                          <p className="text-3xl font-bold text-[var(--text-primary)]">{wallets.length}</p>
+                    <div className="space-y-4">
+                      {/* Wallet Overview - Compact */}
+                      <div className="grid grid-cols-4 gap-3">
+                        <GlassPanel className="p-4">
+                          <p className="text-xs text-[var(--text-muted)]">Wallets</p>
+                          <p className="text-2xl font-bold text-[var(--text-primary)]">{wallets.length}<span className="text-xs text-[var(--text-muted)]">/25</span></p>
                         </GlassPanel>
-                        <GlassPanel className="p-6" glow="aqua">
-                          <p className="text-sm text-[var(--text-muted)] mb-1">Total Balance</p>
-                          {balancesLoading ? (
-                            <p className="text-3xl font-bold text-[var(--aqua-primary)]">...</p>
-                          ) : (
-                            <p className="text-3xl font-bold text-[var(--aqua-primary)]">
-                              {totalBalance.toFixed(4)} SOL
-                            </p>
-                          )}
+                        <GlassPanel className="p-4" glow="aqua">
+                          <p className="text-xs text-[var(--text-muted)]">Balance</p>
+                          <p className="text-2xl font-bold text-[var(--aqua-primary)]">
+                            {balancesLoading ? "..." : `${totalBalance.toFixed(4)}`}
+                            <span className="text-xs text-[var(--text-muted)] ml-1">SOL</span>
+                          </p>
                         </GlassPanel>
-                        <GlassPanel className="p-6">
-                          <p className="text-sm text-[var(--text-muted)] mb-1">Tokens Created</p>
-                          <p className="text-3xl font-bold text-[var(--text-primary)]">{createdTokens.length}</p>
+                        <GlassPanel className="p-4">
+                          <p className="text-xs text-[var(--text-muted)]">Tokens</p>
+                          <p className="text-2xl font-bold text-[var(--text-primary)]">{createdTokens.length}</p>
                         </GlassPanel>
-                        <GlassPanel className="p-6">
-                          <p className="text-sm text-[var(--text-muted)] mb-1">Total Trades</p>
-                          <p className="text-3xl font-bold text-[var(--text-primary)]">{trades.length}</p>
+                        <GlassPanel className="p-4">
+                          <p className="text-xs text-[var(--text-muted)]">Trades</p>
+                          <p className="text-2xl font-bold text-[var(--text-primary)]">{trades.length}</p>
                         </GlassPanel>
                       </div>
 
-                      {/* Connected Wallets */}
-                      <GlassPanel className="p-6">
-                        <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-4">Connected Wallets</h2>
-                        <div className="space-y-3">
+                      {/* Connected Wallets - Compact */}
+                      <GlassPanel className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <h2 className="text-sm font-semibold text-[var(--text-primary)]">Connected Wallets</h2>
+                          <span className="text-xs text-[var(--text-muted)]">{wallets.length}/25</span>
+                        </div>
+                        <div className="space-y-2">
                           {wallets.map((wallet) => (
                             <div
                               key={wallet.id}
                               className={cn(
-                                "p-4 rounded-xl border transition-all",
+                                "p-3 rounded-lg border transition-all flex items-center justify-between",
                                 wallet.is_primary
                                   ? "border-[var(--aqua-primary)]/50 bg-[var(--aqua-subtle)]/20"
                                   : "border-[var(--glass-border)] bg-[var(--ocean-surface)]/30",
                               )}
                             >
-                              <div className="flex items-center justify-between">
-                                <div className="flex-1">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <span className="text-sm font-medium text-[var(--text-primary)]">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-[var(--text-primary)] truncate">
                                       {wallet.label || "Wallet"}
                                     </span>
                                     {wallet.is_primary && (
-                                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium uppercase">
+                                      <span className="text-[9px] px-1.5 py-0.5 rounded bg-[var(--aqua-primary)]/20 text-[var(--aqua-primary)] font-medium uppercase flex-shrink-0">
                                         Main
                                       </span>
                                     )}
                                   </div>
-                                  <p className="text-sm font-mono text-[var(--text-secondary)] mb-2">
+                                  <p className="text-xs font-mono text-[var(--text-muted)]">
                                     {formatAddress(wallet.public_key)}
                                   </p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-[var(--text-muted)]">Balance:</span>
-                                    {balancesLoading ? (
-                                      <span className="text-xs text-[var(--text-secondary)]">Loading...</span>
-                                    ) : (
-                                      <span className="text-sm font-semibold text-[var(--aqua-primary)]">
-                                        {walletBalances[wallet.id] !== undefined 
-                                          ? `${walletBalances[wallet.id].toFixed(4)} SOL`
-                                          : "—"
-                                        }
-                                      </span>
-                                    )}
-                                  </div>
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className="text-sm font-semibold text-[var(--aqua-primary)] font-mono">
+                                  {balancesLoading ? "..." : walletBalances[wallet.id] !== undefined ? `${walletBalances[wallet.id].toFixed(4)}` : "—"}
+                                </span>
                                 <button
                                   onClick={() => navigator.clipboard.writeText(wallet.public_key)}
-                                  className="p-2 rounded-lg hover:bg-[var(--ocean-surface)] transition-colors"
-                                  title="Copy address"
+                                  className="p-1.5 rounded hover:bg-[var(--ocean-surface)] transition-colors"
+                                  title="Copy"
                                 >
-                                  <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 16 16"
-                                    fill="none"
-                                    stroke="var(--text-muted)"
-                                    strokeWidth="2"
-                                  >
-                                    <rect x="5" y="5" width="9" height="9" rx="1" />
-                                    <path d="M11 5V3a1 1 0 00-1-1H3a1 1 0 00-1 1v7a1 1 0 001 1h2" />
-                                  </svg>
+                                  📋
                                 </button>
                               </div>
                             </div>
@@ -612,7 +594,7 @@ export default function ProfilePage() {
                             <span className="text-xs text-[var(--text-muted)]">%</span>
                           </div>
                         </div>
-                        
+
                         {/* Priority Fee */}
                         <div className="mb-5 pt-4 border-t border-[var(--glass-border)]">
                           <div className="flex items-center justify-between mb-2">
@@ -641,17 +623,17 @@ export default function ProfilePage() {
                               </button>
                             ))}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
                               step="0.00001"
-                              value={isCustomPriorityFee ? customPriorityFee : ""}
-                              onChange={(e) => handleCustomPriorityFeeChange(e.target.value)}
-                              onFocus={() => setIsCustomPriorityFee(true)}
+                                value={isCustomPriorityFee ? customPriorityFee : ""}
+                                onChange={(e) => handleCustomPriorityFeeChange(e.target.value)}
+                                onFocus={() => setIsCustomPriorityFee(true)}
                               placeholder="Custom"
                               className="w-28 px-3 py-1.5 rounded bg-[var(--ocean-surface)] border border-[var(--glass-border)] text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
-                            />
+                              />
                             <span className="text-xs text-[var(--text-muted)]">SOL</span>
                           </div>
                         </div>
@@ -661,7 +643,7 @@ export default function ProfilePage() {
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Jito Bundle Tip</span>
                             <span className="text-xs font-mono text-[var(--aqua-primary)]">{jitoTip} SOL</span>
-                          </div>
+                            </div>
                           <div className="flex flex-wrap gap-1.5 mb-2">
                             {[
                               { value: 0, label: "Off" },
@@ -718,9 +700,9 @@ export default function ProfilePage() {
                           <div className="text-center p-3 rounded-lg bg-[var(--ocean-surface)]">
                             <p className="text-lg font-bold font-mono text-[var(--aqua-primary)]">{jitoTip}</p>
                             <p className="text-[10px] text-[var(--text-muted)] uppercase">Jito Tip</p>
-                          </div>
                         </div>
-                      </GlassPanel>
+                      </div>
+                    </GlassPanel>
                     </div>
                   )}
                 </motion.div>
