@@ -104,16 +104,18 @@ let flushTimeout: ReturnType<typeof setTimeout> | null = null
  */
 export async function POST(request: NextRequest) {
   try {
-    // Verify webhook signature if secret is configured
+    // Verify webhook authentication if secret is configured
     if (WEBHOOK_SECRET) {
-      const signature = request.headers.get('x-helius-signature')
-      if (!signature) {
-        console.warn('[WEBHOOK] Missing signature header')
-        return NextResponse.json({ error: 'Missing signature' }, { status: 401 })
-      }
+      const authHeader = request.headers.get('authorization')
       
-      // TODO: Implement signature verification
-      // The signature is computed as: HMAC-SHA256(webhookSecret, requestBody)
+      // Helius sends the auth header you configured in the dashboard
+      // Format: "Bearer your_secret_here"
+      const expectedAuth = `Bearer ${WEBHOOK_SECRET}`
+      
+      if (!authHeader || authHeader !== expectedAuth) {
+        console.warn('[WEBHOOK] Invalid or missing authorization header')
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     const payload: WebhookPayload = await request.json()
