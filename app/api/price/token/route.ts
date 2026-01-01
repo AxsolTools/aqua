@@ -74,12 +74,21 @@ async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): P
 
 /**
  * Fetch from Jupiter Price API v2
+ * Note: This API may require authentication for some tokens - use quote API as primary
  */
 async function fetchFromJupiterPriceV2(tokenMint: string): Promise<PriceResult> {
   const response = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`, {
-    headers: { "Accept": "application/json" },
+    headers: { 
+      "Accept": "application/json",
+      "User-Agent": "AQUA-Launchpad/1.0"
+    },
     signal: AbortSignal.timeout(3000)
   })
+
+  // Jupiter v2 may return 401 for unauthorized requests - skip to next source
+  if (response.status === 401) {
+    throw new Error("Jupiter price v2 requires authentication")
+  }
 
   if (!response.ok) throw new Error(`Jupiter price v2 failed: ${response.status}`)
 
@@ -184,13 +193,22 @@ async function fetchDexScreenerExtendedData(tokenMint: string): Promise<DexScree
 }
 
 /**
- * Fetch SOL price from Binance (most reliable for SOL)
+ * Fetch SOL price from Binance
+ * Note: Binance may return 451 for geo-blocked regions (US, etc.)
  */
 async function fetchSolFromBinance(): Promise<PriceResult> {
   const response = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT", {
-    headers: { "Accept": "application/json" },
+    headers: { 
+      "Accept": "application/json",
+      "User-Agent": "AQUA-Launchpad/1.0"
+    },
     signal: AbortSignal.timeout(3000)
   })
+
+  // Binance 451 = geo-blocked, skip to next source
+  if (response.status === 451) {
+    throw new Error("Binance geo-blocked")
+  }
 
   if (!response.ok) throw new Error(`Binance failed: ${response.status}`)
 
@@ -206,12 +224,21 @@ async function fetchSolFromBinance(): Promise<PriceResult> {
 
 /**
  * Fetch SOL price from CoinGecko
+ * Note: CoinGecko free API has rate limits (~30 calls/minute)
  */
 async function fetchSolFromCoinGecko(): Promise<PriceResult> {
   const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd", {
-    headers: { "Accept": "application/json" },
+    headers: { 
+      "Accept": "application/json",
+      "User-Agent": "AQUA-Launchpad/1.0"
+    },
     signal: AbortSignal.timeout(5000)
   })
+
+  // CoinGecko 429 = rate limited, skip to next source
+  if (response.status === 429) {
+    throw new Error("CoinGecko rate limited")
+  }
 
   if (!response.ok) throw new Error(`CoinGecko failed: ${response.status}`)
 
@@ -258,16 +285,17 @@ async function getCirculatingSupply(tokenMint: string): Promise<number> {
 
 /**
  * Resolve token price using cascade of sources
+ * Order: DexScreener (reliable) -> Jupiter Quote -> Jupiter legacy
+ * Jupiter Price v2 is skipped due to auth issues
  */
 async function resolveTokenPrice(tokenMint: string, decimals: number): Promise<PriceResult> {
   const errors: { source: string; message: string }[] = []
   
-  // Ordered sources for token prices
+  // Ordered sources for token prices - DexScreener first (most reliable, no auth)
   const sources = [
+    { name: "dexscreener", fetch: () => fetchFromDexScreener(tokenMint) },
     { name: "jupiter_quote", fetch: () => fetchFromJupiterQuote(tokenMint, decimals) },
-    { name: "jupiter_price_v2", fetch: () => fetchFromJupiterPriceV2(tokenMint) },
-    { name: "jupiter_price_v4", fetch: () => fetchFromJupiterLegacy(tokenMint) },
-    { name: "dexscreener", fetch: () => fetchFromDexScreener(tokenMint) }
+    { name: "jupiter_price_v4", fetch: () => fetchFromJupiterLegacy(tokenMint) }
   ]
 
   for (const source of sources) {
@@ -286,16 +314,52 @@ async function resolveTokenPrice(tokenMint: string, decimals: number): Promise<P
 }
 
 /**
+ * Fetch SOL price from DexScreener (most reliable - no auth/geo issues)
+ */
+async function fetchSolFromDexScreener(): Promise<PriceResult> {
+  // Use wrapped SOL on DexScreener
+  const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${SOL_MINT}`, {
+    headers: { 
+      "Accept": "application/json",
+      "User-Agent": "AQUA-Launchpad/1.0"
+    },
+    signal: AbortSignal.timeout(4000)
+  })
+
+  if (!response.ok) throw new Error(`DexScreener SOL failed: ${response.status}`)
+
+  const data = await response.json()
+  // Find SOL/USDC or SOL/USDT pair
+  const pair = data.pairs?.find((p: { priceUsd?: string; baseToken?: { symbol?: string } }) => 
+    p.priceUsd && parseFloat(p.priceUsd) > 0 && 
+    (p.baseToken?.symbol === 'SOL' || p.baseToken?.symbol === 'WSOL')
+  )
+
+  if (!pair) throw new Error("DexScreener returned no SOL price")
+
+  const price = parseFloat(pair.priceUsd)
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("DexScreener returned invalid SOL price")
+  }
+
+  return { price, source: "dexscreener" }
+}
+
+/**
  * Resolve SOL price using dedicated sources
+ * Order: DexScreener (reliable) -> CoinGecko -> Binance -> Jupiter Quote
  */
 async function resolveSolPrice(): Promise<PriceResult> {
   const errors: { source: string; message: string }[] = []
   
-  // SOL-specific sources (more reliable)
+  // SOL-specific sources - ordered by reliability
+  // DexScreener first (no auth/geo issues), then CoinGecko (rate limited but stable)
+  // Binance last (geo-blocked in many regions)
   const sources = [
-    { name: "binance", fetch: fetchSolFromBinance },
+    { name: "dexscreener", fetch: fetchSolFromDexScreener },
     { name: "coingecko", fetch: fetchSolFromCoinGecko },
-    { name: "jupiter", fetch: () => fetchFromJupiterPriceV2(SOL_MINT) }
+    { name: "binance", fetch: fetchSolFromBinance },
+    { name: "jupiter_quote", fetch: () => fetchFromJupiterQuote(SOL_MINT, 9) }
   ]
 
   for (const source of sources) {

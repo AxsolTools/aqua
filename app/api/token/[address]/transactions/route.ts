@@ -104,6 +104,7 @@ async function fetchDatabaseTransactions(
 
 /**
  * Fetch transactions from Helius API
+ * Note: Uses the correct Helius API endpoint (api.helius.xyz not api-mainnet.helius-rpc.com)
  */
 async function fetchHeliusTransactions(
   tokenAddress: string,
@@ -111,15 +112,28 @@ async function fetchHeliusTransactions(
   beforeSignature?: string | null
 ): Promise<Transaction[]> {
   if (!HELIUS_API_KEY) {
-    console.warn("[TOKEN-TRANSACTIONS] No Helius API key configured")
+    // Don't log on every call - key not configured is expected in dev
     return []
   }
 
   try {
-    // Use Helius Enhanced Transactions API
-    const url = `https://api-mainnet.helius-rpc.com/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}&type=SWAP`
+    // Use correct Helius Enhanced Transactions API endpoint
+    // The URL should be api.helius.xyz/v0 not api-mainnet.helius-rpc.com/v0
+    const url = `https://api.helius.xyz/v0/addresses/${tokenAddress}/transactions?api-key=${HELIUS_API_KEY}&type=SWAP`
     
-    const response = await fetch(url)
+    const response = await fetch(url, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "AQUA-Launchpad/1.0"
+      },
+      signal: AbortSignal.timeout(5000)
+    })
+    
+    // 401 = invalid API key - log once and return empty
+    if (response.status === 401) {
+      console.warn("[TOKEN-TRANSACTIONS] Helius API key invalid or expired")
+      return []
+    }
     
     if (!response.ok) {
       console.warn("[TOKEN-TRANSACTIONS] Helius API error:", response.status)
@@ -145,7 +159,10 @@ async function fetchHeliusTransactions(
       }
     })
   } catch (error) {
-    console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
+    // Don't spam console on timeout/network errors
+    if (error instanceof Error && error.name !== 'AbortError') {
+      console.error("[TOKEN-TRANSACTIONS] Helius fetch error:", error)
+    }
     return []
   }
 }
