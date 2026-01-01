@@ -261,6 +261,7 @@ async function fetchBatchSolBalances(
 
 /**
  * Batch fetch token balances for multiple wallets
+ * Uses the same working endpoint as single wallet mode
  */
 async function fetchBatchTokenBalances(
   addresses: string[],
@@ -271,34 +272,21 @@ async function fetchBatchTokenBalances(
   if (addresses.length === 0 || !tokenMint) return balances
 
   try {
-    // Use batch endpoint
-    const response = await fetch("/api/balance/token/batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addresses, mint: tokenMint }),
-    })
-
-    if (response.ok) {
-      const data = await response.json()
-      if (data.balances) {
-        for (const [address, balance] of Object.entries(data.balances)) {
-          balances.set(address, balance as number)
-        }
-      }
-    } else {
-      // Fallback: fetch individually but in parallel
-      const results = await Promise.allSettled(
-        addresses.map(async (addr) => {
-          const res = await fetch(`/api/balance/token?wallet=${addr}&mint=${tokenMint}`)
-          const data = await res.json()
-          return { address: addr, balance: data.balance || 0 }
-        })
-      )
-      
-      for (const result of results) {
-        if (result.status === "fulfilled") {
-          balances.set(result.value.address, result.value.balance)
-        }
+    // Fetch each wallet's token balance using the working endpoint
+    // This is the same endpoint that single-wallet mode uses
+    const results = await Promise.allSettled(
+      addresses.map(async (addr) => {
+        const res = await fetch(`/api/wallet/token-balance?wallet=${addr}&mint=${tokenMint}`)
+        const data = await res.json()
+        // The endpoint returns { success, data: { uiBalance, balance, decimals } }
+        const balance = data.success && data.data ? (data.data.uiBalance || 0) : 0
+        return { address: addr, balance }
+      })
+    )
+    
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        balances.set(result.value.address, result.value.balance)
       }
     }
   } catch (error) {
