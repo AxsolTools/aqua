@@ -48,10 +48,6 @@ export default function KOLMonitorPage() {
                 <span className="text-xs text-[var(--text-muted)]">Live Tracking</span>
                 <span className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
-                <span className="text-xs text-[var(--text-muted)]">Data from</span>
-                <span className="text-xs text-[var(--text-primary)] font-medium">Birdeye • DexScreener • GMGN</span>
-              </div>
             </div>
           </div>
 

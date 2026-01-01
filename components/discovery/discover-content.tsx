@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 import { TrenchesLayout } from "./trenches-layout"
 import { TokenGrid } from "./token-grid"
 import { AllSolanaGrid } from "./all-solana-grid"
-import { Droplet, Globe, Flame, Sparkles } from "lucide-react"
+import { Droplet, Globe, Sparkles } from "lucide-react"
 
 const viewModes = [
   { value: "trenches", label: "🪖 Trenches", description: "3-lane view" },
@@ -22,10 +22,9 @@ const sortOptions = [
 ]
 
 const sourceOptions = [
-  { value: "aquarius", label: "Aquarius", icon: Droplet, description: "Platform tokens" },
-  { value: "all", label: "All Solana", icon: Globe, description: "DexScreener feed" },
-  { value: "pumpfun", label: "Pump.fun", icon: Flame, description: "New launches" },
-  { value: "trending", label: "Trending", icon: Sparkles, description: "Hot tokens" },
+  { value: "aquarius", label: "Aquarius", icon: Droplet },
+  { value: "all", label: "All Solana", icon: Globe },
+  { value: "trending", label: "Trending", icon: Sparkles },
 ]
 
 // Check if a string is a valid Solana address (base58, 32-44 chars)
@@ -40,7 +39,7 @@ export function DiscoverContent() {
   const [sort, setSort] = useState("newest")
   const [search, setSearch] = useState("")
   const [isSearching, setIsSearching] = useState(false)
-  const [tokenSource, setTokenSource] = useState<"aquarius" | "all" | "pumpfun" | "trending">("aquarius")
+  const [tokenSource, setTokenSource] = useState<"aquarius" | "all" | "trending">("aquarius")
   const [indicatorStyle, setIndicatorStyle] = useState({ left: 0, width: 0 })
   const [sourceIndicatorStyle, setSourceIndicatorStyle] = useState({ left: 0, width: 0 })
   const containerRef = useRef<HTMLDivElement>(null)
@@ -100,7 +99,7 @@ export function DiscoverContent() {
     if (tokenSource !== "aquarius") {
       return (
         <AllSolanaGrid 
-          source={tokenSource === "all" ? "all" : tokenSource === "pumpfun" ? "pumpfun" : "trending"} 
+          source={tokenSource === "all" ? "all" : "trending"} 
         />
       )
     }
@@ -146,18 +145,10 @@ export function DiscoverContent() {
               >
                 <IconComponent className="w-4 h-4" />
                 <span className="hidden sm:inline">{source.label}</span>
-                {source.value === "pumpfun" && (
-                  <span className="ml-1 px-1.5 py-0.5 text-[9px] font-bold rounded bg-purple-500/20 text-purple-400">
-                    LIVE
-                  </span>
-                )}
               </button>
             )
           })}
         </div>
-        <p className="mt-2 text-xs text-[var(--text-dim)]">
-          {sourceOptions.find(s => s.value === tokenSource)?.description}
-        </p>
       </div>
 
       {/* Header Bar with Search, View Toggle, and Sort */}

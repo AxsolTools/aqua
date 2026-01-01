@@ -67,18 +67,33 @@ export interface KOLConvergence {
   firstBuyTime: Date
 }
 
-const getAvatar = (twitterHandle: string) => `https://unavatar.io/twitter/${twitterHandle}`
+// Use unavatar.io for reliable Twitter/X avatar fetching
+// This service handles the complexity of fetching X profile pictures
+const getAvatar = (twitterHandle: string) => `https://unavatar.io/twitter/${twitterHandle}?fallback=https://ui-avatars.com/api/?name=${twitterHandle}&background=1a1a1a&color=00d9ff&bold=true`
 
+// Fallback avatars for accounts that may have issues
 const DIRECT_AVATARS: Record<string, string> = {
-  DegenSpartan: "https://substackcdn.com/image/twitter_name/w_96/DegenSpartan.jpg",
-  a1lon9: "/images/xujtdd67-400x400.jpg",
-  A1lon9: "/images/xujtdd67-400x400.jpg",
+  DegenSpartan: "https://pbs.twimg.com/profile_images/1676908029091622913/hVb3D8tJ_400x400.jpg",
+  blknoiz06: "https://pbs.twimg.com/profile_images/1768802747840204800/KgpBpIrP_400x400.jpg",
+  MustStopMurad: "https://pbs.twimg.com/profile_images/1844398975566684161/JkqvGxGd_400x400.jpg",
+  GiganticRebirth: "https://pbs.twimg.com/profile_images/1529152551261650944/tW8FE9wW_400x400.jpg",
+  HsakaTrades: "https://pbs.twimg.com/profile_images/1760328497768923136/oqIyRuP5_400x400.jpg",
+  Pentosh1: "https://pbs.twimg.com/profile_images/1674477997039812608/7T0ej1lS_400x400.jpg",
+  coaborblabs: "https://pbs.twimg.com/profile_images/1632007691989569537/Mw8dI8DG_400x400.jpg",
+  CL207: "https://pbs.twimg.com/profile_images/1655595282219569152/RH_NfnXO_400x400.jpg",
+  loomdart: "https://pbs.twimg.com/profile_images/1797350847710339073/3_hFBTmY_400x400.jpg",
+  "0xSunNFT": "https://pbs.twimg.com/profile_images/1676960789111742464/Jx6UJlS4_400x400.jpg",
+  daborblabs: "https://pbs.twimg.com/profile_images/1717956538787white9968/NxNIKIZx_400x400.jpg",
+  A1lon9: "https://pbs.twimg.com/profile_images/1686064012649050112/XuJtDd67_400x400.jpg",
+  a1lon9: "https://pbs.twimg.com/profile_images/1686064012649050112/XuJtDd67_400x400.jpg",
 }
 
 export const getKolAvatar = (twitterHandle: string) => {
+  // Check for direct avatar first
   if (DIRECT_AVATARS[twitterHandle]) {
     return DIRECT_AVATARS[twitterHandle]
   }
+  // Use unavatar.io as the primary source with a fallback
   return getAvatar(twitterHandle)
 }
 

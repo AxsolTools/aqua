@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import { motion } from "framer-motion"
-import { RefreshCw, Clock, TrendingUp, TrendingDown, ExternalLink, Copy, Flame } from "lucide-react"
+import { RefreshCw, TrendingUp, TrendingDown, ExternalLink, Copy } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface LiveToken {
@@ -18,276 +18,250 @@ interface LiveToken {
   pairCreatedAt: number
   logo: string
   txns24h: { buys: number; sells: number }
-  isPumpFun: boolean
 }
 
 interface AllSolanaGridProps {
-  source?: 'all' | 'pumpfun' | 'trending' | 'latest'
+  source?: 'all' | 'trending'
 }
+
+const POLL_INTERVAL = 15000 // 15 seconds for live feel
+const MAX_TOKENS = 40
 
 export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
   const [tokens, setTokens] = useState<LiveToken[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [copiedAddress, setCopiedAddress] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState(30)
+  const [countdown, setCountdown] = useState(15)
+  const lastFetchRef = useRef<number>(0)
+  const abortControllerRef = useRef<AbortController | null>(null)
 
-  const fetchTokens = useCallback(async () => {
+  const fetchTokens = useCallback(async (showRefresh = false) => {
+    // Prevent too frequent fetches
+    const now = Date.now()
+    if (now - lastFetchRef.current < 5000 && tokens.length > 0) {
+      return
+    }
+    lastFetchRef.current = now
+
+    // Cancel any pending request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort()
+    }
+    abortControllerRef.current = new AbortController()
+
+    if (showRefresh) setIsRefreshing(true)
+
     try {
-      const res = await fetch(`/api/tokens/live?source=${source}&limit=24`)
+      const endpoint = source === 'trending' 
+        ? '/api/tokens/trending' 
+        : '/api/tokens/live?limit=40'
+      
+      const res = await fetch(endpoint, {
+        signal: abortControllerRef.current.signal,
+        cache: 'no-store',
+      })
+      
+      if (!res.ok) throw new Error('Failed to fetch')
+      
       const data = await res.json()
       
-      if (data.success) {
-        setTokens(data.data)
-        setLastUpdate(new Date())
+      if (data.success && data.data) {
+        setTokens(data.data.slice(0, MAX_TOKENS))
       }
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return // Ignore abort errors
+      }
       console.error('Error fetching tokens:', error)
     } finally {
       setIsLoading(false)
+      setIsRefreshing(false)
     }
-  }, [source])
+  }, [source, tokens.length])
 
   useEffect(() => {
+    // Initial fetch
     fetchTokens()
     
-    // Auto-refresh every 30 seconds
-    const interval = setInterval(() => {
+    // Set up polling
+    const pollInterval = setInterval(() => {
       fetchTokens()
-      setCountdown(30)
-    }, 30000)
+      setCountdown(15)
+    }, POLL_INTERVAL)
 
     // Countdown timer
     const countdownInterval = setInterval(() => {
-      setCountdown(prev => prev > 0 ? prev - 1 : 30)
+      setCountdown(prev => prev > 0 ? prev - 1 : 15)
     }, 1000)
 
     return () => {
-      clearInterval(interval)
+      clearInterval(pollInterval)
       clearInterval(countdownInterval)
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
     }
   }, [fetchTokens])
+
+  // Re-fetch when source changes
+  useEffect(() => {
+    setIsLoading(true)
+    setTokens([])
+    fetchTokens()
+  }, [source])
+
+  const handleManualRefresh = () => {
+    setCountdown(15)
+    fetchTokens(true)
+  }
 
   const copyAddress = (address: string, e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     navigator.clipboard.writeText(address)
     setCopiedAddress(address)
-    setTimeout(() => setCopiedAddress(null), 2000)
+    setTimeout(() => setCopiedAddress(null), 1500)
   }
 
   const formatPrice = (price: number) => {
-    if (price < 0.00001) return price.toExponential(2)
-    if (price < 0.001) return price.toFixed(6)
-    if (price < 1) return price.toFixed(4)
-    if (price < 100) return price.toFixed(2)
-    return price.toFixed(0)
+    if (!price || price === 0) return '$0'
+    if (price < 0.0000001) return `$${price.toExponential(1)}`
+    if (price < 0.00001) return `$${price.toExponential(2)}`
+    if (price < 0.001) return `$${price.toFixed(6)}`
+    if (price < 1) return `$${price.toFixed(4)}`
+    if (price < 100) return `$${price.toFixed(2)}`
+    return `$${price.toFixed(0)}`
   }
 
-  const formatMarketCap = (mc: number) => {
-    if (mc >= 1_000_000_000) return `$${(mc / 1_000_000_000).toFixed(2)}B`
-    if (mc >= 1_000_000) return `$${(mc / 1_000_000).toFixed(2)}M`
-    if (mc >= 1_000) return `$${(mc / 1_000).toFixed(0)}K`
-    return `$${mc.toFixed(0)}`
-  }
-
-  const formatVolume = (vol: number) => {
-    if (vol >= 1_000_000) return `$${(vol / 1_000_000).toFixed(2)}M`
-    if (vol >= 1_000) return `$${(vol / 1_000).toFixed(1)}K`
-    return `$${vol.toFixed(0)}`
-  }
-
-  const getTokenAge = (createdAt: number) => {
-    const diff = Date.now() - createdAt
-    const minutes = Math.floor(diff / 60000)
-    const hours = Math.floor(diff / 3600000)
-    const days = Math.floor(diff / 86400000)
-    
-    if (minutes < 60) return `${minutes}m`
-    if (hours < 24) return `${hours}h`
-    if (days < 7) return `${days}d`
-    return `${Math.floor(days / 7)}w`
+  const formatCompact = (num: number) => {
+    if (!num || num === 0) return '$0'
+    if (num >= 1_000_000_000) return `$${(num / 1_000_000_000).toFixed(1)}B`
+    if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(1)}M`
+    if (num >= 1_000) return `$${(num / 1_000).toFixed(0)}K`
+    return `$${num.toFixed(0)}`
   }
 
   if (isLoading) {
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="h-6 w-40 skeleton rounded" />
-          <div className="h-6 w-24 skeleton rounded" />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {[...Array(12)].map((_, i) => (
-            <div key={i} className="h-[160px] skeleton rounded-lg" />
-          ))}
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
+        {[...Array(18)].map((_, i) => (
+          <div key={i} className="h-[120px] skeleton rounded-lg" />
+        ))}
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
-            <span className="text-sm text-[var(--text-secondary)]">
-              {tokens.length} tokens • Live from DexScreener
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-[var(--text-muted)]">
-            Refresh in {countdown}s
-          </span>
-          <button
-            onClick={() => {
-              fetchTokens()
-              setCountdown(30)
-            }}
-            className="p-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-all"
-          >
-            <RefreshCw className={cn("w-4 h-4 text-[var(--text-muted)]", isLoading && "animate-spin")} />
-          </button>
-        </div>
+    <div className="space-y-3">
+      {/* Minimal Header */}
+      <div className="flex items-center justify-end gap-3">
+        <span className="text-[10px] text-[var(--text-dim)] tabular-nums">
+          {countdown}s
+        </span>
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="p-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-all disabled:opacity-50"
+        >
+          <RefreshCw className={cn("w-3.5 h-3.5 text-[var(--text-muted)]", isRefreshing && "animate-spin")} />
+        </button>
       </div>
 
-      {/* Token Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {/* Compact Token Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
         {tokens.map((token, index) => {
           const isPositive = token.priceChange24h >= 0
-          const age = token.pairCreatedAt ? getTokenAge(token.pairCreatedAt) : ''
-          const isNew = token.pairCreatedAt && (Date.now() - token.pairCreatedAt) < 3600000 // Less than 1 hour
           const buyRatio = token.txns24h.buys + token.txns24h.sells > 0 
             ? (token.txns24h.buys / (token.txns24h.buys + token.txns24h.sells)) * 100 
             : 50
 
           return (
             <motion.div
-              key={token.address}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: index * 0.02 }}
+              key={`${token.address}-${index}`}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.15, delay: Math.min(index * 0.02, 0.3) }}
             >
               <Link href={`/token/${token.address}`}>
-                <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all p-3">
-                  {/* Header Row */}
-                  <div className="flex items-start gap-3 mb-3">
-                    {/* Token Logo */}
-                    <div className="relative w-12 h-12 rounded-xl bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
+                <div className="group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/40 rounded-lg p-2.5 transition-all cursor-pointer">
+                  {/* Header */}
+                  <div className="flex items-start gap-2 mb-2">
+                    <div className="w-8 h-8 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
                       <img
                         src={token.logo}
                         alt={token.symbol}
                         className="w-full h-full object-cover"
+                        loading="lazy"
                         onError={(e) => {
                           (e.target as HTMLImageElement).src = 
-                            `https://ui-avatars.com/api/?name=${token.symbol}&background=1a1a1a&color=fff&bold=true`
+                            `https://ui-avatars.com/api/?name=${token.symbol}&background=1a1a1a&color=fff&size=32`
                         }}
                       />
-                      {isNew && (
-                        <div className="absolute -top-1 -right-1 p-0.5 bg-orange-500 rounded-full">
-                          <Flame className="w-2.5 h-2.5 text-white" />
-                        </div>
-                      )}
                     </div>
-
-                    {/* Token Info */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-bold text-sm text-[var(--text-primary)] truncate">
+                      <div className="flex items-center gap-1">
+                        <span className="font-bold text-xs text-[var(--text-primary)] truncate">
                           ${token.symbol}
-                        </h3>
-                        {token.isPumpFun && (
-                          <span className="px-1.5 py-0.5 text-[8px] font-bold rounded bg-purple-500/20 text-purple-400 flex-shrink-0">
-                            PUMP
-                          </span>
-                        )}
+                        </span>
                       </div>
-                      <p className="text-xs text-[var(--text-muted)] truncate">{token.name}</p>
-                      {age && (
-                        <div className="flex items-center gap-1 mt-0.5 text-[10px] text-[var(--text-dim)]">
-                          <Clock className="w-3 h-3" />
-                          <span>{age} old</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Price Change */}
-                    <div className="text-right flex-shrink-0">
                       <div className={cn(
-                        "text-sm font-bold",
+                        "text-xs font-semibold flex items-center gap-0.5",
                         isPositive ? "text-[var(--green)]" : "text-[var(--red)]"
                       )}>
-                        {isPositive ? '+' : ''}{token.priceChange24h.toFixed(1)}%
-                      </div>
-                      <div className="flex items-center justify-end gap-0.5">
-                        {isPositive ? (
-                          <TrendingUp className="w-3 h-3 text-[var(--green)]" />
-                        ) : (
-                          <TrendingDown className="w-3 h-3 text-[var(--red)]" />
-                        )}
+                        {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                        {isPositive ? '+' : ''}{token.priceChange24h?.toFixed(1) || '0'}%
                       </div>
                     </div>
                   </div>
 
-                  {/* Stats Row */}
-                  <div className="grid grid-cols-3 gap-2 mb-3 text-[10px]">
-                    <div className="bg-[var(--bg-secondary)] rounded-lg p-2">
+                  {/* Stats */}
+                  <div className="grid grid-cols-2 gap-1.5 mb-2 text-[9px]">
+                    <div className="bg-[var(--bg-secondary)] rounded px-1.5 py-1">
                       <div className="text-[var(--text-dim)]">Price</div>
-                      <div className="text-[var(--text-primary)] font-medium">${formatPrice(token.price)}</div>
+                      <div className="text-[var(--text-primary)] font-medium truncate">{formatPrice(token.price)}</div>
                     </div>
-                    <div className="bg-[var(--bg-secondary)] rounded-lg p-2">
+                    <div className="bg-[var(--bg-secondary)] rounded px-1.5 py-1">
                       <div className="text-[var(--text-dim)]">MC</div>
-                      <div className="text-[var(--text-primary)] font-medium">{formatMarketCap(token.marketCap)}</div>
-                    </div>
-                    <div className="bg-[var(--bg-secondary)] rounded-lg p-2">
-                      <div className="text-[var(--text-dim)]">Vol 24h</div>
-                      <div className="text-[var(--text-primary)] font-medium">{formatVolume(token.volume24h)}</div>
+                      <div className="text-[var(--text-primary)] font-medium">{formatCompact(token.marketCap)}</div>
                     </div>
                   </div>
 
-                  {/* Buy Pressure Bar */}
-                  <div className="mb-3">
-                    <div className="flex items-center justify-between text-[10px] mb-1">
-                      <span className="text-[var(--green)]">{token.txns24h.buys} buys</span>
-                      <span className="text-[var(--red)]">{token.txns24h.sells} sells</span>
+                  {/* Buy/Sell Pressure */}
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between text-[8px] mb-0.5">
+                      <span className="text-[var(--green)]">{token.txns24h.buys || 0}</span>
+                      <span className="text-[var(--red)]">{token.txns24h.sells || 0}</span>
                     </div>
-                    <div className="h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
-                      <div 
-                        className="h-full bg-[var(--green)] transition-all"
-                        style={{ width: `${buyRatio}%` }}
-                      />
-                      <div 
-                        className="h-full bg-[var(--red)]"
-                        style={{ width: `${100 - buyRatio}%` }}
-                      />
+                    <div className="h-1 bg-[var(--bg-secondary)] rounded-full overflow-hidden flex">
+                      <div className="h-full bg-[var(--green)]" style={{ width: `${buyRatio}%` }} />
+                      <div className="h-full bg-[var(--red)]" style={{ width: `${100 - buyRatio}%` }} />
                     </div>
                   </div>
 
                   {/* Actions */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
                     <button
                       onClick={(e) => copyAddress(token.address, e)}
                       className={cn(
-                        "flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium transition-all",
+                        "flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium transition-all",
                         copiedAddress === token.address
                           ? "bg-[var(--green)] text-[var(--ocean-deep)]"
                           : "bg-[var(--bg-secondary)] text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"
                       )}
                     >
-                      <Copy className="w-3 h-3" />
-                      {copiedAddress === token.address ? 'Copied!' : 'CA'}
+                      <Copy className="w-2.5 h-2.5" />
+                      {copiedAddress === token.address ? '✓' : 'CA'}
                     </button>
                     <a
                       href={`https://dexscreener.com/solana/${token.address}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={(e) => e.stopPropagation()}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded text-[10px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
+                      className="flex-1 flex items-center justify-center gap-0.5 py-1 rounded text-[9px] font-medium bg-[var(--aqua-primary)] text-[var(--ocean-deep)] hover:bg-[var(--aqua-secondary)] transition-all"
                     >
                       Chart
-                      <ExternalLink className="w-3 h-3" />
+                      <ExternalLink className="w-2.5 h-2.5" />
                     </a>
                   </div>
                 </div>
@@ -298,16 +272,10 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
       </div>
 
       {tokens.length === 0 && !isLoading && (
-        <div className="card p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center">
-            <RefreshCw className="w-8 h-8 text-[var(--text-muted)]" />
-          </div>
-          <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">No tokens found</h3>
-          <p className="text-sm text-[var(--text-muted)] mb-4">Try refreshing or check back later</p>
-          <button 
-            onClick={fetchTokens}
-            className="btn-primary"
-          >
+        <div className="card p-8 text-center">
+          <RefreshCw className="w-8 h-8 mx-auto mb-3 text-[var(--text-muted)]" />
+          <p className="text-sm text-[var(--text-muted)] mb-3">No tokens found</p>
+          <button onClick={handleManualRefresh} className="btn-primary text-sm">
             Refresh
           </button>
         </div>
@@ -315,4 +283,3 @@ export function AllSolanaGrid({ source = 'all' }: AllSolanaGridProps) {
     </div>
   )
 }
-
