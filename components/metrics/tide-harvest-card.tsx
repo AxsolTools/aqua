@@ -6,23 +6,33 @@ import { useAuth } from "@/components/providers/auth-provider"
 
 interface TideHarvestCardProps {
   tokenId: string
-  creatorId: string
-  tokenAddress?: string // Mint address for on-chain queries
+  creatorId: string | null
+  tokenAddress?: string
+}
+
+interface RewardsData {
+  balance: number
+  pumpBalance: number
+  migrationBalance: number
+  vaultAddress: string
+  hasRewards: boolean
+  stage: string
+  isCreator: boolean
+  claimUrl?: string
 }
 
 export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarvestCardProps) {
   const { userId, activeWallet, mainWallet } = useAuth()
-  const [rewardsBalance, setRewardsBalance] = useState<number>(0)
-  const [vaultAddress, setVaultAddress] = useState<string>("")
+  const [rewards, setRewards] = useState<RewardsData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isClaiming, setIsClaiming] = useState(false)
-  const [claimError, setClaimError] = useState<string | null>(null)
+  const [claimMessage, setClaimMessage] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const walletAddress = activeWallet?.public_key || mainWallet?.public_key
-  const isCreator = userId === creatorId || walletAddress === tokenAddress
+  const isCreator = userId === creatorId
 
-  // Fetch creator rewards from on-chain
+  // Fetch creator rewards from API
   const fetchRewards = useCallback(async () => {
     if (!tokenAddress || !walletAddress) {
       setIsLoading(false)
@@ -37,8 +47,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
       if (response.ok) {
         const data = await response.json()
         if (data.success && data.data) {
-          setRewardsBalance(data.data.balance || 0)
-          setVaultAddress(data.data.vaultAddress || "")
+          setRewards(data.data)
         }
       }
     } catch (error) {
@@ -51,7 +60,7 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
   useEffect(() => {
     fetchRewards()
 
-    // Poll every 30 seconds
+    // Poll every 30 seconds for real-time updates
     const interval = setInterval(fetchRewards, 30_000)
     return () => clearInterval(interval)
   }, [fetchRewards])
@@ -78,7 +87,6 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
     const animate = () => {
       ctx.clearRect(0, 0, width, height)
 
-      // Draw waves
       for (let layer = 0; layer < 3; layer++) {
         ctx.beginPath()
         ctx.moveTo(0, height)
@@ -112,10 +120,10 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
   }, [])
 
   const handleClaim = async () => {
-    if (!isCreator || rewardsBalance <= 0 || !tokenAddress || !walletAddress) return
+    if (!rewards?.hasRewards || !tokenAddress || !walletAddress) return
 
     setIsClaiming(true)
-    setClaimError(null)
+    setClaimMessage(null)
 
     try {
       const response = await fetch("/api/creator-rewards", {
@@ -130,22 +138,40 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
       const data = await response.json()
       
       if (data.success) {
-        // Refresh balance after claim
+        setClaimMessage(`Successfully claimed ${rewards.balance.toFixed(6)} SOL!`)
         await fetchRewards()
       } else {
-        setClaimError(data.error || "Failed to claim rewards")
+        // If claiming failed but we have a claim URL, show that
+        if (data.data?.claimUrl) {
+          setClaimMessage(data.error)
+          // Open Pump.fun in new tab
+          window.open(data.data.claimUrl, "_blank")
+        } else {
+          setClaimMessage(data.error || "Failed to claim rewards")
+        }
       }
     } catch (error) {
       console.error("[TIDE-HARVEST] Claim failed:", error)
-      setClaimError("Failed to claim rewards")
+      setClaimMessage("Failed to claim rewards")
     }
 
     setIsClaiming(false)
   }
 
-  const formatSol = (amount: number | null | undefined) => {
-    return (amount || 0).toFixed(4)
+  const openPumpFun = () => {
+    if (tokenAddress) {
+      window.open(`https://pump.fun/coin/${tokenAddress}`, "_blank")
+    }
   }
+
+  const formatSol = (amount: number) => {
+    if (amount >= 1) return amount.toFixed(4)
+    if (amount >= 0.001) return amount.toFixed(6)
+    return amount.toFixed(8)
+  }
+
+  const balance = rewards?.balance || 0
+  const hasRewards = balance > 0
 
   if (isLoading) {
     return (
@@ -161,40 +187,57 @@ export function TideHarvestCard({ tokenId, creatorId, tokenAddress }: TideHarves
       <div className="relative z-10 flex flex-col items-center justify-center h-full">
         <div className="flex items-baseline gap-1 mb-1">
           <motion.span
-            key={rewardsBalance}
+            key={balance}
             initial={{ scale: 1.2, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             className="text-2xl font-bold text-[var(--aqua-primary)] font-mono aqua-text-glow"
           >
-            {formatSol(rewardsBalance)}
+            {formatSol(balance)}
           </motion.span>
           <span className="text-sm text-[var(--text-secondary)]">SOL</span>
         </div>
         <p className="text-xs text-[var(--text-muted)] mb-3">
-          {rewardsBalance > 0 ? "available to harvest" : "creator rewards"}
+          {hasRewards ? "available to harvest" : "creator rewards"}
         </p>
 
-        {claimError && (
-          <p className="text-[10px] text-[var(--red)] mb-2 text-center max-w-[200px]">{claimError}</p>
+        {claimMessage && (
+          <p className="text-[10px] text-center max-w-[220px] mb-2 px-2 py-1 rounded bg-[var(--bg-secondary)]">
+            {claimMessage}
+          </p>
         )}
 
-        {isCreator && rewardsBalance > 0 ? (
-          <motion.button
-            onClick={handleClaim}
-            disabled={isClaiming}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            className="px-5 py-2 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] text-xs font-semibold hover:shadow-[0_0_25px_rgba(0,242,255,0.4)] transition-all disabled:opacity-50"
+        {isCreator && hasRewards ? (
+          <div className="flex items-center gap-2">
+            <motion.button
+              onClick={handleClaim}
+              disabled={isClaiming}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] text-xs font-semibold hover:shadow-[0_0_20px_rgba(0,242,255,0.3)] transition-all disabled:opacity-50"
+            >
+              {isClaiming ? (
+                <span className="flex items-center gap-1.5">
+                  <div className="w-3 h-3 border-2 border-[var(--ocean-deep)] border-t-transparent rounded-full animate-spin" />
+                  Claiming...
+                </span>
+              ) : (
+                "Harvest"
+              )}
+            </motion.button>
+            <button
+              onClick={openPumpFun}
+              className="px-3 py-1.5 rounded-lg border border-[var(--aqua-primary)]/30 text-[var(--aqua-primary)] text-xs font-medium hover:bg-[var(--aqua-primary)]/10 transition-colors"
+            >
+              Pump.fun
+            </button>
+          </div>
+        ) : hasRewards ? (
+          <button
+            onClick={openPumpFun}
+            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] text-xs font-semibold hover:shadow-[0_0_20px_rgba(0,242,255,0.3)] transition-all"
           >
-            {isClaiming ? (
-              <span className="flex items-center gap-2">
-                <div className="w-3 h-3 border-2 border-[var(--ocean-deep)] border-t-transparent rounded-full animate-spin" />
-                Harvesting...
-              </span>
-            ) : (
-              "Harvest Tide"
-            )}
-          </motion.button>
+            Claim on Pump.fun
+          </button>
         ) : (
           <div className="px-3 py-1.5 rounded-full bg-[var(--ocean-surface)]/50 border border-[var(--glass-border)]">
             <span className="text-xs text-[var(--text-muted)]">

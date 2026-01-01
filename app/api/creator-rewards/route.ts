@@ -1,9 +1,12 @@
 /**
  * Creator Rewards API - Fetch and claim rewards from Pump.fun bonding curve vault
+ * 
+ * For bonding curve tokens: Uses Pump.fun's creator vault PDA
+ * For migrated tokens: Uses Raydium/Jupiter trading fees (if applicable)
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { Connection, PublicKey, LAMPORTS_PER_SOL, Keypair, Transaction } from "@solana/web3.js"
+import { Connection, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js"
 import { createClient } from "@supabase/supabase-js"
 
 const supabase = createClient(
@@ -33,12 +36,35 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Get creator vault balance from on-chain
-    const rewardsData = await getCreatorRewardsOnChain(tokenMint, creatorWallet)
+    // Check if token is migrated or on bonding curve
+    const { data: token } = await supabase
+      .from("tokens")
+      .select("id, stage, creator_wallet")
+      .eq("mint_address", tokenMint)
+      .single()
+
+    // Get creator vault balance from on-chain (Pump.fun)
+    const pumpRewards = await getPumpFunCreatorRewards(tokenMint, creatorWallet)
+    
+    // If migrated, also check for any Raydium/LP fee rewards
+    let migrationRewards = 0
+    if (token?.stage === "migrated") {
+      migrationRewards = await getMigratedTokenRewards(tokenMint, creatorWallet)
+    }
+
+    const totalRewards = pumpRewards.balance + migrationRewards
 
     return NextResponse.json({
       success: true,
-      data: rewardsData
+      data: {
+        balance: totalRewards,
+        pumpBalance: pumpRewards.balance,
+        migrationBalance: migrationRewards,
+        vaultAddress: pumpRewards.vaultAddress,
+        hasRewards: totalRewards > 0,
+        stage: token?.stage || "unknown",
+        isCreator: token?.creator_wallet === creatorWallet,
+      }
     })
   } catch (error) {
     console.error("[CREATOR-REWARDS] GET error:", error)
@@ -55,7 +81,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { tokenMint, walletAddress, sessionId } = body
+    const { tokenMint, walletAddress } = body
 
     if (!tokenMint || !walletAddress) {
       return NextResponse.json(
@@ -64,61 +90,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify the wallet belongs to the session
-    const { data: wallet, error: walletError } = await supabase
-      .from("wallets")
-      .select("id, public_key, encrypted_private_key")
-      .eq("public_key", walletAddress)
-      .single()
-
-    if (walletError || !wallet) {
-      return NextResponse.json(
-        { success: false, error: "Wallet not found" },
-        { status: 404 }
-      )
-    }
-
     // Get current rewards balance
-    const rewardsData = await getCreatorRewardsOnChain(tokenMint, walletAddress)
+    const rewardsData = await getPumpFunCreatorRewards(tokenMint, walletAddress)
 
     if (rewardsData.balance <= 0) {
       return NextResponse.json({
         success: false,
-        error: "No rewards available to claim"
+        error: "No rewards available to claim. If you have Pump.fun creator rewards, please visit pump.fun to claim them directly."
       })
     }
 
-    // Claim using PumpPortal API
-    const claimResult = await claimCreatorRewardsViaAPI(tokenMint, walletAddress, wallet.encrypted_private_key)
-
-    if (!claimResult.success) {
-      return NextResponse.json({
-        success: false,
-        error: claimResult.error || "Failed to claim rewards"
-      })
-    }
-
+    // For now, Pump.fun creator rewards must be claimed directly on pump.fun
+    // The PumpPortal API doesn't support programmatic claiming yet
     return NextResponse.json({
-      success: true,
+      success: false,
+      error: `You have ${rewardsData.balance.toFixed(6)} SOL in creator rewards. Please visit pump.fun to claim your rewards directly.`,
       data: {
-        claimed: rewardsData.balance,
-        txSignature: claimResult.signature,
-        message: `Successfully claimed ${rewardsData.balance.toFixed(6)} SOL`
+        balance: rewardsData.balance,
+        vaultAddress: rewardsData.vaultAddress,
+        claimUrl: `https://pump.fun/coin/${tokenMint}`,
       }
     })
+
   } catch (error) {
     console.error("[CREATOR-REWARDS] POST error:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to claim rewards" },
+      { success: false, error: "Failed to process claim" },
       { status: 500 }
     )
   }
 }
 
 /**
- * Fetch creator rewards from on-chain vault PDA
+ * Fetch Pump.fun creator rewards from on-chain vault
  */
-async function getCreatorRewardsOnChain(
+async function getPumpFunCreatorRewards(
   tokenMint: string, 
   creatorWallet: string
 ): Promise<{
@@ -130,168 +136,88 @@ async function getCreatorRewardsOnChain(
     const mintPubkey = new PublicKey(tokenMint)
     const creatorPubkey = new PublicKey(creatorWallet)
 
-    // Try multiple PDA derivation patterns used by Pump.fun
-    const pdaSeeds = [
-      // Pattern 1: creator-vault with mint and creator
-      [Buffer.from('creator-vault'), mintPubkey.toBuffer(), creatorPubkey.toBuffer()],
-      // Pattern 2: creator_fee with creator and mint
-      [Buffer.from('creator_fee'), creatorPubkey.toBuffer(), mintPubkey.toBuffer()],
-      // Pattern 3: vault with creator only
-      [Buffer.from('vault'), creatorPubkey.toBuffer()],
+    // Pump.fun uses a bonding curve PDA that holds creator fees
+    // Try multiple known PDA patterns
+
+    const pdaPatterns = [
+      // Pattern 1: Pump.fun bonding curve with mint seed
+      ["bonding-curve", mintPubkey.toBuffer()],
+      // Pattern 2: Creator vault with mint and creator seeds
+      ["creator-vault", mintPubkey.toBuffer(), creatorPubkey.toBuffer()],
+      // Pattern 3: Fee vault with mint seed
+      ["fee-vault", mintPubkey.toBuffer()],
+      // Pattern 4: Creator with creator pubkey
+      ["creator", creatorPubkey.toBuffer()],
     ]
 
     let totalBalance = 0
     let foundVault = ""
 
-    for (const seeds of pdaSeeds) {
+    for (const seeds of pdaPatterns) {
       try {
-        const [vaultPDA] = PublicKey.findProgramAddressSync(seeds, PUMP_PROGRAM_ID)
-        const balance = await connection.getBalance(vaultPDA)
+        const [pda] = PublicKey.findProgramAddressSync(
+          seeds.map(s => typeof s === "string" ? Buffer.from(s) : s),
+          PUMP_PROGRAM_ID
+        )
+        
+        const balance = await connection.getBalance(pda)
         
         if (balance > 0) {
+          console.log(`[CREATOR-REWARDS] Found vault at ${pda.toBase58()}: ${balance / LAMPORTS_PER_SOL} SOL`)
           totalBalance += balance
-          foundVault = vaultPDA.toBase58()
-          console.log(`[CREATOR-REWARDS] Found vault ${vaultPDA.toBase58()} with ${balance / LAMPORTS_PER_SOL} SOL`)
+          if (!foundVault) foundVault = pda.toBase58()
         }
       } catch {
-        // Skip invalid PDA
+        // Invalid PDA, skip
       }
     }
 
-    // Also check direct creator wallet for any Pump.fun fee distributions
-    const directBalance = await connection.getBalance(creatorPubkey)
-    
+    // Also try to get bonding curve account data using Pump.fun's API
+    try {
+      const pumpResponse = await fetch(`https://frontend-api.pump.fun/coins/${tokenMint}`)
+      if (pumpResponse.ok) {
+        const pumpData = await pumpResponse.json()
+        if (pumpData.creator_balance_sol) {
+          const creatorBal = parseFloat(pumpData.creator_balance_sol)
+          if (creatorBal > totalBalance / LAMPORTS_PER_SOL) {
+            totalBalance = creatorBal * LAMPORTS_PER_SOL
+          }
+        }
+        if (pumpData.bonding_curve) {
+          foundVault = pumpData.bonding_curve
+        }
+      }
+    } catch (e) {
+      console.debug("[CREATOR-REWARDS] Pump.fun API unavailable:", e)
+    }
+
     return {
       balance: totalBalance / LAMPORTS_PER_SOL,
       vaultAddress: foundVault,
-      hasRewards: totalBalance > 0
+      hasRewards: totalBalance > 0,
     }
   } catch (error) {
-    console.error("[CREATOR-REWARDS] On-chain fetch error:", error)
+    console.error("[CREATOR-REWARDS] Pump.fun fetch error:", error)
     return { balance: 0, vaultAddress: "", hasRewards: false }
   }
 }
 
 /**
- * Claim creator rewards via PumpPortal API
+ * Get rewards for migrated tokens (from Raydium LP fees etc)
  */
-async function claimCreatorRewardsViaAPI(
+async function getMigratedTokenRewards(
   tokenMint: string,
-  creatorWallet: string,
-  encryptedPrivateKey: string
-): Promise<{ success: boolean; signature?: string; error?: string }> {
+  creatorWallet: string
+): Promise<number> {
   try {
-    // Get service salt for decryption
-    const { data: saltConfig } = await supabase
-      .from("system_config")
-      .select("value")
-      .eq("key", "service_salt")
-      .single()
-
-    if (!saltConfig?.value) {
-      return { success: false, error: "Service configuration not found" }
-    }
-
-    // Decrypt private key
-    const privateKeyBytes = await decryptWalletKey(encryptedPrivateKey, saltConfig.value)
-    const creatorKeypair = Keypair.fromSecretKey(privateKeyBytes)
-
-    // Use PumpPortal API for claiming
-    const response = await fetch("https://pumpportal.fun/api/creator-claim", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mint: tokenMint,
-        creatorPublicKey: creatorWallet,
-      }),
-    })
-
-    if (!response.ok) {
-      // If PumpPortal doesn't support this endpoint, return info
-      return { 
-        success: false, 
-        error: "Creator reward claiming requires manual withdrawal from Pump.fun. Please visit pump.fun to claim your rewards." 
-      }
-    }
-
-    // If PumpPortal returns a transaction to sign
-    const txData = await response.arrayBuffer()
-    const tx = Transaction.from(Buffer.from(txData))
-    tx.sign(creatorKeypair)
-
-    const signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: "confirmed",
-      maxRetries: 3,
-    })
-
-    await connection.confirmTransaction(signature, "confirmed")
-
-    return { success: true, signature }
+    // For migrated tokens, check if there are any LP rewards
+    // This would typically involve checking Raydium/Orca LP positions
+    // For now, we return 0 as this requires more complex integration
+    
+    // Future: Integrate with Raydium API to check LP fee accumulation
+    return 0
   } catch (error) {
-    console.error("[CREATOR-REWARDS] Claim error:", error)
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : "Failed to claim rewards" 
-    }
+    console.error("[CREATOR-REWARDS] Migration rewards fetch error:", error)
+    return 0
   }
 }
-
-/**
- * Decrypt wallet key
- */
-async function decryptWalletKey(encryptedData: string, salt: string): Promise<Uint8Array> {
-  const parts = encryptedData.split(":")
-  if (parts.length !== 3) {
-    throw new Error("Invalid encrypted data format")
-  }
-
-  const [ivHex, ciphertextHex, authTagHex] = parts
-
-  const hexToBytes = (hex: string): Uint8Array => {
-    const bytes = new Uint8Array(hex.length / 2)
-    for (let i = 0; i < hex.length; i += 2) {
-      bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
-    }
-    return bytes
-  }
-
-  const iv = hexToBytes(ivHex)
-  const ciphertext = hexToBytes(ciphertextHex)
-  const authTag = hexToBytes(authTagHex)
-  const saltBytes = hexToBytes(salt)
-
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    saltBytes.buffer as ArrayBuffer,
-    "PBKDF2",
-    false,
-    ["deriveBits", "deriveKey"]
-  )
-
-  const derivedKey = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: saltBytes.buffer as ArrayBuffer,
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"]
-  )
-
-  const combined = new Uint8Array(ciphertext.length + authTag.length)
-  combined.set(ciphertext)
-  combined.set(authTag, ciphertext.length)
-
-  const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: iv.buffer as ArrayBuffer },
-    derivedKey,
-    combined.buffer as ArrayBuffer
-  )
-
-  return new Uint8Array(decrypted)
-}
-
