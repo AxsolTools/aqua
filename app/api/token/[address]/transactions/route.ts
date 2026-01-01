@@ -158,7 +158,7 @@ async function fetchHeliusTransactions(
     // Step 2: Get enhanced transaction data using POST /v0/transactions
     // Docs: https://www.helius.dev/docs/api-reference/enhanced-transactions/gettransactions
     const enhancedResponse = await fetch(
-      `https://api-mainnet.helius-rpc.com/v0/transactions?api-key=${HELIUS_API_KEY}`,
+      `https://api-mainnet.helius-rpc.com/v0/transactions/?api-key=${HELIUS_API_KEY}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
