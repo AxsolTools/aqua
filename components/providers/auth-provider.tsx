@@ -92,9 +92,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setWallets(data)
         const primary = data.find((w) => w.is_primary) || data[0]
         setMainWalletState(primary)
-        if (!activeWallet) {
-          setActiveWalletState(primary)
-        }
+        
+        // CRITICAL FIX: Preserve active wallet if it still exists, otherwise default to primary
+        setActiveWalletState((currentActive) => {
+          if (currentActive) {
+            // Check if current active wallet still exists in the new data
+            const stillExists = data.find((w) => w.id === currentActive.id)
+            if (stillExists) {
+              console.log('[AUTH] Preserved active wallet:', stillExists.public_key?.slice(0, 8))
+              return stillExists // Return updated version of the wallet
+            }
+          }
+          console.log('[AUTH] Set active wallet to primary:', primary.public_key?.slice(0, 8))
+          return primary
+        })
+        
         console.log('[AUTH] Main wallet set:', primary.public_key?.slice(0, 8))
       } else {
         console.log('[AUTH] No wallets found for session')
@@ -107,7 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [userId, supabase, activeWallet])
+  }, [userId, supabase])
 
   useEffect(() => {
     if (userId) {
