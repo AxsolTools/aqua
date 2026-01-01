@@ -57,6 +57,23 @@
   --yellow: #eab308;
   --yellow-bg: rgba(234, 179, 8, 0.1);
 
+  /* Semantic Status Colors */
+  --success: #22c55e;
+  --success-light: #4ade80;
+  --error: #ef4444;
+  --error-light: #f87171;
+  --warning: #f59e0b;
+  --info: #3b82f6;
+
+  /* Ocean Theme (used by wallet onboarding and other components) */
+  --ocean-deep: #0a0b0d;
+  --ocean-surface: #12141a;
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --warm-orange: #f97316;
+  --warm-pink: #ec4899;
+  --aqua-subtle: rgba(20, 184, 166, 0.1);
+  --text-dim: #52525b;
+
   /* Semantic Mappings for shadcn */
   --background: var(--bg-primary);
   --foreground: var(--text-primary);

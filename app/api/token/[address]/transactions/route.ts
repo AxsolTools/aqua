@@ -273,6 +273,25 @@ interface EnhancedTransaction {
       userAccount: string
     }>
   }>
+  // Swap events from Helius Enhanced API
+  events?: {
+    swap?: {
+      nativeInput?: { account: string; amount: string }
+      nativeOutput?: { account: string; amount: string }
+      tokenInputs?: Array<{
+        mint: string
+        rawTokenAmount: { tokenAmount: string; decimals: number }
+        userAccount: string
+        tokenAccount: string
+      }>
+      tokenOutputs?: Array<{
+        mint: string
+        rawTokenAmount: { tokenAmount: string; decimals: number }
+        userAccount: string
+        tokenAccount: string
+      }>
+    }
+  }
 }
 
 // Signature info from getSignaturesForAddress fallback
@@ -289,6 +308,20 @@ interface SignatureInfo {
  * Determine if transaction is a buy (tokens going to the fee payer)
  */
 function isTokenBuy(tx: EnhancedTransaction, tokenAddress: string): boolean {
+  // PRIORITY 1: Check swap events - if SOL is input and tokens are output, it's a buy
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    // If there's native input (SOL spent) and token outputs, it's a buy
+    if (swap.nativeInput && swap.tokenOutputs && swap.tokenOutputs.length > 0) {
+      return true
+    }
+    // If there's token input and native output (SOL received), it's a sell
+    if (swap.nativeOutput && swap.tokenInputs && swap.tokenInputs.length > 0) {
+      return false
+    }
+  }
+
+  // PRIORITY 2: Check token transfers
   if (tx.tokenTransfers) {
     const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
     if (tokenTransfer) {
@@ -296,6 +329,7 @@ function isTokenBuy(tx: EnhancedTransaction, tokenAddress: string): boolean {
     }
   }
   
+  // PRIORITY 3: Check account data
   if (tx.accountData) {
     const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
     if (feePayerData?.tokenBalanceChanges) {
@@ -313,15 +347,44 @@ function isTokenBuy(tx: EnhancedTransaction, tokenAddress: string): boolean {
  * Extract SOL amount from transaction
  */
 function extractSolAmount(tx: EnhancedTransaction): number {
+  // PRIORITY 1: Check swap events (most accurate for DEX trades)
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    // For swaps, get SOL input or output
+    if (swap.nativeInput?.amount) {
+      return parseInt(swap.nativeInput.amount) / 1e9
+    }
+    if (swap.nativeOutput?.amount) {
+      return parseInt(swap.nativeOutput.amount) / 1e9
+    }
+  }
+
+  // PRIORITY 2: Try nativeTransfers - reliable for SOL transfers
   if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
-    const total = tx.nativeTransfers.reduce((sum, t) => sum + Math.abs(t.amount || 0), 0)
-    return total / 1e9
+    // Filter out tiny amounts (likely fees) and get the main transfer
+    const significantTransfers = tx.nativeTransfers.filter(t => Math.abs(t.amount || 0) > 5000) // > 0.000005 SOL
+    if (significantTransfers.length > 0) {
+      // Get the largest transfer (likely the main trade)
+      const largest = significantTransfers.reduce((max, t) => 
+        Math.abs(t.amount) > Math.abs(max.amount) ? t : max
+      )
+      return Math.abs(largest.amount) / 1e9
+    }
   }
   
+  // PRIORITY 3: Try accountData for balance changes
   if (tx.accountData) {
-    const feePayerData = tx.accountData.find(a => a.account === tx.feePayer)
-    if (feePayerData) {
-      return Math.abs(feePayerData.nativeBalanceChange || 0) / 1e9
+    // Look for significant balance changes (not just fee payer)
+    let maxChange = 0
+    for (const account of tx.accountData) {
+      const change = Math.abs(account.nativeBalanceChange || 0)
+      // Ignore very small changes (fees) and changes from system programs
+      if (change > 5000 && change > maxChange) {
+        maxChange = change
+      }
+    }
+    if (maxChange > 0) {
+      return maxChange / 1e9
     }
   }
   
@@ -332,19 +395,59 @@ function extractSolAmount(tx: EnhancedTransaction): number {
  * Extract token amount from transaction
  */
 function extractTokenAmount(tx: EnhancedTransaction, tokenAddress: string): number {
-  if (tx.tokenTransfers) {
+  // PRIORITY 1: Check swap events for token amounts
+  if (tx.events?.swap) {
+    const swap = tx.events.swap
+    // Check token outputs first (for buys, you receive tokens)
+    if (swap.tokenOutputs && swap.tokenOutputs.length > 0) {
+      const tokenOut = swap.tokenOutputs.find(t => t.mint === tokenAddress) || swap.tokenOutputs[0]
+      if (tokenOut?.rawTokenAmount) {
+        const amount = parseFloat(tokenOut.rawTokenAmount.tokenAmount)
+        const decimals = tokenOut.rawTokenAmount.decimals || 0
+        return Math.abs(amount / Math.pow(10, decimals))
+      }
+    }
+    // Check token inputs (for sells, you send tokens)
+    if (swap.tokenInputs && swap.tokenInputs.length > 0) {
+      const tokenIn = swap.tokenInputs.find(t => t.mint === tokenAddress) || swap.tokenInputs[0]
+      if (tokenIn?.rawTokenAmount) {
+        const amount = parseFloat(tokenIn.rawTokenAmount.tokenAmount)
+        const decimals = tokenIn.rawTokenAmount.decimals || 0
+        return Math.abs(amount / Math.pow(10, decimals))
+      }
+    }
+  }
+
+  // PRIORITY 2: Try tokenTransfers
+  if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
     const tokenTransfer = tx.tokenTransfers.find(t => t.mint === tokenAddress)
-    if (tokenTransfer) {
-      return Math.abs(tokenTransfer.tokenAmount || 0)
+    if (tokenTransfer && tokenTransfer.tokenAmount) {
+      return Math.abs(tokenTransfer.tokenAmount)
+    }
+    // If specific token not found, use the first transfer with amount
+    const allTransfers = tx.tokenTransfers.filter(t => t.tokenAmount && t.tokenAmount > 0)
+    if (allTransfers.length > 0) {
+      return Math.abs(allTransfers[0].tokenAmount)
     }
   }
   
+  // PRIORITY 3: Try accountData for balance changes
   if (tx.accountData) {
     for (const account of tx.accountData) {
-      if (account.tokenBalanceChanges) {
+      if (account.tokenBalanceChanges && account.tokenBalanceChanges.length > 0) {
+        // Look for the specific token first
         const tokenChange = account.tokenBalanceChanges.find(t => t.mint === tokenAddress)
-        if (tokenChange) {
-          return Math.abs(parseFloat(tokenChange.rawTokenAmount.tokenAmount))
+        if (tokenChange && tokenChange.rawTokenAmount) {
+          const amount = parseFloat(tokenChange.rawTokenAmount.tokenAmount)
+          const decimals = tokenChange.rawTokenAmount.decimals || 0
+          return Math.abs(amount / Math.pow(10, decimals))
+        }
+        // Fallback to first token change
+        const firstChange = account.tokenBalanceChanges[0]
+        if (firstChange && firstChange.rawTokenAmount) {
+          const amount = parseFloat(firstChange.rawTokenAmount.tokenAmount)
+          const decimals = firstChange.rawTokenAmount.decimals || 0
+          return Math.abs(amount / Math.pow(10, decimals))
         }
       }
     }

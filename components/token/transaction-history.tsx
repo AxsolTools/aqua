@@ -132,7 +132,18 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
     }
   }, [tokenId])
 
-  const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
+  const formatAddress = (addr: string) => {
+    if (!addr || addr.length < 8) return addr || "..."
+    return `${addr.slice(0, 4)}...${addr.slice(-4)}`
+  }
+
+  const formatSolAmount = (amount: number) => {
+    if (!amount || amount === 0) return "0.0000"
+    if (amount < 0.0001) return "<0.0001"
+    if (amount < 0.01) return amount.toFixed(6)
+    if (amount < 1) return amount.toFixed(4)
+    return amount.toFixed(2)
+  }
   
   const formatTime = (timestamp: number) => {
     const now = Date.now()
@@ -282,7 +293,7 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
                     )}
                   >
                     {tx.type === "buy" ? "+" : "-"}
-                    {tx.amountSol.toFixed(4)} SOL
+                    {formatSolAmount(tx.amountSol)} SOL
                   </p>
                   <p className="text-xs text-[var(--text-muted)]">{formatTime(tx.timestamp)}</p>
                 </div>
