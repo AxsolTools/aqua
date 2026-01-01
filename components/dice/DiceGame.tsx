@@ -345,55 +345,43 @@ const DiceGame: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Wallet Status Card */}
-      <Card className="w-full max-w-3xl mx-auto bg-card border-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center justify-between text-lg">
-            <span className="flex items-center gap-2">
-              <Wallet className="h-5 w-5 text-primary" />
-              Wallet Balance
-            </span>
-            <Button variant="ghost" size="sm" onClick={fetchBalance} disabled={isLoadingBalance}>
-              <RefreshCw className={`h-4 w-4 ${isLoadingBalance ? 'animate-spin' : ''}`} />
-            </Button>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-3xl font-bold text-foreground">{onChainBalance.toFixed(4)}</p>
-              <p className="text-sm text-muted-foreground">{token.symbol} Tokens (On-Chain)</p>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-muted-foreground">
-                Wallet: {formatAddress(publicKey || '', 4)}
-              </div>
-              <div className="flex items-center gap-1 text-xs mt-1">
-                {isWalletRegistered || isRegisteredWithBackend ? (
-                  <>
-                    <CheckCircle className="h-3 w-3 text-green-500" />
-                    <span className="text-green-500">Ready for betting</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="h-3 w-3 text-amber-500" />
-                    <span className="text-amber-500">Wallet needs registration</span>
-                  </>
-                )}
-              </div>
+    <div className="space-y-4">
+      {/* Compact Wallet Status Bar */}
+      <div className="w-full max-w-3xl mx-auto px-4 py-2.5 bg-card/80 backdrop-blur border border-border rounded-lg">
+        <div className="flex items-center justify-between gap-4">
+          {/* Balance */}
+          <div className="flex items-center gap-3">
+            <Wallet className="h-4 w-4 text-primary" />
+            <div className="flex items-baseline gap-2">
+              <span className="text-xl font-bold text-foreground">{onChainBalance.toFixed(4)}</span>
+              <span className="text-xs text-muted-foreground">{token.symbol}</span>
             </div>
           </div>
           
-          <div className="mt-4 p-3 bg-background/50 rounded-lg border border-border">
-            <p className="text-xs text-muted-foreground">
-              <strong>Direct Betting:</strong> Bets are settled directly on-chain. 
-              When you win, tokens are transferred to your wallet automatically. 
-              When you lose, tokens are transferred to the house.
-            </p>
+          {/* Wallet Address + Status */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs">
+              {isWalletRegistered || isRegisteredWithBackend ? (
+                <>
+                  <CheckCircle className="h-3 w-3 text-green-500" />
+                  <span className="text-green-500 hidden sm:inline">Ready</span>
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3 w-3 text-amber-500" />
+                  <span className="text-amber-500 hidden sm:inline">Register</span>
+                </>
+              )}
+            </div>
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              {formatAddress(publicKey || '', 4)}
+            </span>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={fetchBalance} disabled={isLoadingBalance}>
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoadingBalance ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Game Card */}
       <Card className="w-full max-w-3xl mx-auto bg-card border-border">

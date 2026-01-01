@@ -117,6 +117,12 @@ async function fetchFromJupiterLegacy(tokenMint: string): Promise<PriceResult> {
 /**
  * Fetch from DexScreener
  */
+interface DexScreenerData {
+  price: number
+  volume24h: number
+  txCount24h: number
+}
+
 async function fetchFromDexScreener(tokenMint: string): Promise<PriceResult> {
   const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenMint}`, {
     headers: { "Accept": "application/json" },
@@ -135,6 +141,45 @@ async function fetchFromDexScreener(tokenMint: string): Promise<PriceResult> {
   return {
     price: parseFloat(pair.priceUsd),
     source: "dexscreener"
+  }
+}
+
+/**
+ * Fetch extended data from DexScreener (volume, txCount)
+ */
+async function fetchDexScreenerExtendedData(tokenMint: string): Promise<DexScreenerData | null> {
+  try {
+    const response = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${tokenMint}`, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(4000)
+    })
+
+    if (!response.ok) return null
+
+    const data = await response.json()
+    if (!data.pairs || data.pairs.length === 0) return null
+
+    // Aggregate data from all pairs
+    let totalVolume24h = 0
+    let totalTxCount24h = 0
+    let bestPrice = 0
+
+    for (const pair of data.pairs) {
+      if (pair.volume?.h24) totalVolume24h += pair.volume.h24
+      if (pair.txns?.h24?.buys) totalTxCount24h += pair.txns.h24.buys
+      if (pair.txns?.h24?.sells) totalTxCount24h += pair.txns.h24.sells
+      if (pair.priceUsd && parseFloat(pair.priceUsd) > bestPrice) {
+        bestPrice = parseFloat(pair.priceUsd)
+      }
+    }
+
+    return {
+      price: bestPrice,
+      volume24h: totalVolume24h,
+      txCount24h: totalTxCount24h
+    }
+  } catch {
+    return null
   }
 }
 
@@ -336,7 +381,14 @@ export async function POST(request: NextRequest) {
     const solPriceUsd = solPriceResult.price
 
     // Fetch prices in parallel (limit concurrency)
-    const prices: Record<string, { priceUsd: number; priceSol: number; source: string; marketCap: number }> = {}
+    const prices: Record<string, { 
+      priceUsd: number
+      priceSol: number
+      source: string
+      marketCap: number
+      volume24h?: number
+      txCount24h?: number
+    }> = {}
 
     const batchSize = 10
     for (let i = 0; i < mints.length; i += batchSize) {
@@ -346,19 +398,22 @@ export async function POST(request: NextRequest) {
         batch.map(async (mint: string) => {
           try {
             const decimals = await getTokenDecimals(mint)
-            const [priceResult, supply] = await Promise.all([
+            const [priceResult, supply, dexData] = await Promise.all([
               resolveTokenPrice(mint, decimals).catch(() => ({ price: 0, source: "none" })),
-              getCirculatingSupply(mint)
+              getCirculatingSupply(mint),
+              fetchDexScreenerExtendedData(mint)
             ])
             
             prices[mint] = {
               priceUsd: priceResult.price,
               priceSol: solPriceUsd > 0 ? priceResult.price / solPriceUsd : 0,
               source: priceResult.source,
-              marketCap: priceResult.price * supply
+              marketCap: priceResult.price * supply,
+              volume24h: dexData?.volume24h || 0,
+              txCount24h: dexData?.txCount24h || 0
             }
           } catch {
-            prices[mint] = { priceUsd: 0, priceSol: 0, source: "error", marketCap: 0 }
+            prices[mint] = { priceUsd: 0, priceSol: 0, source: "error", marketCap: 0, volume24h: 0, txCount24h: 0 }
           }
         })
       )

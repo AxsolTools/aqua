@@ -30,11 +30,15 @@ interface TokenLaneProps {
   maxTokens?: number
 }
 
+// Minimum market cap threshold for "Almost Bonded" lane
+const ALMOST_BONDED_MIN_MC = 15000 // $15K minimum
+
 const LANE_CONFIG = {
   "new": {
     filter: (token: TokenWithMetrics) => {
-      const progress = getProgress(token)
-      return token.stage === "bonding" && progress < 50
+      // New tokens: bonding stage with market cap below $15K
+      const mc = getMarketCap(token)
+      return token.stage === "bonding" && mc < ALMOST_BONDED_MIN_MC
     },
     sort: (a: TokenWithMetrics, b: TokenWithMetrics) => {
       // Sort by newest first
@@ -44,8 +48,9 @@ const LANE_CONFIG = {
   },
   "almost-bonded": {
     filter: (token: TokenWithMetrics) => {
-      const progress = getProgress(token)
-      return token.stage === "bonding" && progress >= 50
+      // Almost Bonded: bonding stage with market cap >= $15K
+      const mc = getMarketCap(token)
+      return token.stage === "bonding" && mc >= ALMOST_BONDED_MIN_MC
     },
     sort: (a: TokenWithMetrics, b: TokenWithMetrics) => {
       // Sort by highest progress first
@@ -57,17 +62,21 @@ const LANE_CONFIG = {
     filter: (token: TokenWithMetrics) => token.stage === "migrated",
     sort: (a: TokenWithMetrics, b: TokenWithMetrics) => {
       // Sort by market cap for migrated
-      const mcA = a.live_market_cap || a.market_cap_usd || a.market_cap || 0
-      const mcB = b.live_market_cap || b.market_cap_usd || b.market_cap || 0
+      const mcA = getMarketCap(a)
+      const mcB = getMarketCap(b)
       return mcB - mcA
     },
     emptyMessage: "No migrated tokens yet",
   },
 }
 
+function getMarketCap(token: TokenWithMetrics) {
+  return token.live_market_cap || token.market_cap_usd || token.market_cap || 0
+}
+
 function getProgress(token: TokenWithMetrics) {
   const threshold = token.migration_threshold || 69000
-  const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
+  const current = getMarketCap(token)
   return Math.min((current / threshold) * 100, 100)
 }
 
@@ -96,11 +105,12 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
         if (data.success && data.data) {
           return tokenList.map(token => {
             const priceData = data.data[token.mint_address]
-            if (priceData && priceData.marketCap > 0) {
+            if (priceData) {
               return { 
                 ...token, 
-                live_market_cap: priceData.marketCap,
+                live_market_cap: priceData.marketCap || 0,
                 volume_24h: priceData.volume24h || 0,
+                tx_count: priceData.txCount24h || 0,
               }
             }
             return token
