@@ -324,7 +324,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="p-3 rounded-xl bg-zinc-900/80 border border-zinc-800">
                   <p className="text-[10px] text-zinc-500 uppercase tracking-wide mb-1">24h Volume</p>
-                  <p className="text-xl font-bold text-zinc-100">{formatNumber(createdTokens.reduce((sum, t) => sum + (t.volume_24h || 0), 0))} <span className="text-xs text-zinc-500">SOL</span></p>
+                  <p className="text-xl font-bold text-zinc-100">{formatNumber(createdTokens.reduce((sum, t) => sum + (t.volume_24h || 0), 0))} <span className="text-xs text-zinc-500">USD</span></p>
                 </div>
                 <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20">
                   <p className="text-[10px] text-amber-400 uppercase tracking-wide mb-1">Claimable Rewards</p>
