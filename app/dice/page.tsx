@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 import { Gamepad2 } from 'lucide-react'
 import { SolanaWalletProvider } from '@/components/dice/SolanaWalletContext'
 import { Header } from '@/components/layout/header'
+import { useTokenConfig } from '@/components/dice/useTokenConfig'
 
 // Dynamic imports to avoid SSR issues
 const DiceGame = dynamic(() => import('@/components/dice/DiceGame'), { 
@@ -45,25 +46,26 @@ const Leaderboard = dynamic(() => import('@/components/dice/Leaderboard'), {
   )
 })
 
-export default function DicePage() {
+function DicePageContent() {
+  const { token } = useTokenConfig()
+  
   return (
-    <SolanaWalletProvider>
-      <main className="min-h-screen bg-[var(--bg-primary)]">
-        <Header />
-        
-        <div className="max-w-[1920px] mx-auto px-3 sm:px-4 lg:px-6 py-6">
-          {/* Page Title */}
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-3 mb-2">
-              <Gamepad2 className="h-8 w-8 text-[var(--aqua-primary)]" />
-              <h1 className="text-3xl font-bold text-[var(--text-primary)]">
-                AQUA Dice Game
-              </h1>
-            </div>
-            <p className="text-sm text-[var(--text-muted)] max-w-xl mx-auto">
-              Provably fair on-chain dice. All bets settled directly on Solana.
-            </p>
+    <main className="min-h-screen bg-[var(--bg-primary)]">
+      <Header />
+      
+      <div className="max-w-[1920px] mx-auto px-3 sm:px-4 lg:px-6 py-6">
+        {/* Page Title */}
+        <div className="text-center mb-6">
+          <div className="inline-flex items-center gap-3 mb-2">
+            <Gamepad2 className="h-8 w-8 text-[var(--aqua-primary)]" />
+            <h1 className="text-3xl font-bold text-[var(--text-primary)]">
+              {token.symbol} Dice Game
+            </h1>
           </div>
+          <p className="text-sm text-[var(--text-muted)] max-w-xl mx-auto">
+            Provably fair on-chain dice. All bets settled directly on Solana.
+          </p>
+        </div>
 
           {/* Main Content - 3 Column Layout */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
@@ -115,6 +117,13 @@ export default function DicePage() {
           </div>
         </div>
       </main>
+  )
+}
+
+export default function DicePage() {
+  return (
+    <SolanaWalletProvider>
+      <DicePageContent />
     </SolanaWalletProvider>
   )
 }
