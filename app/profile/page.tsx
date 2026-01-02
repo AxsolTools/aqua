@@ -13,6 +13,17 @@ import Image from "next/image"
 import { motion } from "framer-motion"
 import { ReferralPanel } from "@/components/profile/referral-panel"
 import { PnLPanel } from "@/components/profile/pnl-panel"
+import { 
+  User, 
+  Wallet, 
+  CreditCard, 
+  Coins, 
+  ArrowUpDown, 
+  Plus, 
+  Copy,
+  TrendingUp,
+  TrendingDown
+} from "lucide-react"
 
 type TabType = "portfolio" | "pnl" | "created" | "activity" | "referrals" | "settings"
 
@@ -263,9 +274,7 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center">
-                    <svg width="20" height="20" viewBox="0 0 32 32" fill="var(--ocean-deep)">
-                      <path d="M16 4C16 4 8 14 8 20C8 24.4 11.6 28 16 28C20.4 28 24 24.4 24 20C24 14 16 4 16 4Z" />
-                    </svg>
+                    <User className="w-5 h-5 text-[var(--ocean-deep)]" />
                   </div>
                   <div>
                     <h1 className="text-lg font-bold text-[var(--text-primary)]">Profile</h1>
@@ -386,10 +395,10 @@ export default function ProfilePage() {
                                 </span>
                                 <button
                                   onClick={() => navigator.clipboard.writeText(wallet.public_key)}
-                                  className="p-0.5 rounded hover:bg-[var(--ocean-surface)] transition-colors text-[10px]"
+                                  className="p-1 rounded hover:bg-[var(--ocean-surface)] transition-colors"
                                   title="Copy"
                                 >
-                                  📋
+                                  <Copy className="w-3 h-3 text-[var(--text-muted)]" />
                                 </button>
                               </div>
                             </div>
@@ -408,22 +417,14 @@ export default function ProfilePage() {
                       ) : createdTokens.length === 0 ? (
                         <GlassPanel className="p-12 text-center">
                           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-[var(--ocean-surface)] flex items-center justify-center">
-                            <svg
-                              width="24"
-                              height="24"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="var(--text-muted)"
-                              strokeWidth="2"
-                            >
-                              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
-                            </svg>
+                            <Plus className="w-6 h-6 text-[var(--text-muted)]" />
                           </div>
                           <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">No tokens yet</h3>
                           <p className="text-sm text-[var(--text-secondary)] mb-6">
                             Launch your first token with AQUA liquidity mechanics
                           </p>
-                          <Link href="/launch" className="btn-primary inline-flex">
+                          <Link href="/launch" className="btn-primary inline-flex items-center gap-2">
+                            <Coins className="w-4 h-4" />
                             Launch Token
                           </Link>
                         </GlassPanel>
@@ -710,21 +711,12 @@ export default function ProfilePage() {
             ) : (
               <GlassPanel className="p-12 text-center max-w-lg mx-auto">
                 <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-coral)]/20 flex items-center justify-center">
-                  <svg
-                    width="32"
-                    height="32"
-                    viewBox="0 0 32 32"
-                    fill="none"
-                    stroke="var(--aqua-primary)"
-                    strokeWidth="2"
-                  >
-                    <rect x="4" y="8" width="24" height="16" rx="3" />
-                    <circle cx="18" cy="16" r="2" fill="var(--aqua-primary)" stroke="none" />
-                  </svg>
+                  <Wallet className="w-10 h-10 text-[var(--aqua-primary)]" />
                 </div>
                 <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">Connect Your Wallet</h2>
                 <p className="text-[var(--text-secondary)] mb-6">View your portfolio, created tokens, and activity</p>
-                <button onClick={() => setIsOnboarding(true)} className="btn-primary">
+                <button onClick={() => setIsOnboarding(true)} className="btn-primary inline-flex items-center gap-2">
+                  <CreditCard className="w-4 h-4" />
                   Connect Wallet
                 </button>
               </GlassPanel>

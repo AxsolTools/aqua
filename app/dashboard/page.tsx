@@ -24,6 +24,21 @@ import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
 import { EvaporationTracker } from "@/components/metrics/evaporation-tracker"
 import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
 import { getAuthHeaders } from "@/lib/api"
+import { 
+  LayoutDashboard, 
+  Droplets, 
+  Waves, 
+  Flame, 
+  Star, 
+  Gift, 
+  Coins, 
+  Wallet, 
+  CreditCard,
+  Plus,
+  ExternalLink,
+  Settings,
+  X
+} from "lucide-react"
 
 export default function DashboardPage() {
   const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding, userId } = useAuth()
@@ -251,8 +266,8 @@ export default function DashboardPage() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-teal-500/10 border border-teal-500/20">
-                  <span className="text-lg">📊</span>
+                <div className="p-2.5 rounded-lg bg-teal-500/10 border border-teal-500/20">
+                  <LayoutDashboard className="w-5 h-5 text-teal-400" />
                 </div>
                 <div>
                   <h1 className="text-xl font-bold text-zinc-100">Creator Dashboard</h1>
@@ -317,7 +332,7 @@ export default function DashboardPage() {
                     {/* Water Level */}
                     <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-xs">💧</span>
+                        <Droplets className="w-3.5 h-3.5 text-cyan-400" />
                         <span className="text-[9px] text-zinc-500">Level</span>
                       </div>
                       <WaterLevelMeter level={createdTokens[0]?.water_level || 50} size="sm" showLabel={true} />
@@ -326,7 +341,7 @@ export default function DashboardPage() {
                     {/* Pour Rate */}
                     <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-xs">💦</span>
+                        <Waves className="w-3.5 h-3.5 text-blue-400" />
                         <span className="text-[9px] text-zinc-500">Pour</span>
                       </div>
                       <div className="h-24 -mb-2">
@@ -337,7 +352,7 @@ export default function DashboardPage() {
                     {/* Evaporation */}
                     <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-xs">🔥</span>
+                        <Flame className="w-3.5 h-3.5 text-orange-400" />
                         <span className="text-[9px] text-zinc-500">Burn</span>
                       </div>
                       <div className="flex flex-col items-center justify-center h-20">
@@ -352,7 +367,7 @@ export default function DashboardPage() {
                     {/* Health Score */}
                     <div className="p-2 rounded-lg bg-zinc-800/50 border border-zinc-700/50 overflow-hidden">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-xs">⭐</span>
+                        <Star className="w-3.5 h-3.5 text-yellow-400" />
                         <span className="text-[9px] text-zinc-500">Health</span>
                       </div>
                       <div className="flex items-center justify-center h-20">
@@ -363,7 +378,7 @@ export default function DashboardPage() {
                     {/* Harvest */}
                     <div className="p-2 rounded-lg bg-amber-500/5 border border-amber-500/20">
                       <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="text-xs">🎁</span>
+                        <Gift className="w-3.5 h-3.5 text-amber-400" />
                         <span className="text-[9px] text-amber-400/70">Harvest</span>
                       </div>
                       <div className="flex flex-col items-center justify-center h-20">
@@ -388,11 +403,13 @@ export default function DashboardPage() {
                 </div>
               ) : createdTokens.length === 0 ? (
                 <div className="p-6 rounded-xl bg-zinc-900/80 border border-zinc-800 text-center">
-                  <span className="text-2xl mb-2 block">🪙</span>
+                  <div className="w-12 h-12 mx-auto mb-3 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+                    <Coins className="w-6 h-6 text-teal-400" />
+                  </div>
                   <h3 className="text-sm font-semibold text-zinc-300 mb-1">Ready to Launch?</h3>
                   <p className="text-xs text-zinc-500 mb-3">Drop your first token and start collecting rewards.</p>
                   <Link href="/launch" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-teal-500 text-zinc-900 text-xs font-semibold hover:bg-teal-400 transition-colors">
-                    <span>+</span> Launch Token
+                    <Plus className="w-3.5 h-3.5" /> Launch Token
                   </Link>
                 </div>
               ) : (
@@ -552,14 +569,16 @@ export default function DashboardPage() {
             </>
           ) : (
             <div className="p-8 rounded-xl bg-zinc-900/80 border border-zinc-800 text-center max-w-md mx-auto">
-              <span className="text-3xl mb-3 block">💼</span>
+              <div className="w-14 h-14 mx-auto mb-4 rounded-xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+                <Wallet className="w-7 h-7 text-teal-400" />
+              </div>
               <h3 className="text-lg font-semibold text-zinc-200 mb-2">Connect Wallet</h3>
               <p className="text-sm text-zinc-500 mb-4">Link up to see your tokens and rewards.</p>
               <button
                 onClick={() => setIsOnboarding(true)}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-teal-500 text-zinc-900 font-semibold hover:bg-teal-400 transition-colors"
               >
-                <span>💳</span> Connect Wallet
+                <CreditCard className="w-4 h-4" /> Connect Wallet
               </button>
             </div>
           )}

@@ -6,7 +6,7 @@ import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { VolumeBotPanel } from "@/components/dashboard/volume-bot-panel"
 import { useAuth } from "@/components/providers/auth-provider"
 import { createClient } from "@/lib/supabase/client"
-import { BarChart3, Search, ChevronRight, Settings, Activity, Wallet } from "lucide-react"
+import { BarChart3, Search, ChevronRight, Settings, Activity, Wallet, Zap } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
