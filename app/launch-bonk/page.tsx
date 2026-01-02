@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState, useRef, Suspense } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAuth } from "@/components/providers/auth-provider"
 import { LaunchWizard } from "@/components/launch/launch-wizard"
@@ -9,7 +9,7 @@ import { Header } from "@/components/layout/header"
 import Link from "next/link"
 import { DollarSign } from "lucide-react"
 
-export default function LaunchBonkPage() {
+function LaunchBonkContent() {
   const searchParams = useSearchParams()
   const { isAuthenticated, isLoading, wallets, activeWallet, setActiveWallet, mainWallet, setIsOnboarding } = useAuth()
   const [showWalletSelector, setShowWalletSelector] = useState(false)
@@ -256,6 +256,21 @@ export default function LaunchBonkPage() {
         </motion.div>
       </div>
     </main>
+  )
+}
+
+export default function LaunchBonkPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex items-center gap-3 text-[var(--text-muted)]">
+          <div className="spinner" />
+          <span>Loading...</span>
+        </div>
+      </main>
+    }>
+      <LaunchBonkContent />
+    </Suspense>
   )
 }
 
