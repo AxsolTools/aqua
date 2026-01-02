@@ -224,7 +224,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
         name: metadata.name,
         symbol: metadata.symbol,
         description: metadata.description || `External token: ${mintAddress}`,
-        image_url: metadata.image || "",
+        image_url: metadata.image || metadata.logoUri || "",
         metadata_uri: metadata.uri || "",
         total_supply: metadata.supply || 0,
         decimals: metadata.decimals,
