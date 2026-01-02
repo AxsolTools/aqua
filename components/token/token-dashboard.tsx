@@ -151,7 +151,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
               symbol: pair.baseToken?.symbol || "???",
               decimals: 9, // Default for most Solana tokens
               supply: 0,
-              image: pair.info?.imageUrl,
+              image: pair.info?.imageUrl || `https://dd.dexscreener.com/ds-data/tokens/solana/${mintAddress}.png`,
             }
           }
         }
@@ -168,7 +168,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
               symbol: jupData.symbol || "???",
               decimals: jupData.decimals || 9,
               supply: jupData.daily_volume ? 0 : 0,
-              image: jupData.logoURI,
+              image: jupData.logoURI || `https://dd.dexscreener.com/ds-data/tokens/solana/${mintAddress}.png`,
             }
           }
         }

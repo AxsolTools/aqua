@@ -71,7 +71,7 @@ export function VolumeBotQuickControls({
 
     try {
       const response = await fetch(`/api/volume-bot/session?tokenMint=${tokenMint}`, {
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || '', userId }),
       })
 
       if (response.ok) {
@@ -143,7 +143,7 @@ export function VolumeBotQuickControls({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || '', userId }),
         },
         body: JSON.stringify({
           tokenMint,
@@ -181,7 +181,7 @@ export function VolumeBotQuickControls({
     try {
       await fetch(`/api/volume-bot/session?tokenMint=${tokenMint}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || '', userId }),
       })
       
       setStatus(prev => prev ? { ...prev, isActive: false } : null)
@@ -203,7 +203,7 @@ export function VolumeBotQuickControls({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId || '', activeWallet?.wallet_id || '', userId || ''),
+          ...getAuthHeaders({ sessionId: sessionId || '', walletAddress: activeWallet?.public_key || '', userId: userId || '' }),
         },
         body: JSON.stringify({
           action: 'emergency_stop',
