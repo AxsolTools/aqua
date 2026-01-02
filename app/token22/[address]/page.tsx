@@ -140,15 +140,11 @@ export default function Token22DetailPage() {
           <div className="flex items-start gap-6 mb-6">
             {/* Token Image */}
             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center overflow-hidden border-2 border-white/10">
-              <img 
-                src={`https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`} 
-                alt={token.name} 
-                className="w-full h-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = 
-                    `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=80`
-                }}
-              />
+              {token.image_url ? (
+                <img src={token.image_url} alt={token.name} className="w-full h-full object-cover" />
+              ) : (
+                <span className="text-4xl">🪙</span>
+              )}
             </div>
 
             {/* Token Info */}
