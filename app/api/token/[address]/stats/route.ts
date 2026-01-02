@@ -60,14 +60,19 @@ export async function GET(
     const solPriceUsd = 150 // Approximate SOL price
     const bondingLiquidityUsd = bondingData.solBalance * solPriceUsd
     
+    // Determine if migrated: either bonding curve says so, OR token has real DEX liquidity
+    // This handles PumpSwap and other DEX migrations that don't use Raydium
+    const hasDexLiquidity = dexData.liquidity > 0 && dexData.hasPairs
+    const isMigrated = bondingData.isMigrated || hasDexLiquidity
+    
     const stats: TokenStats = {
       holders,
       volume24h: volumeData.volume24h || dexData.volume24h || 0,
       // Use DexScreener liquidity if available (migrated), otherwise bonding curve SOL value
       liquidity: dexData.liquidity > 0 ? dexData.liquidity : bondingLiquidityUsd,
-      bondingCurveProgress: bondingData.progress,
+      bondingCurveProgress: isMigrated ? 100 : bondingData.progress,
       bondingCurveSol: bondingData.solBalance,
-      isMigrated: bondingData.isMigrated,
+      isMigrated: isMigrated,
     }
 
     // Update database with fresh values (async)
@@ -226,6 +231,7 @@ async function fetchBondingCurveProgress(mintAddress: string): Promise<{
 async function fetchDexScreenerData(mintAddress: string): Promise<{
   liquidity: number
   volume24h: number
+  hasPairs: boolean
 }> {
   try {
     const response = await fetch(
@@ -246,14 +252,14 @@ async function fetchDexScreenerData(mintAddress: string): Promise<{
           (sum: number, p: { volume?: { h24?: number } }) => sum + (p.volume?.h24 || 0),
           0
         )
-        return { liquidity, volume24h }
+        return { liquidity, volume24h, hasPairs: true }
       }
     }
   } catch (error) {
     console.warn("[TOKEN-STATS] DexScreener fetch failed:", error)
   }
 
-  return { liquidity: 0, volume24h: 0 }
+  return { liquidity: 0, volume24h: 0, hasPairs: false }
 }
 
 /**
