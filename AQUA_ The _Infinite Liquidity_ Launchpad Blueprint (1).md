@@ -9,7 +9,7 @@ This document outlines the complete technical blueprint for the **AQUA** launchp
 The AQUA launchpad fundamentally re-imagines token liquidity by moving away from static pools that can "dry up." Instead, it implements a continuous, automated mechanism—the "Pour Rate"—to constantly add liquidity back into the token's trading pair, visually represented by the Aquarius pouring water. This mechanism, combined with an optional token burning feature ("Evaporation"), provides token creators with unprecedented control over their token's long-term health and market dynamics.
 
 The platform will be built on the Solana blockchain, leveraging its high throughput and low transaction costs, and will utilize the **Pump.fun** bonding curve model for initial token launches.
-
+I
 ### Key Dashboard Metrics (Thematic)
 
 The user dashboard will feature four thematic, real-time metrics to visualize the token's health and liquidity status:

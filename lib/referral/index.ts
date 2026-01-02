@@ -1,5 +1,10 @@
 /**
  * AQUA Launchpad - Referral Module
+ * 
+ * Complete referral system with:
+ * - Code generation and tracking
+ * - Earnings management
+ * - Secure claim payouts
  */
 
 export {
@@ -27,3 +32,14 @@ export {
   processClaim,
 } from './manager';
 
+export {
+  // Payout types
+  type PayoutResult,
+  type PayoutWalletStatus,
+  
+  // Payout functions
+  executeReferralPayout,
+  getPayoutWalletStatus,
+  getPayoutWalletPublicKey,
+  healthCheck,
+} from './payout';
