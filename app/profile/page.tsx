@@ -454,6 +454,17 @@ export default function ProfilePage() {
                                     <h3 className="font-semibold text-[var(--text-primary)]">{token.name}</h3>
                                     <div className="flex items-center gap-2">
                                       <p className="text-sm text-[var(--text-secondary)]">${token.symbol}</p>
+                                      {/* Pool type badge */}
+                                      {(token as any).pool_type === 'bonk' && (
+                                        <span className={cn(
+                                          "text-[9px] px-1.5 py-0.5 rounded font-medium",
+                                          (token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+                                            ? "bg-amber-500/20 text-amber-400"
+                                            : "bg-orange-500/10 text-orange-400"
+                                        )}>
+                                          {(token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB' ? 'USD1' : 'BONK'}
+                                        </span>
+                                      )}
                                       <span className="text-[10px] text-[var(--text-muted)]">•</span>
                                       <p className="text-[10px] text-[var(--aqua-primary)]">
                                         MCap: ${formatNumber(token.market_cap || 0)}

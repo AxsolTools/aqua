@@ -13,9 +13,21 @@ interface StepReviewProps {
   error: string | null
   mintAddress: string | null
   onRegenerateMint: () => void
+  pool?: 'pump' | 'bonk'
+  isUsd1Quote?: boolean
 }
 
-export function StepReview({ formData, onBack, onDeploy, isDeploying, error, mintAddress, onRegenerateMint }: StepReviewProps) {
+export function StepReview({ 
+  formData, 
+  onBack, 
+  onDeploy, 
+  isDeploying, 
+  error, 
+  mintAddress, 
+  onRegenerateMint,
+  pool = 'pump',
+  isUsd1Quote = false,
+}: StepReviewProps) {
   const { activeWallet } = useAuth()
   const [copied, setCopied] = useState(false)
 
@@ -28,6 +40,13 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
     }
   }
 
+  const isBonkPool = pool === 'bonk'
+  const platformName = isBonkPool ? 'Bonk.fun' : 'Pump.fun'
+  const quoteCurrency = isUsd1Quote ? 'USD1' : 'SOL'
+  const initialBuyDisplay = isUsd1Quote 
+    ? `${parseFloat(formData.initialBuySol) || 0} SOL → USD1` 
+    : `${parseFloat(formData.initialBuySol) || 0} SOL`
+
   const sections = [
     {
       title: "Token Identity",
@@ -38,11 +57,14 @@ export function StepReview({ formData, onBack, onDeploy, isDeploying, error, min
       ],
     },
     {
-      title: "Tokenomics",
+      title: "Platform & Tokenomics",
       items: [
+        { label: "Launch Platform", value: platformName },
+        ...(isBonkPool ? [{ label: "Quote Currency", value: quoteCurrency }] : []),
         { label: "Total Supply", value: Number(formData.totalSupply).toLocaleString() },
-        { label: "Decimals", value: "6 (pump.fun standard)" },
-        { label: "Initial Purchase", value: `${parseFloat(formData.initialBuySol) || 0} SOL` },
+        { label: "Decimals", value: `6 (${platformName.toLowerCase()} standard)` },
+        { label: "Initial Purchase", value: initialBuyDisplay },
+        ...(isUsd1Quote && parseFloat(formData.initialBuySol) > 0 ? [{ label: "Auto-Convert", value: "SOL → USD1 (via Jupiter)" }] : []),
       ],
     },
     {

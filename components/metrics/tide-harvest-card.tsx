@@ -22,6 +22,9 @@ interface RewardsData {
   isCreator: boolean
   canClaimViaPumpPortal?: boolean
   claimUrl?: string
+  poolType?: 'pump' | 'bonk'
+  isUsd1Token?: boolean
+  platformName?: string
 }
 
 export function TideHarvestCard({ 
@@ -179,11 +182,17 @@ export function TideHarvestCard({
     setIsClaiming(false)
   }
 
-  const openPumpFun = () => {
+  const openPlatform = () => {
     if (tokenAddress) {
-      window.open(`https://pump.fun/coin/${tokenAddress}`, "_blank")
+      const isBonk = rewards?.poolType === 'bonk'
+      const url = isBonk 
+        ? `https://bonk.fun/token/${tokenAddress}`
+        : `https://pump.fun/coin/${tokenAddress}`
+      window.open(url, "_blank")
     }
   }
+
+  const platformName = rewards?.platformName || 'Pump.fun'
 
   const formatSol = (amount: number) => {
     if (amount >= 1) return amount.toFixed(4)
@@ -244,10 +253,14 @@ export function TideHarvestCard({
               {isClaiming ? "..." : "Harvest"}
             </motion.button>
             <button
-              onClick={openPumpFun}
-              className="px-2 py-1 rounded-md border border-[var(--aqua-primary)]/30 text-[var(--aqua-primary)] text-[10px] font-medium hover:bg-[var(--aqua-primary)]/10 transition-colors"
+              onClick={openPlatform}
+              className={`px-2 py-1 rounded-md border text-[10px] font-medium transition-colors ${
+                rewards?.poolType === 'bonk'
+                  ? 'border-amber-500/30 text-amber-400 hover:bg-amber-500/10'
+                  : 'border-[var(--aqua-primary)]/30 text-[var(--aqua-primary)] hover:bg-[var(--aqua-primary)]/10'
+              }`}
             >
-              Pump.fun
+              {platformName}
             </button>
           </div>
         ) : (

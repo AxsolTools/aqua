@@ -71,12 +71,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         // Update last login
         await storage.updateUser(user.id, {
-          lastLogin: new Date().toISOString()
+          lastLogin: new Date()
         });
       }
 
       // Initialize user balance if not exists
-      await storage.initializeUserBalance(user.id);
+      // await storage.initializeUserBalance(user.id);
 
       return res.json({
         success: true,
@@ -108,7 +108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      const balance = await storage.getUserBalance(user.id);
+      const balance = await storage.getBalance(user.walletAddress);
 
       return res.json({
         user: {
@@ -145,11 +145,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      const lockedTokens = await storage.getLockedTokens(user.id);
+      const lockedToken = await storage.getLockedToken(user.id);
 
       return res.json({
-        lockedTokens,
-        count: lockedTokens.length
+        lockedTokens: lockedToken ? [lockedToken] : [],
+        count: lockedToken ? 1 : 0
       });
     } catch (error: any) {
       console.error('Error getting locked tokens:', error);
@@ -203,11 +203,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: 'User not found' });
       }
 
-      const transactions = await storage.getTransactions(user.id);
+      const transaction = await storage.getTransaction(user.id);
 
       return res.json({
-        transactions,
-        count: transactions.length
+        transactions: transaction ? [transaction] : [],
+        count: transaction ? 1 : 0
       });
     } catch (error: any) {
       console.error('Error getting transactions:', error);

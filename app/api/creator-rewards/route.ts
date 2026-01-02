@@ -1,7 +1,8 @@
 /**
- * Creator Rewards API - Fetch and claim rewards from Pump.fun bonding curve vault
+ * Creator Rewards API - Fetch and claim rewards from Pump.fun and Bonk.fun bonding curve vaults
  * 
  * Uses PumpPortal API for collectCreatorFee action
+ * Supports both 'pump' and 'bonk' pools
  * Reference: https://pumpportal.fun/docs
  */
 
@@ -14,9 +15,14 @@ import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
 const HELIUS_RPC = process.env.HELIUS_RPC_URL || "https://api.mainnet-beta.solana.com"
 const connection = new Connection(HELIUS_RPC, "confirmed")
 
-// Pump.fun program ID
+// Program IDs
 const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
+// Bonk.fun uses LBP (Letsbonk Protocol) which shares infrastructure with pump.fun
+const BONK_PROGRAM_ID = new PublicKey("LBPPPwvAoMJZcnGgPFTT1oGVcnwHs8v3zKmAh8jd28o")
 const PUMPPORTAL_LOCAL_TRADE = "https://pumpportal.fun/api/trade-local"
+
+// Pool types
+type PoolType = 'pump' | 'bonk'
 
 /**
  * GET - Check creator rewards balance for a token
@@ -36,37 +42,53 @@ export async function GET(request: NextRequest) {
 
     const adminClient = getAdminClient()
 
-    // Check if token is migrated or on bonding curve
+    // Check if token is migrated or on bonding curve, and get pool type
     const { data: token, error: tokenError } = await adminClient
       .from("tokens")
-      .select("id, stage, creator_wallet")
+      .select("id, stage, creator_wallet, pool_type, quote_mint")
       .eq("mint_address", tokenMint)
       .single()
 
-    // Get creator vault balance from on-chain (Pump.fun)
-    const pumpRewards = await getPumpFunCreatorRewards(tokenMint, creatorWallet)
+    const tokenData = token as { 
+      id?: string; 
+      stage?: string; 
+      creator_wallet?: string; 
+      pool_type?: string;
+      quote_mint?: string;
+    } | null
+
+    // Determine pool type (pump or bonk)
+    const poolType: PoolType = (tokenData?.pool_type === 'bonk' ? 'bonk' : 'pump')
+    const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+
+    // Get creator vault balance from on-chain based on pool type
+    const rewards = await getCreatorRewards(tokenMint, creatorWallet, poolType)
     
-    // If migrated, also check for any Raydium/LP fee rewards
+    // If migrated, also check for any Raydium/Meteora LP fee rewards
     let migrationRewards = 0
-    const tokenStage = (token as { stage?: string } | null)?.stage
+    const tokenStage = tokenData?.stage
     if (tokenStage === "migrated") {
-      migrationRewards = await getMigratedTokenRewards(tokenMint, creatorWallet)
+      migrationRewards = await getMigratedTokenRewards(tokenMint, creatorWallet, poolType)
     }
 
-    const totalRewards = pumpRewards.balance + migrationRewards
-    const tokenCreatorWallet = (token as { creator_wallet?: string } | null)?.creator_wallet
+    const totalRewards = rewards.balance + migrationRewards
+    const tokenCreatorWallet = tokenData?.creator_wallet
 
     return NextResponse.json({
       success: true,
       data: {
         balance: totalRewards,
-        pumpBalance: pumpRewards.balance,
+        pumpBalance: rewards.balance,
         migrationBalance: migrationRewards,
-        vaultAddress: pumpRewards.vaultAddress,
+        vaultAddress: rewards.vaultAddress,
         hasRewards: totalRewards > 0,
         stage: tokenStage || "unknown",
         isCreator: tokenCreatorWallet === creatorWallet,
-        canClaimViaPumpPortal: pumpRewards.balance > 0 && tokenStage !== "migrated",
+        canClaimViaPumpPortal: rewards.balance > 0 && tokenStage !== "migrated",
+        // Pool info
+        poolType,
+        isUsd1Token,
+        platformName: poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun',
       }
     })
   } catch (error) {
@@ -123,11 +145,18 @@ export async function POST(request: NextRequest) {
     // Verify this is the token creator
     const { data: token, error: tokenError } = await adminClient
       .from("tokens")
-      .select("id, creator_wallet, stage")
+      .select("id, creator_wallet, stage, pool_type, quote_mint")
       .eq("mint_address", tokenMint)
       .single()
 
-    const tokenData = token as { id?: string; creator_wallet?: string; stage?: string } | null
+    const tokenData = token as { 
+      id?: string; 
+      creator_wallet?: string; 
+      stage?: string;
+      pool_type?: string;
+      quote_mint?: string;
+    } | null
+
     if (!tokenData || tokenData.creator_wallet !== walletAddress) {
       return NextResponse.json(
         { success: false, error: "Only the token creator can claim rewards" },
@@ -135,8 +164,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Determine pool type
+    const poolType: PoolType = (tokenData.pool_type === 'bonk' ? 'bonk' : 'pump')
+    const platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
+
     // Get current rewards balance
-    const rewardsData = await getPumpFunCreatorRewards(tokenMint, walletAddress)
+    const rewardsData = await getCreatorRewards(tokenMint, walletAddress, poolType)
 
     if (rewardsData.balance <= 0) {
       return NextResponse.json({
@@ -147,12 +180,16 @@ export async function POST(request: NextRequest) {
 
     // For migrated tokens, they need to claim on the DEX directly
     if (tokenData.stage === "migrated") {
+      const dexUrl = poolType === 'bonk' 
+        ? `https://app.meteora.ag/pools` 
+        : `https://raydium.io/liquidity/`
+      
       return NextResponse.json({
         success: false,
-        error: "Token has migrated. Please claim rewards from the DEX directly.",
+        error: `Token has migrated. Please claim rewards from ${poolType === 'bonk' ? 'Meteora' : 'Raydium'} directly.`,
         data: {
           balance: rewardsData.balance,
-          claimUrl: `https://raydium.io/liquidity/`,
+          claimUrl: dexUrl,
         }
       })
     }
@@ -167,14 +204,15 @@ export async function POST(request: NextRequest) {
     )
     const keypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58))
 
-    // Call PumpPortal API for collectCreatorFee
-    console.log("[CREATOR-REWARDS] Requesting collectCreatorFee transaction...")
+    // Call PumpPortal API for collectCreatorFee with pool parameter
+    console.log(`[CREATOR-REWARDS] Requesting collectCreatorFee transaction for ${poolType} pool...`)
 
     const tradeBody = {
       publicKey: walletAddress,
       action: "collectCreatorFee",
       mint: tokenMint,
       priorityFee: 0.0001,
+      pool: poolType, // 'pump' or 'bonk'
     }
 
     const pumpResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
@@ -187,14 +225,19 @@ export async function POST(request: NextRequest) {
       const errorText = await pumpResponse.text()
       console.error("[CREATOR-REWARDS] PumpPortal error:", errorText)
       
-      // Fallback: Direct user to Pump.fun
+      // Fallback: Direct user to the appropriate platform
+      const fallbackUrl = poolType === 'bonk' 
+        ? `https://bonk.fun/token/${tokenMint}`
+        : `https://pump.fun/coin/${tokenMint}`
+      
       return NextResponse.json({
         success: false,
-        error: `Unable to claim via API. Please visit pump.fun to claim your ${rewardsData.balance.toFixed(6)} SOL rewards directly.`,
+        error: `Unable to claim via API. Please visit ${platformName} to claim your ${rewardsData.balance.toFixed(6)} SOL rewards directly.`,
         data: {
           balance: rewardsData.balance,
           vaultAddress: rewardsData.vaultAddress,
-          claimUrl: `https://pump.fun/coin/${tokenMint}`,
+          claimUrl: fallbackUrl,
+          poolType,
         }
       })
     }
@@ -257,14 +300,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Fetch Pump.fun creator rewards from on-chain vault
+ * Fetch creator rewards from on-chain vault (Pump.fun or Bonk.fun)
  * 
  * The creator vault is a System Account PDA with seeds: ["creator-vault", creator_pubkey]
  * This vault accumulates all creator fees from ALL tokens created by the creator (not per-token)
  */
-async function getPumpFunCreatorRewards(
+async function getCreatorRewards(
   tokenMint: string, 
-  creatorWallet: string
+  creatorWallet: string,
+  poolType: PoolType = 'pump'
 ): Promise<{
   balance: number
   vaultAddress: string
@@ -272,24 +316,26 @@ async function getPumpFunCreatorRewards(
 }> {
   try {
     const creatorPubkey = new PublicKey(creatorWallet)
+    const programId = poolType === 'bonk' ? BONK_PROGRAM_ID : PUMP_PROGRAM_ID
+    const platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
 
     // ============================================================================
     // CREATOR VAULT PDA - Direct on-chain balance query
-    // Based on Pump.fun official implementation: PDA seeds are ["creator-vault", creator_pubkey]
+    // Based on official implementation: PDA seeds are ["creator-vault", creator_pubkey]
     // This is a System Account that holds SOL directly
     // The vault is per-creator (not per-token), accumulating fees from all tokens
     // ============================================================================
     let vaultBalance = 0
     let foundVault = ""
 
-      try {
+    try {
       const [creatorVaultPda] = PublicKey.findProgramAddressSync(
         [
           Buffer.from("creator-vault"),
           creatorPubkey.toBuffer()
         ],
-          PUMP_PROGRAM_ID
-        )
+        programId
+      )
         
       const vaultInfo = await connection.getAccountInfo(creatorVaultPda)
         
@@ -297,33 +343,37 @@ async function getPumpFunCreatorRewards(
         vaultBalance = vaultInfo.lamports
         foundVault = creatorVaultPda.toBase58()
         const solAmount = vaultBalance / LAMPORTS_PER_SOL
-        console.log(`[CREATOR-REWARDS] ✅ Creator vault balance: ${solAmount.toFixed(6)} SOL (${creatorVaultPda.toBase58().substring(0, 8)}...)`)
+        console.log(`[CREATOR-REWARDS] ✅ ${platformName} creator vault balance: ${solAmount.toFixed(6)} SOL (${creatorVaultPda.toBase58().substring(0, 8)}...)`)
       } else {
-        console.log("[CREATOR-REWARDS] ℹ️ Creator vault is empty or does not exist yet")
+        console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} creator vault is empty or does not exist yet`)
       }
     } catch (vaultError) {
-      console.warn("[CREATOR-REWARDS] Failed to query creator vault:", 
+      console.warn(`[CREATOR-REWARDS] Failed to query ${platformName} creator vault:`, 
         vaultError instanceof Error ? vaultError.message : "Unknown error")
     }
 
-    // Fallback: Try Pump.fun API to get creator balance (if available)
+    // Fallback: Try platform API to get creator balance (if available)
     try {
-      const pumpResponse = await fetch(`https://frontend-api.pump.fun/coins/${tokenMint}`, {
+      const apiUrl = poolType === 'bonk'
+        ? `https://api.bonk.fun/coins/${tokenMint}`
+        : `https://frontend-api.pump.fun/coins/${tokenMint}`
+      
+      const response = await fetch(apiUrl, {
         headers: { "Accept": "application/json" }
       })
-      if (pumpResponse.ok) {
-        const pumpData = await pumpResponse.json()
-        if (pumpData.creator_balance_sol) {
-          const creatorBal = parseFloat(pumpData.creator_balance_sol)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.creator_balance_sol) {
+          const creatorBal = parseFloat(data.creator_balance_sol)
           // Use API value if it's higher (more accurate) or if on-chain query failed
           if (creatorBal > vaultBalance / LAMPORTS_PER_SOL || vaultBalance === 0) {
             vaultBalance = creatorBal * LAMPORTS_PER_SOL
-            console.log(`[CREATOR-REWARDS] Using Pump.fun API balance: ${creatorBal.toFixed(6)} SOL`)
+            console.log(`[CREATOR-REWARDS] Using ${platformName} API balance: ${creatorBal.toFixed(6)} SOL`)
           }
         }
       }
     } catch (e) {
-      console.debug("[CREATOR-REWARDS] Pump.fun API unavailable:", e)
+      console.debug(`[CREATOR-REWARDS] ${platformName} API unavailable:`, e)
     }
 
     return {
@@ -332,27 +382,29 @@ async function getPumpFunCreatorRewards(
       hasRewards: vaultBalance > 0,
     }
   } catch (error) {
-    console.error("[CREATOR-REWARDS] Pump.fun fetch error:", error)
+    console.error(`[CREATOR-REWARDS] ${poolType} fetch error:`, error)
     return { balance: 0, vaultAddress: "", hasRewards: false }
   }
 }
 
 /**
- * Get rewards for migrated tokens (from Raydium LP fees etc)
+ * Get rewards for migrated tokens (from Raydium/Meteora LP fees etc)
  */
 async function getMigratedTokenRewards(
   tokenMint: string,
-  creatorWallet: string
+  creatorWallet: string,
+  poolType: PoolType = 'pump'
 ): Promise<number> {
   try {
     // For migrated tokens, check if there are any LP rewards
-    // This would typically involve checking Raydium/Orca LP positions
-    // For now, we return 0 as this requires more complex integration
+    // Pump.fun tokens migrate to Raydium
+    // Bonk.fun tokens migrate to Meteora
     
-    // Future: Integrate with Raydium API to check LP fee accumulation
+    // Future: Integrate with Raydium/Meteora API to check LP fee accumulation
+    // For now, we return 0 as this requires more complex integration
     return 0
   } catch (error) {
-    console.error("[CREATOR-REWARDS] Migration rewards fetch error:", error)
+    console.error(`[CREATOR-REWARDS] ${poolType} migration rewards fetch error:`, error)
     return 0
   }
 }

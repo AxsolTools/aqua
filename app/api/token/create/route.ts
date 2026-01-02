@@ -1,11 +1,12 @@
 /**
  * AQUA Launchpad - Token Creation API
  * 
- * Creates a new token on Pump.fun via PumpPortal
+ * Creates a new token on Pump.fun or Bonk.fun via PumpPortal
  * Includes:
- * - IPFS metadata upload
+ * - IPFS metadata upload (pump.fun or bonk.fun)
  * - Token creation on bonding curve
  * - Optional initial buy
+ * - Auto SOL->USD1 conversion for Bonk USD1 pairs
  * - Fee collection
  * - Database record creation
  */
@@ -18,7 +19,17 @@ import { getAdminClient } from '@/lib/supabase/admin';
 import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
 import { validateBalanceForTransaction, collectPlatformFee } from '@/lib/fees';
 import { solToLamports, lamportsToSol, calculatePlatformFee } from '@/lib/precision';
-import { createToken, uploadToIPFS, type TokenMetadata } from '@/lib/blockchain';
+import { 
+  createToken, 
+  uploadToIPFS, 
+  type TokenMetadata,
+  type PoolType,
+  type QuoteMint,
+  POOL_TYPES,
+  QUOTE_MINTS,
+  swapSolToUsd1,
+  solToUsd1Amount,
+} from '@/lib/blockchain';
 import { getReferrer, addReferralEarnings } from '@/lib/referral';
 
 // ============================================================================
@@ -100,6 +111,11 @@ export async function POST(request: NextRequest) {
       // Pre-generated mint keypair from frontend
       mintSecretKey,
       mintAddress: preGeneratedMintAddress,
+      
+      // Pool selection (pump or bonk)
+      pool = 'pump',
+      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools
+      autoConvertToUsd1 = false, // Auto-swap SOL to USD1 before creation
     } = body;
 
     // Validate required fields
@@ -168,7 +184,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ========== CREATE TOKEN ON CHAIN ==========
-    console.log(`[TOKEN] Creating token: ${name} (${symbol})`);
+    const poolType = (pool === 'bonk' ? POOL_TYPES.BONK : POOL_TYPES.PUMP) as PoolType;
+    const quoteType = (quoteMint === QUOTE_MINTS.USD1 ? QUOTE_MINTS.USD1 : QUOTE_MINTS.WSOL) as QuoteMint;
+    
+    console.log(`[TOKEN] Creating token: ${name} (${symbol}) on ${poolType} pool${poolType === 'bonk' ? ` (quote: ${quoteType === QUOTE_MINTS.USD1 ? 'USD1' : 'SOL'})` : ''}`);
 
     // Decode pre-generated mint keypair from frontend if provided
     let mintKeypair: Keypair | undefined;
@@ -187,6 +206,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ========== AUTO-SWAP SOL TO USD1 (for Bonk USD1 pairs) ==========
+    let actualInitialBuy = initialBuySol;
+    let swapTxSignature: string | undefined;
+    
+    if (poolType === POOL_TYPES.BONK && quoteType === QUOTE_MINTS.USD1 && autoConvertToUsd1 && initialBuySol > 0) {
+      console.log(`[TOKEN] Auto-converting ${initialBuySol} SOL to USD1 for initial buy...`);
+      
+      const swapResult = await swapSolToUsd1(connection, creatorKeypair, initialBuySol);
+      
+      if (!swapResult.success) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: { 
+              code: 4001, 
+              message: `SOL to USD1 conversion failed: ${swapResult.error}` 
+            } 
+          },
+          { status: 500 }
+        );
+      }
+      
+      // For USD1 pairs, the initial buy amount is in USD1 terms
+      actualInitialBuy = swapResult.outputAmount;
+      swapTxSignature = swapResult.txSignature;
+      console.log(`[TOKEN] ✅ Converted to ${actualInitialBuy.toFixed(2)} USD1`);
+    }
+
     // Prepare metadata
     const metadata: TokenMetadata = {
       name,
@@ -199,14 +246,16 @@ export async function POST(request: NextRequest) {
       showName: true,
     };
 
-    // Create token via PumpPortal
+    // Create token via PumpPortal (supports pump and bonk pools)
     const createResult = await createToken(connection, {
       metadata,
       creatorKeypair,
-      initialBuySol,
+      initialBuySol: actualInitialBuy,
       slippageBps,
       priorityFee: 0.001,
-      mintKeypair, // Pass pre-generated mint keypair if available
+      mintKeypair,
+      pool: poolType,
+      quoteMint: quoteType,
     });
 
     if (!createResult.success || !createResult.mintAddress) {
@@ -350,6 +399,9 @@ export async function POST(request: NextRequest) {
         holders: 1,
         water_level: 50,
         constellation_strength: 50,
+        // Pool type (pump or bonk)
+        pool_type: poolType,
+        quote_mint: quoteType,
       })
       .select('id')
       .single();
@@ -432,7 +484,7 @@ export async function POST(request: NextRequest) {
       status: feeResult.success ? 'collected' : 'pending',
     });
 
-    console.log(`[TOKEN] Created successfully: ${createResult.mintAddress}`);
+    console.log(`[TOKEN] Created successfully: ${createResult.mintAddress} (pool: ${poolType})`);
 
     return NextResponse.json({
       success: true,
@@ -442,6 +494,12 @@ export async function POST(request: NextRequest) {
         metadataUri: createResult.metadataUri,
         txSignature: createResult.txSignature,
         platformFee: lamportsToSol(platformFeeLamports),
+        // Pool info
+        pool: poolType,
+        quoteMint: quoteType,
+        // Swap info (for USD1 conversions)
+        ...(swapTxSignature && { swapTxSignature }),
+        ...(autoConvertToUsd1 && { convertedUsd1Amount: actualInitialBuy }),
       },
     });
 

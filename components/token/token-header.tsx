@@ -167,6 +167,19 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
               >
                 {(stats?.isMigrated || token.stage === "migrated") ? "Migrated" : "Bonding"}
               </span>
+              {/* Pool type badge for Bonk tokens */}
+              {(token as any).pool_type === 'bonk' && (
+                <span
+                  className={cn(
+                    "px-2 py-1 rounded text-xs font-medium",
+                    (token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "bg-orange-500/10 text-orange-400",
+                  )}
+                >
+                  {(token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB' ? 'USD1' : 'Bonk.fun'}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-[var(--text-secondary)]">${token.symbol}</span>

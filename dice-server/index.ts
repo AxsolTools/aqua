@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
+// @ts-ignore
 import cors from 'cors';
+// @ts-ignore
 import bodyParser from 'body-parser';
 import routes from './routes';
 import diceGameRoutes, { initializeWebSocket, cleanupBets } from './routes/diceGame';

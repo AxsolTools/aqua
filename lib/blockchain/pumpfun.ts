@@ -35,6 +35,26 @@ const PUMP_PORTAL_API = 'https://pumpportal.fun/api';
 const PUMP_IPFS_API = 'https://pump.fun/api/ipfs';
 const PUMP_PORTAL_IPFS = 'https://pumpportal.fun/api/ipfs';
 
+// Bonk.fun IPFS endpoints
+const BONK_IPFS_IMAGE = 'https://nft-storage.letsbonk22.workers.dev/upload/img';
+const BONK_IPFS_META = 'https://nft-storage.letsbonk22.workers.dev/upload/meta';
+
+// Pool types
+export const POOL_TYPES = {
+  PUMP: 'pump',
+  BONK: 'bonk',
+} as const;
+
+export type PoolType = typeof POOL_TYPES[keyof typeof POOL_TYPES];
+
+// Quote mints (pair currencies)
+export const QUOTE_MINTS = {
+  WSOL: 'So11111111111111111111111111111111111111112',
+  USD1: 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB',
+} as const;
+
+export type QuoteMint = typeof QUOTE_MINTS[keyof typeof QUOTE_MINTS];
+
 const PUMP_PROGRAM_ID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
 const PUMP_GLOBAL_ACCOUNT = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
 const PUMP_FEE_RECIPIENT = new PublicKey('CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbCvr4hckAzJfj');
@@ -61,6 +81,8 @@ export interface CreateTokenParams {
   slippageBps?: number;
   priorityFee?: number;
   mintKeypair?: Keypair; // Optional pre-generated mint keypair from frontend
+  pool?: PoolType; // 'pump' or 'bonk' - defaults to 'pump'
+  quoteMint?: QuoteMint; // Quote currency (WSOL or USD1) - only applicable for bonk pool
 }
 
 export interface CreateTokenResult {
@@ -69,6 +91,8 @@ export interface CreateTokenResult {
   metadataUri?: string;
   txSignature?: string;
   error?: string;
+  pool?: PoolType; // Which pool was used
+  quoteMint?: QuoteMint; // Which quote mint was used
 }
 
 export interface TradeParams {
@@ -78,6 +102,7 @@ export interface TradeParams {
   slippageBps?: number;
   priorityFee?: number;
   tokenDecimals?: number;
+  pool?: PoolType; // 'pump' or 'bonk' - defaults to 'pump'
 }
 
 export interface TradeResult {
@@ -212,27 +237,151 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
   }
 }
 
+/**
+ * Upload token metadata and image to Bonk IPFS (for bonk.fun tokens)
+ * Uses different endpoints than pump.fun
+ */
+export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
+  success: boolean;
+  metadataUri?: string;
+  imageUri?: string;
+  error?: string;
+}> {
+  try {
+    // Handle image - support File, URL, or base64 data URI
+    let imageBuffer: Buffer | null = null;
+    
+    if (metadata.image instanceof File) {
+      const arrayBuffer = await metadata.image.arrayBuffer();
+      imageBuffer = Buffer.from(arrayBuffer);
+    } else if (typeof metadata.image === 'string') {
+      if (metadata.image.startsWith('http')) {
+        try {
+          const response = await fetch(metadata.image);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.status}`);
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          imageBuffer = Buffer.from(arrayBuffer);
+        } catch (e) {
+          console.warn('[BONK-IPFS] Failed to fetch image from URL');
+        }
+      } else if (metadata.image.startsWith('data:')) {
+        try {
+          const base64Data = metadata.image.split(',')[1];
+          imageBuffer = Buffer.from(base64Data, 'base64');
+        } catch (e) {
+          console.warn('[BONK-IPFS] Failed to process base64 image');
+        }
+      }
+    }
+
+    if (!imageBuffer) {
+      return {
+        success: false,
+        error: 'Image is required for Bonk token creation',
+      };
+    }
+
+    // Step 1: Upload image to Bonk IPFS
+    console.log('[BONK-IPFS] Uploading image...');
+    const imageForm = new FormDataLib();
+    imageForm.append('image', imageBuffer, {
+      filename: 'image.png',
+      contentType: 'image/png'
+    });
+
+    const imgResponse = await axios.post(BONK_IPFS_IMAGE, imageForm, {
+      headers: { ...imageForm.getHeaders() },
+      timeout: 30000,
+    });
+
+    const imageUri = imgResponse.data;
+    if (!imageUri || typeof imageUri !== 'string') {
+      throw new Error('Failed to get image URI from Bonk IPFS');
+    }
+    console.log(`[BONK-IPFS] ✅ Image uploaded: ${imageUri}`);
+
+    // Step 2: Upload metadata to Bonk IPFS
+    console.log('[BONK-IPFS] Uploading metadata...');
+    const metadataPayload = {
+      createdOn: 'https://bonk.fun',
+      description: metadata.description || '',
+      image: imageUri,
+      name: metadata.name,
+      symbol: metadata.symbol,
+      website: metadata.website || '',
+      twitter: metadata.twitter || '',
+      telegram: metadata.telegram || '',
+    };
+
+    const metaResponse = await axios.post(BONK_IPFS_META, metadataPayload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000,
+    });
+
+    const metadataUri = metaResponse.data;
+    if (!metadataUri || typeof metadataUri !== 'string') {
+      throw new Error('Failed to get metadata URI from Bonk IPFS');
+    }
+    console.log(`[BONK-IPFS] ✅ Metadata uploaded: ${metadataUri}`);
+
+    return {
+      success: true,
+      metadataUri,
+      imageUri,
+    };
+
+  } catch (error) {
+    console.error('[BONK-IPFS] Upload error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Bonk IPFS upload failed',
+    };
+  }
+}
+
 // ============================================================================
 // TOKEN CREATION
 // ============================================================================
 
 /**
- * Create a new token on Pump.fun via PumpPortal
+ * Create a new token on Pump.fun or Bonk.fun via PumpPortal
+ * Supports both SOL and USD1 quote currencies for Bonk pools
  */
 export async function createToken(
   connection: Connection,
   params: CreateTokenParams
 ): Promise<CreateTokenResult> {
   try {
-    const { metadata, creatorKeypair, initialBuySol = 0, slippageBps = 500, priorityFee = 0.001, mintKeypair: providedMintKeypair } = params;
+    const { 
+      metadata, 
+      creatorKeypair, 
+      initialBuySol = 0, 
+      slippageBps = 500, 
+      priorityFee = 0.001, 
+      mintKeypair: providedMintKeypair,
+      pool = POOL_TYPES.PUMP,
+      quoteMint = QUOTE_MINTS.WSOL,
+    } = params;
 
-    // Step 1: Upload metadata to IPFS
-    console.log('[PUMP] Uploading metadata to IPFS...');
-    const ipfsResult = await uploadToIPFS(metadata);
+    const logPrefix = pool === POOL_TYPES.BONK ? '[BONK]' : '[PUMP]';
+
+    // Step 1: Upload metadata to appropriate IPFS
+    console.log(`${logPrefix} Uploading metadata to IPFS...`);
+    
+    let ipfsResult: { success: boolean; metadataUri?: string; error?: string };
+    
+    if (pool === POOL_TYPES.BONK) {
+      // Use Bonk IPFS for bonk.fun tokens
+      ipfsResult = await uploadToBonkIPFS(metadata);
+    } else {
+      // Use Pump.fun IPFS for pump.fun tokens
+      ipfsResult = await uploadToIPFS(metadata);
+    }
     
     if (!ipfsResult.success || !ipfsResult.metadataUri) {
-      console.error('[PUMP] IPFS upload failed:', ipfsResult.error);
-      // If IPFS fails, we can't proceed - PumpPortal requires a metadata URI
+      console.error(`${logPrefix} IPFS upload failed:`, ipfsResult.error);
       return {
         success: false,
         error: `IPFS upload failed: ${ipfsResult.error}. Please check that the IPFS service is available or try again later.`,
@@ -242,10 +391,10 @@ export async function createToken(
     // Step 2: Use provided mint keypair or generate new one
     const mintKeypair = providedMintKeypair || Keypair.generate();
     const mintSource = providedMintKeypair ? 'pre-generated (frontend)' : 'generated (backend)';
-    console.log(`[PUMP] Mint address: ${mintKeypair.publicKey.toBase58()} (${mintSource})`);
+    console.log(`${logPrefix} Mint address: ${mintKeypair.publicKey.toBase58()} (${mintSource})`);
 
     // Step 3: Request create transaction from PumpPortal
-    console.log('[PUMP] Requesting create transaction...');
+    console.log(`${logPrefix} Requesting create transaction (pool: ${pool}, quoteMint: ${quoteMint === QUOTE_MINTS.USD1 ? 'USD1' : 'SOL'})...`);
     
     const createParams: Record<string, any> = {
       publicKey: creatorKeypair.publicKey.toBase58(),
@@ -259,8 +408,13 @@ export async function createToken(
       denominatedInSol: 'true',
       slippage: slippageBps,
       priorityFee: priorityFee,
-      pool: 'pump',
+      pool: pool,
     };
+
+    // Add quoteMint for bonk pool (USD1 or SOL pairing)
+    if (pool === POOL_TYPES.BONK) {
+      createParams.quoteMint = quoteMint;
+    }
 
     // Add initial buy if specified
     if (initialBuySol > 0) {
@@ -290,24 +444,26 @@ export async function createToken(
     });
 
     // Step 5: Confirm transaction
-    console.log(`[PUMP] Confirming transaction: ${signature}`);
+    console.log(`${logPrefix} Confirming transaction: ${signature}`);
     const confirmation = await connection.confirmTransaction(signature, 'confirmed');
 
     if (confirmation.value.err) {
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
 
-    console.log(`[PUMP] Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
+    console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
 
     return {
       success: true,
       mintAddress: mintKeypair.publicKey.toBase58(),
       metadataUri: ipfsResult.metadataUri,
       txSignature: signature,
+      pool,
+      quoteMint,
     };
 
   } catch (error) {
-    console.error('[PUMP] Create token error:', error);
+    console.error('[CREATE] Create token error:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Token creation failed',
@@ -336,22 +492,23 @@ function formatSolAmount(amount: number): string {
 }
 
 /**
- * Buy tokens on Pump.fun bonding curve
+ * Buy tokens on Pump.fun or Bonk.fun bonding curve
  */
 export async function buyOnBondingCurve(
   connection: Connection,
   params: TradeParams
 ): Promise<TradeResult> {
-  const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001 } = params;
+  const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001, pool = POOL_TYPES.PUMP } = params;
   
   // Format the amount properly (matching working implementation)
   const formattedAmount = formatSolAmount(amountSol);
   // Convert slippageBps to percentage (500 bps = 5%)
   const slippagePercent = slippageBps / 100;
+  const logPrefix = pool === POOL_TYPES.BONK ? '[BONK]' : '[PUMP]';
   
   // Try PumpPortal API first
   try {
-    console.log(`[PUMP] Buying ${formattedAmount} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`${logPrefix} Buying ${formattedAmount} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
 
     const requestBody = {
       publicKey: walletKeypair.publicKey.toBase58(),
@@ -361,12 +518,12 @@ export async function buyOnBondingCurve(
       denominatedInSol: 'true',
       slippage: slippagePercent,
       priorityFee: priorityFee,
-      pool: 'pump',
+      pool: pool,
       jitoOnly: 'true',
       skipPreflight: 'false',
     };
     
-    console.log('[PUMP] Buy request body:', JSON.stringify(requestBody, null, 2));
+    console.log(`${logPrefix} Buy request body:`, JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
@@ -492,18 +649,19 @@ async function getTokenAccountAddress(
 }
 
 /**
- * Sell tokens on Pump.fun bonding curve
+ * Sell tokens on Pump.fun or Bonk.fun bonding curve
  */
 export async function sellOnBondingCurve(
   connection: Connection,
   params: TradeParams & { amountTokens: number; tokenDecimals?: number }
 ): Promise<TradeResult> {
-  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001, tokenDecimals = 6 } = params;
+  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001, tokenDecimals = 6, pool = POOL_TYPES.PUMP } = params;
 
   // Format the amount properly (Pump.fun uses 6 decimals)
   const formattedAmount = formatTokenAmount(amountTokens, tokenDecimals);
   // Convert slippageBps to percentage (500 bps = 5%)
   const slippagePercent = slippageBps / 100;
+  const logPrefix = pool === POOL_TYPES.BONK ? '[BONK]' : '[PUMP]';
   
   // Get the token account address (required for sells)
   const tokenAccountAddress = await getTokenAccountAddress(
@@ -521,7 +679,7 @@ export async function sellOnBondingCurve(
 
   // Try PumpPortal API first
   try {
-    console.log(`[PUMP] Selling ${formattedAmount} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`${logPrefix} Selling ${formattedAmount} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
 
     const requestBody = {
       publicKey: walletKeypair.publicKey.toBase58(),
@@ -531,13 +689,13 @@ export async function sellOnBondingCurve(
       denominatedInSol: 'false',
       slippage: slippagePercent,
       priorityFee: priorityFee,
-      pool: 'pump',
+      pool: pool,
       tokenAccount: tokenAccountAddress,
       skipPreflight: 'false',
       jitoOnly: 'false',
     };
     
-    console.log('[PUMP] Sell request body:', JSON.stringify(requestBody, null, 2));
+    console.log(`${logPrefix} Sell request body:`, JSON.stringify(requestBody, null, 2));
 
     const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
       method: 'POST',
@@ -792,5 +950,8 @@ export {
   PUMP_PROGRAM_ID,
   PUMP_GLOBAL_ACCOUNT,
   PUMP_FEE_RECIPIENT,
+  POOL_TYPES,
+  QUOTE_MINTS,
+  uploadToBonkIPFS,
 };
 

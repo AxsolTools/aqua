@@ -107,9 +107,17 @@ const steps = [
 
 interface LaunchWizardProps {
   creatorWallet: string
+  pool?: 'pump' | 'bonk'
+  quoteMint?: string // WSOL or USD1 mint address
 }
 
-export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
+export function LaunchWizard({ 
+  creatorWallet, 
+  pool = 'pump',
+  quoteMint = 'So11111111111111111111111111111111111111112' // Default to WSOL
+}: LaunchWizardProps) {
+  const isBonkPool = pool === 'bonk'
+  const isUsd1Quote = quoteMint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
   const router = useRouter()
   const { userId, sessionId, wallets } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
@@ -210,7 +218,7 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           telegram: formData.telegram,
           discord: formData.discord,
           totalSupply: parseInt(formData.totalSupply),
-          decimals: 6, // pump.fun tokens always use 6 decimals
+          decimals: 6, // pump.fun/bonk.fun tokens always use 6 decimals
           initialBuySol: parseFloat(formData.initialBuySol) || 0,
           
           // AQUA Parameters
@@ -232,6 +240,12 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
           // Send pre-generated mint keypair so backend uses the same address
           mintSecretKey: mintSecretKey,
           mintAddress: currentMintKeypair.publicKey.toBase58(),
+          
+          // Pool selection (pump or bonk)
+          pool: pool,
+          quoteMint: quoteMint,
+          // Auto-convert SOL to USD1 if using USD1 quote on bonk pool
+          autoConvertToUsd1: isBonkPool && isUsd1Quote && parseFloat(formData.initialBuySol) > 0,
           
           // Bundle configuration
           ...bundleConfig,
@@ -341,6 +355,8 @@ export function LaunchWizard({ creatorWallet }: LaunchWizardProps) {
                   error={deployError}
                   mintAddress={mintAddress}
                   onRegenerateMint={regenerateMint}
+                  pool={pool}
+                  isUsd1Quote={isUsd1Quote}
                 />
               )}
             </motion.div>

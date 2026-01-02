@@ -107,7 +107,7 @@ export default function DashboardPage() {
               // Use DB volume as fallback
             }
             
-            // Fetch creator rewards from on-chain (Pump.fun vault)
+            // Fetch creator rewards from on-chain (Pump.fun/Bonk.fun vault)
             try {
               const rewardsResponse = await fetch(`/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${mainWallet.public_key}`)
               if (rewardsResponse.ok) {
@@ -234,7 +234,8 @@ export default function DashboardPage() {
         // If claiming failed but we have a claim URL, open it
         if (data.data?.claimUrl) {
           window.open(data.data.claimUrl, "_blank")
-          setClaimMessage({ tokenMint, message: data.error || "Opening Pump.fun to claim...", success: false })
+          const platformName = data.data?.poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
+          setClaimMessage({ tokenMint, message: data.error || `Opening ${platformName} to claim...`, success: false })
         } else {
           setClaimMessage({ tokenMint, message: data.error || "Failed to claim rewards", success: false })
         }
@@ -457,13 +458,26 @@ export default function DashboardPage() {
                           <p className="text-xs text-teal-400">${token.symbol}</p>
                         </div>
 
-                        {/* Status Badge */}
-                        <span className={cn(
-                          "px-2 py-0.5 rounded text-[10px] font-medium flex-shrink-0",
-                          token.stage === "bonding" ? "bg-amber-500/10 text-amber-400" : "bg-green-500/10 text-green-400"
-                        )}>
-                          {token.stage === "bonding" ? "Bonding" : "DEX"}
-                        </span>
+                        {/* Status & Pool Badges */}
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded text-[10px] font-medium",
+                            token.stage === "bonding" ? "bg-amber-500/10 text-amber-400" : "bg-green-500/10 text-green-400"
+                          )}>
+                            {token.stage === "bonding" ? "Bonding" : "DEX"}
+                          </span>
+                          {/* Pool type badge */}
+                          {(token as any).pool_type === 'bonk' && (
+                            <span className={cn(
+                              "px-2 py-0.5 rounded text-[10px] font-medium",
+                              (token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "bg-orange-500/10 text-orange-400"
+                            )}>
+                              {(token as any).quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB' ? 'USD1' : 'BONK'}
+                            </span>
+                          )}
+                        </div>
 
                         {/* Stats - Inline */}
                         <div className="flex items-center gap-4 flex-1 text-xs">

@@ -68,16 +68,24 @@ export default function LaunchPage() {
               </div>
             </div>
             
-            {/* Switch Protocol */}
-            <Link
-              href="/launch22"
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--aqua-border)] transition-all text-sm text-[var(--text-secondary)] hover:text-[var(--aqua-primary)] group"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-              <span>Switch to Token-2022</span>
-            </Link>
+            {/* Protocol Switchers */}
+            <div className="flex items-center gap-2">
+              <Link
+                href="/launch-bonk"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-amber-500/30 transition-all text-sm text-[var(--text-secondary)] hover:text-amber-400"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+                </svg>
+                <span>Bonk.fun</span>
+              </Link>
+              <Link
+                href="/launch22"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-emerald-500/30 transition-all text-sm text-[var(--text-secondary)] hover:text-emerald-400"
+              >
+                <span>Token-2022</span>
+              </Link>
+            </div>
           </div>
 
           {/* Info Strip */}
