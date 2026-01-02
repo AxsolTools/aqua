@@ -36,12 +36,10 @@ export const metadata: Metadata = {
   authors: [{ name: "Propel" }],
   icons: {
     icon: [
-      { url: "/favicon.png", sizes: "any", type: "image/png" },
-      { url: "/proplelfavicon.png", sizes: "32x32", type: "image/png" },
-      { url: "/propelweblogo.png", sizes: "192x192", type: "image/png" },
+      { url: "/favicon.png", type: "image/png" },
     ],
     shortcut: "/favicon.png",
-    apple: "/propelweblogo.png",
+    apple: "/apple-touch-icon.png",
   },
   manifest: "/manifest.json",
   openGraph: {

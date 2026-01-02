@@ -38,51 +38,6 @@ export default function DashboardPage() {
   const supabase = createClient()
   const router = useRouter()
 
-  useEffect(() => {
-    console.log('[DASHBOARD] Auth state:', { 
-      isAuthenticated, 
-      hasMainWallet: !!mainWallet,
-      sessionId: sessionId?.slice(0, 8)
-    })
-    
-    if (isAuthenticated && mainWallet) {
-      fetchCreatorData()
-    } else if (!isLoading) {
-      setDataLoading(false)
-    }
-  }, [isAuthenticated, mainWallet, sessionId, isLoading])
-
-  // Refresh data when returning to dashboard (e.g., after token creation)
-  useEffect(() => {
-    const handleFocus = () => {
-      if (isAuthenticated && mainWallet) {
-        console.log('[DASHBOARD] Window focused, refreshing data')
-        fetchCreatorData(false)
-      }
-    }
-    
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [isAuthenticated, mainWallet, fetchCreatorData])
-
-  // Real-time polling for creator rewards (every 15 seconds)
-  useEffect(() => {
-    if (!isAuthenticated || !mainWallet) return
-
-    // Start polling for rewards updates
-    rewardsPollingRef.current = setInterval(() => {
-      console.log('[DASHBOARD] Polling for rewards updates...')
-      fetchCreatorData(false) // Silent refresh without loading state
-    }, 15_000) // 15 seconds
-
-    return () => {
-      if (rewardsPollingRef.current) {
-        clearInterval(rewardsPollingRef.current)
-        rewardsPollingRef.current = null
-      }
-    }
-  }, [isAuthenticated, mainWallet, fetchCreatorData])
-
   const fetchCreatorData = useCallback(async (showLoadingState = true) => {
     if (!mainWallet) return
     if (showLoadingState) setDataLoading(true)
@@ -164,6 +119,51 @@ export default function DashboardPage() {
       if (showLoadingState) setDataLoading(false)
     }
   }, [mainWallet, supabase])
+
+  useEffect(() => {
+    console.log('[DASHBOARD] Auth state:', { 
+      isAuthenticated, 
+      hasMainWallet: !!mainWallet,
+      sessionId: sessionId?.slice(0, 8)
+    })
+    
+    if (isAuthenticated && mainWallet) {
+      fetchCreatorData()
+    } else if (!isLoading) {
+      setDataLoading(false)
+    }
+  }, [isAuthenticated, mainWallet, sessionId, isLoading, fetchCreatorData])
+
+  // Refresh data when returning to dashboard (e.g., after token creation)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isAuthenticated && mainWallet) {
+        console.log('[DASHBOARD] Window focused, refreshing data')
+        fetchCreatorData(false)
+      }
+    }
+    
+    window.addEventListener('focus', handleFocus)
+    return () => window.removeEventListener('focus', handleFocus)
+  }, [isAuthenticated, mainWallet, fetchCreatorData])
+
+  // Real-time polling for creator rewards (every 15 seconds)
+  useEffect(() => {
+    if (!isAuthenticated || !mainWallet) return
+
+    // Start polling for rewards updates
+    rewardsPollingRef.current = setInterval(() => {
+      console.log('[DASHBOARD] Polling for rewards updates...')
+      fetchCreatorData(false) // Silent refresh without loading state
+    }, 15_000) // 15 seconds
+
+    return () => {
+      if (rewardsPollingRef.current) {
+        clearInterval(rewardsPollingRef.current)
+        rewardsPollingRef.current = null
+      }
+    }
+  }, [isAuthenticated, mainWallet, fetchCreatorData])
 
   // Claim creator rewards handler
   const handleClaimRewards = async (tokenMint: string, rewardsAmount: number) => {
