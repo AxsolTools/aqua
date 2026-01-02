@@ -225,13 +225,17 @@ export function TokenGrid() {
                 <div className="flex gap-3 p-3">
                   {/* Token Image - Square, left side */}
                   <div className="relative w-20 h-20 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
-                    {token.image_url ? (
-                      <Image src={token.image_url} alt={token.name} fill className="object-cover" />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
-                        <span className="text-xl font-bold text-[var(--text-muted)]">{token.symbol?.slice(0, 2)}</span>
-                      </div>
-                    )}
+                    <Image 
+                      src={`https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`} 
+                      alt={token.name} 
+                      fill 
+                      className="object-cover"
+                      unoptimized
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 
+                          `https://ui-avatars.com/api/?name=${token.symbol}&background=0a0a0a&color=00d9ff&size=80`
+                      }}
+                    />
                   </div>
 
                   {/* Token Info - Right side */}
