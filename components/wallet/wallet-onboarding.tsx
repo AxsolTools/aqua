@@ -81,7 +81,7 @@ export function WalletOnboarding() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             label,
-            userId: userId,
+            sessionId: userId,
           }),
         })
 
