@@ -200,11 +200,11 @@ export async function uploadToken22Metadata(metadata: Token22Metadata): Promise<
  * Upload data to IPFS via free public APIs (no signup required)
  * 
  * Priority order:
- * 1. PumpPortal IPFS - Free public API, no signup needed
- * 2. Pinata - Only if API keys are configured (optional)
+ * 1. Pump.fun Official IPFS - Free public API, works reliably
+ * 2. PumpPortal IPFS - Fallback (may be intermittent)
  * 3. Data URI - Last resort for images
  * 
- * Note: PumpPortal IPFS is the same free public API used for Pump.fun tokens
+ * All endpoints are free and require no API keys or signup
  */
 async function uploadToIPFSProvider(
   data: Buffer,
@@ -215,8 +215,36 @@ async function uploadToIPFSProvider(
 
   console.log(`[TOKEN22] Uploading ${data.length} bytes (${contentType})`);
 
-  // Primary: PumpPortal IPFS - FREE public API, no signup/API key needed
-  // This is the same endpoint used for Pump.fun token uploads
+  // Primary: Pump.fun Official IPFS - FREE public API, most reliable
+  try {
+    console.log('[TOKEN22] Attempting pump.fun IPFS upload...');
+    const form = new FormDataLib();
+    form.append('file', data, {
+      filename: contentType.includes('json') ? 'metadata.json' : 'image.png',
+      contentType,
+    });
+    
+    const response = await axios.post('https://pump.fun/api/ipfs', form, {
+      headers: form.getHeaders(),
+      timeout: 30000,
+    });
+    
+    // pump.fun returns { metadata: {...}, metadataUri: "..." }
+    if (response.data?.metadataUri) {
+      console.log(`[TOKEN22] pump.fun IPFS upload success: ${response.data.metadataUri}`);
+      return { success: true, uri: response.data.metadataUri };
+    }
+    // For image-only uploads, it may return just the image URL
+    if (response.data?.metadata?.image) {
+      console.log(`[TOKEN22] pump.fun image upload success: ${response.data.metadata.image}`);
+      return { success: true, uri: response.data.metadata.image };
+    }
+  } catch (pumpFunError) {
+    console.warn('[TOKEN22] pump.fun IPFS failed:', 
+      pumpFunError instanceof Error ? pumpFunError.message : 'Unknown error');
+  }
+
+  // Fallback: PumpPortal IPFS - May work intermittently
   try {
     console.log('[TOKEN22] Attempting PumpPortal IPFS upload...');
     const form = new FormDataLib();
@@ -234,41 +262,9 @@ async function uploadToIPFSProvider(
       console.log(`[TOKEN22] PumpPortal IPFS upload success: ${response.data.metadataUri}`);
       return { success: true, uri: response.data.metadataUri };
     }
-  } catch (pumpError) {
+  } catch (pumpPortalError) {
     console.warn('[TOKEN22] PumpPortal IPFS failed:', 
-      pumpError instanceof Error ? pumpError.message : 'Unknown error');
-  }
-
-  // Fallback: Pinata - only if API keys are configured
-  const pinataKey = process.env.PINATA_API_KEY;
-  const pinataSecret = process.env.PINATA_SECRET_KEY;
-  
-  if (pinataKey && pinataSecret) {
-    try {
-      console.log('[TOKEN22] Attempting Pinata IPFS upload...');
-      const form = new FormDataLib();
-      form.append('file', data, {
-        filename: contentType.includes('json') ? 'metadata.json' : 'image.png',
-        contentType,
-      });
-      
-      const response = await axios.post('https://api.pinata.cloud/pinning/pinFileToIPFS', form, {
-        headers: {
-          ...form.getHeaders(),
-          pinata_api_key: pinataKey,
-          pinata_secret_api_key: pinataSecret,
-        },
-        timeout: 60000,
-      });
-      
-      if (response.data?.IpfsHash) {
-        const pinataUri = `https://gateway.pinata.cloud/ipfs/${response.data.IpfsHash}`;
-        console.log(`[TOKEN22] Pinata IPFS upload success: ${pinataUri}`);
-        return { success: true, uri: pinataUri };
-      }
-    } catch (pinataError) {
-      console.warn('[TOKEN22] Pinata IPFS failed');
-    }
+      pumpPortalError instanceof Error ? pumpPortalError.message : 'Unknown error');
   }
 
   // Last resort: If image, use data URI (works for display but not ideal for on-chain)

@@ -78,6 +78,7 @@ export default function DashboardPage() {
           tokens.map(async (token) => {
             let harvest = null
             let liveMarketCap = token.market_cap || 0
+            let liveVolume24h = token.volume_24h || 0
             
             // Fetch live market cap
             try {
@@ -90,6 +91,20 @@ export default function DashboardPage() {
               }
             } catch {
               // Use DB market cap as fallback
+            }
+            
+            // Fetch live 24h volume from DexScreener
+            try {
+              const statsResponse = await fetch(`/api/token/${token.mint_address}/stats`)
+              if (statsResponse.ok) {
+                const statsData = await statsResponse.json()
+                if (statsData.success && statsData.data?.volume24h !== undefined) {
+                  liveVolume24h = statsData.data.volume24h
+                }
+              }
+            } catch (err) {
+              console.debug('[DASHBOARD] Failed to fetch live volume:', err)
+              // Use DB volume as fallback
             }
             
             // Fetch creator rewards from on-chain (Pump.fun vault)
@@ -118,6 +133,7 @@ export default function DashboardPage() {
               ...token, 
               harvest,
               market_cap: liveMarketCap,
+              volume_24h: liveVolume24h,
               pour_rate: token.token_parameters?.pour_rate_percent ?? 0,
               evaporation_rate: token.token_parameters?.evaporation_rate_percent ?? 0,
               total_evaporated: token.token_parameters?.total_evaporated ?? 0,

@@ -2,36 +2,53 @@
  * Jito Bundle Submission Library
  * 
  * Handles atomic transaction bundles for MEV protection
- * Ported from raydiumspltoken/jito_bundles.js for Next.js
+ * Based on official Jito documentation: https://docs.jito.wtf/lowlatencytxnsend/
  * 
  * Key features:
+ * - Tip transaction creation (REQUIRED for bundles)
+ * - Base64 encoding (recommended by Jito)
  * - Multiple block engine endpoint support with rotation
  * - Automatic retry with exponential backoff
  * - Rate limit handling
  * - Sequential fallback if bundle fails
  */
 
-import { VersionedTransaction, Connection, Transaction } from "@solana/web3.js"
+import { 
+  VersionedTransaction, 
+  Connection, 
+  Transaction, 
+  PublicKey,
+  SystemProgram,
+  TransactionInstruction,
+  Keypair,
+  TransactionMessage,
+  ComputeBudgetProgram
+} from "@solana/web3.js"
 import bs58 from "bs58"
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-// Jito Block Engine endpoints (mainnet)
+// Jito Block Engine endpoints (mainnet) - Updated Dec 2024
+// From: https://docs.jito.wtf/lowlatencytxnsend/#api
 const JITO_BLOCK_ENGINE_URLS = [
-  "https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles",
-  "https://mainnet.block-engine.jito.wtf/api/v1/bundles",
-  "https://slc.mainnet.block-engine.jito.wtf/api/v1/bundles",
-  "https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles",
-  "https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles",
-  "https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles",
+  "https://ny.mainnet.block-engine.jito.wtf/api/v1/bundles",           // 🇺🇸 New York (Primary)
+  "https://mainnet.block-engine.jito.wtf/api/v1/bundles",              // 🌍 Global (auto-routes)
+  "https://slc.mainnet.block-engine.jito.wtf/api/v1/bundles",          // 🇺🇸 Salt Lake City
+  "https://amsterdam.mainnet.block-engine.jito.wtf/api/v1/bundles",    // 🇳🇱 Amsterdam
+  "https://frankfurt.mainnet.block-engine.jito.wtf/api/v1/bundles",    // 🇩🇪 Frankfurt
+  "https://london.mainnet.block-engine.jito.wtf/api/v1/bundles",       // 🇬🇧 London
+  "https://tokyo.mainnet.block-engine.jito.wtf/api/v1/bundles",        // 🇯🇵 Tokyo
+  "https://singapore.mainnet.block-engine.jito.wtf/api/v1/bundles",    // 🇸🇬 Singapore
+  "https://dublin.mainnet.block-engine.jito.wtf/api/v1/bundles",       // 🇮🇪 Dublin
 ]
 
 // Jito Bundle status endpoint
-const JITO_BUNDLE_STATUS_URL = "https://bundles.jito.wtf/api/v1/bundles"
+const JITO_BUNDLE_STATUS_URL = "https://mainnet.block-engine.jito.wtf/api/v1/bundles"
 
-// Jito tip accounts (rotate for load balancing)
+// Official Jito tip accounts (from getTipAccounts API)
+// https://docs.jito.wtf/lowlatencytxnsend/#gettipaccounts
 const JITO_TIP_ACCOUNTS = [
   "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
   "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe",
@@ -49,6 +66,11 @@ const BUNDLE_REQUEST_TIMEOUT_MS = 30000
 const MIN_RETRY_DELAY_MS = 1000
 const MAX_RETRY_DELAY_MS = 60000
 const BACKOFF_FACTOR = 1.5
+
+// Minimum tip required (1000 lamports per Jito docs)
+const MIN_TIP_LAMPORTS = 1000
+// Default tip (slightly above minimum for better inclusion)
+const DEFAULT_TIP_LAMPORTS = 10000 // 0.00001 SOL
 
 // ============================================================================
 // TYPES
@@ -72,8 +94,8 @@ export interface BundleStatusResult {
 export interface BundleOptions {
   retries?: number
   timeoutMs?: number
-  priorityFeeLamports?: number
-  useJito?: boolean
+  tipLamports?: number
+  skipTip?: boolean // Only use if tip is already included in transactions
 }
 
 // ============================================================================
@@ -95,15 +117,61 @@ function delay(ms: number): Promise<void> {
 
 /**
  * Get a random Jito tip account for bundle tips
+ * Randomly selecting reduces contention
  */
 export function getJitoTipAccount(): string {
   return JITO_TIP_ACCOUNTS[Math.floor(Math.random() * JITO_TIP_ACCOUNTS.length)]
 }
 
 /**
- * Serialize transactions for bundle submission
+ * Get Jito tip account as PublicKey
  */
-function serializeTransactions(
+export function getJitoTipAccountPubkey(): PublicKey {
+  return new PublicKey(getJitoTipAccount())
+}
+
+/**
+ * Create a tip instruction to be added to a transaction
+ * Best practice: Add tip to same transaction as main logic
+ * 
+ * @param fromPubkey - The wallet paying the tip
+ * @param tipLamports - Amount to tip (minimum 1000 lamports)
+ */
+export function createJitoTipInstruction(
+  fromPubkey: PublicKey,
+  tipLamports: number = DEFAULT_TIP_LAMPORTS
+): TransactionInstruction {
+  const tipAccount = getJitoTipAccountPubkey()
+  const amount = Math.max(tipLamports, MIN_TIP_LAMPORTS)
+  
+  return SystemProgram.transfer({
+    fromPubkey,
+    toPubkey: tipAccount,
+    lamports: amount,
+  })
+}
+
+/**
+ * Add Jito tip instruction to an existing transaction
+ * 
+ * @param transaction - Transaction to add tip to
+ * @param fromPubkey - The wallet paying the tip
+ * @param tipLamports - Amount to tip (minimum 1000 lamports)
+ */
+export function addJitoTipToTransaction(
+  transaction: Transaction,
+  fromPubkey: PublicKey,
+  tipLamports: number = DEFAULT_TIP_LAMPORTS
+): Transaction {
+  const tipInstruction = createJitoTipInstruction(fromPubkey, tipLamports)
+  transaction.add(tipInstruction)
+  return transaction
+}
+
+/**
+ * Serialize transactions for bundle submission using base64 (recommended)
+ */
+function serializeTransactionsBase64(
   transactions: (VersionedTransaction | Transaction)[]
 ): string[] {
   if (transactions.length > 5) {
@@ -111,15 +179,17 @@ function serializeTransactions(
   }
 
   return transactions.map((tx) => {
+    let serialized: Uint8Array
     if (tx instanceof VersionedTransaction) {
-      return bs58.encode(tx.serialize())
-    }
-    return bs58.encode(
-      tx.serialize({
+      serialized = tx.serialize()
+    } else {
+      serialized = tx.serialize({
         requireAllSignatures: false,
         verifySignatures: false,
       })
-    )
+    }
+    // Use base64 encoding (recommended by Jito, base58 is deprecated)
+    return Buffer.from(serialized).toString("base64")
   })
 }
 
@@ -143,6 +213,10 @@ function extractSignatures(
 
 /**
  * Submit a bundle of signed transactions to Jito block engine
+ * 
+ * IMPORTANT: At least one transaction in the bundle MUST include a tip
+ * to one of the Jito tip accounts. Use createJitoTipInstruction() or
+ * addJitoTipToTransaction() to add tips.
  */
 export async function submitBundle(
   transactions: (VersionedTransaction | Transaction)[],
@@ -151,18 +225,21 @@ export async function submitBundle(
   const maxAttempts = options.retries ?? DEFAULT_BUNDLE_RETRIES
   const timeoutMs = options.timeoutMs ?? BUNDLE_REQUEST_TIMEOUT_MS
 
-  // Serialize transactions
-  const serializedTransactions = serializeTransactions(transactions)
+  // Serialize transactions using base64 (recommended)
+  const serializedTransactions = serializeTransactionsBase64(transactions)
   const signatures = extractSignatures(transactions)
 
-  // Shuffle endpoints for load balancing
-  const endpoints = shuffleArray([...JITO_BLOCK_ENGINE_URLS])
+  // Shuffle endpoints for load balancing, but prefer NY endpoint first
+  const endpoints = [...JITO_BLOCK_ENGINE_URLS]
+  // Keep NY first for better reliability, shuffle the rest
+  const shuffledRest = shuffleArray(endpoints.slice(1))
+  const orderedEndpoints = [endpoints[0], ...shuffledRest]
 
   let lastError: Error | null = null
   let endpointIndex = 0
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const endpoint = endpoints[endpointIndex]
+    const endpoint = orderedEndpoints[endpointIndex]
 
     console.log(
       `[JITO] Submitting bundle with ${transactions.length} txs (attempt ${attempt}/${maxAttempts})`
@@ -180,7 +257,10 @@ export async function submitBundle(
           jsonrpc: "2.0",
           id: 1,
           method: "sendBundle",
-          params: [serializedTransactions],
+          params: [
+            serializedTransactions,
+            { encoding: "base64" } // Use base64 encoding (recommended)
+          ],
         }),
         signal: controller.signal,
       })
@@ -198,7 +278,7 @@ export async function submitBundle(
         throw new Error("Bundle submission succeeded but no result returned")
       }
 
-      console.log(`[JITO] Bundle submitted: ${bundleId}`)
+      console.log(`[JITO] ✅ Bundle submitted: ${bundleId}`)
 
       return {
         success: true,
@@ -224,8 +304,11 @@ export async function submitBundle(
 
       console.log(`[JITO] Retrying in ${(waitMs / 1000).toFixed(1)}s...`)
 
-      // Rotate endpoint
-      endpointIndex = (endpointIndex + 1) % endpoints.length
+      // Rotate endpoint on rate limit, stay on NY endpoint for other errors
+      if (lastError.message.toLowerCase().includes("rate limit")) {
+        endpointIndex = (endpointIndex + 1) % orderedEndpoints.length
+        console.log(`[JITO] Rotating to: ${orderedEndpoints[endpointIndex]}`)
+      }
 
       await delay(waitMs)
     }
@@ -249,9 +332,12 @@ function isRetryableError(error: Error): boolean {
   if (message.includes("insufficient funds")) return false
   if (message.includes("invalid signature")) return false
   if (message.includes("account not found")) return false
+  if (message.includes("instruction error")) return false
+  if (message.includes("custom program error")) return false
 
   // Retryable errors
   if (message.includes("rate limit")) return true
+  if (message.includes("too many requests")) return true
   if (message.includes("timeout")) return true
   if (message.includes("network")) return true
   if (message.includes("blockhash")) return true
@@ -346,7 +432,7 @@ export async function waitForBundleConfirmation(
     const jitoStatus = await getBundleStatus(bundleId)
 
     if (jitoStatus.status === "landed") {
-      console.log(`[JITO] Bundle landed at slot ${jitoStatus.landedSlot}`)
+      console.log(`[JITO] ✅ Bundle landed at slot ${jitoStatus.landedSlot}`)
       return {
         success: true,
         status: "confirmed",
@@ -355,7 +441,7 @@ export async function waitForBundleConfirmation(
     }
 
     if (jitoStatus.status === "failed") {
-      console.error(`[JITO] Bundle failed:`, jitoStatus.error)
+      console.error(`[JITO] ❌ Bundle failed:`, jitoStatus.error)
       return {
         success: false,
         status: "failed",
@@ -382,7 +468,7 @@ export async function waitForBundleConfirmation(
           const highestSlot = Math.max(
             ...statuses.value.map((s) => s?.slot || 0)
           )
-          console.log(`[JITO] All signatures confirmed at slot ${highestSlot}`)
+          console.log(`[JITO] ✅ All signatures confirmed at slot ${highestSlot}`)
           return {
             success: true,
             status: "confirmed",
@@ -493,6 +579,9 @@ export async function executeSequentialFallback(
 
 /**
  * Execute a bundle with automatic fallback to sequential execution
+ * 
+ * IMPORTANT: Ensure at least one transaction includes a Jito tip instruction
+ * Use addJitoTipToTransaction() or createJitoTipInstruction() before calling this
  */
 export async function executeBundle(
   connection: Connection,
@@ -563,3 +652,60 @@ export async function executeBundle(
   }
 }
 
+// ============================================================================
+// TIP AMOUNT UTILITIES
+// ============================================================================
+
+/**
+ * Get recommended tip amount based on current network conditions
+ * Uses Jito's tip floor API
+ */
+export async function getRecommendedTipAmount(): Promise<{
+  min: number
+  percentile50: number
+  percentile75: number
+  percentile95: number
+}> {
+  try {
+    const response = await fetch("https://bundles.jito.wtf/api/v1/bundles/tip_floor", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    })
+
+    const data = await response.json()
+    
+    if (Array.isArray(data) && data.length > 0) {
+      const tipData = data[0]
+      return {
+        min: MIN_TIP_LAMPORTS,
+        percentile50: Math.floor((tipData.landed_tips_50th_percentile || 0.00001) * 1e9),
+        percentile75: Math.floor((tipData.landed_tips_75th_percentile || 0.00004) * 1e9),
+        percentile95: Math.floor((tipData.landed_tips_95th_percentile || 0.001) * 1e9),
+      }
+    }
+  } catch (error) {
+    console.warn("[JITO] Failed to fetch tip floor, using defaults:", error)
+  }
+
+  return {
+    min: MIN_TIP_LAMPORTS,
+    percentile50: 10000, // 0.00001 SOL
+    percentile75: 40000, // 0.00004 SOL
+    percentile95: 1000000, // 0.001 SOL
+  }
+}
+
+/**
+ * Check if Jito bundles are available (mainnet only for now)
+ */
+export function isJitoBundleAvailable(): boolean {
+  return true // Mainnet is always available
+}
+
+// Export constants for external use
+export const JITO_CONFIG = {
+  MIN_TIP_LAMPORTS,
+  DEFAULT_TIP_LAMPORTS,
+  TIP_ACCOUNTS: JITO_TIP_ACCOUNTS,
+  BLOCK_ENGINE_URLS: JITO_BLOCK_ENGINE_URLS,
+}

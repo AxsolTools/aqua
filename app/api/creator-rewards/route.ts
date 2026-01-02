@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const adminClient = getAdminClient()
 
     // Check if token is migrated or on bonding curve
-    const { data: token } = await adminClient
+    const { data: token, error: tokenError } = await adminClient
       .from("tokens")
       .select("id, stage, creator_wallet")
       .eq("mint_address", tokenMint)
@@ -48,11 +48,13 @@ export async function GET(request: NextRequest) {
     
     // If migrated, also check for any Raydium/LP fee rewards
     let migrationRewards = 0
-    if (token?.stage === "migrated") {
+    const tokenStage = (token as { stage?: string } | null)?.stage
+    if (tokenStage === "migrated") {
       migrationRewards = await getMigratedTokenRewards(tokenMint, creatorWallet)
     }
 
     const totalRewards = pumpRewards.balance + migrationRewards
+    const tokenCreatorWallet = (token as { creator_wallet?: string } | null)?.creator_wallet
 
     return NextResponse.json({
       success: true,
@@ -62,9 +64,9 @@ export async function GET(request: NextRequest) {
         migrationBalance: migrationRewards,
         vaultAddress: pumpRewards.vaultAddress,
         hasRewards: totalRewards > 0,
-        stage: token?.stage || "unknown",
-        isCreator: token?.creator_wallet === creatorWallet,
-        canClaimViaPumpPortal: pumpRewards.balance > 0 && token?.stage !== "migrated",
+        stage: tokenStage || "unknown",
+        isCreator: tokenCreatorWallet === creatorWallet,
+        canClaimViaPumpPortal: pumpRewards.balance > 0 && tokenStage !== "migrated",
       }
     })
   } catch (error) {
@@ -119,13 +121,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify this is the token creator
-    const { data: token } = await adminClient
+    const { data: token, error: tokenError } = await adminClient
       .from("tokens")
       .select("id, creator_wallet, stage")
       .eq("mint_address", tokenMint)
       .single()
 
-    if (!token || token.creator_wallet !== walletAddress) {
+    const tokenData = token as { id?: string; creator_wallet?: string; stage?: string } | null
+    if (!tokenData || tokenData.creator_wallet !== walletAddress) {
       return NextResponse.json(
         { success: false, error: "Only the token creator can claim rewards" },
         { status: 403 }
@@ -143,7 +146,7 @@ export async function POST(request: NextRequest) {
     }
 
     // For migrated tokens, they need to claim on the DEX directly
-    if (token.stage === "migrated") {
+    if (tokenData.stage === "migrated") {
       return NextResponse.json({
         success: false,
         error: "Token has migrated. Please claim rewards from the DEX directly.",
@@ -156,8 +159,9 @@ export async function POST(request: NextRequest) {
 
     // Decrypt private key
     const serviceSalt = await getOrCreateServiceSalt(adminClient)
+    const walletData = wallet as { encrypted_private_key: string }
     const privateKeyBase58 = decryptPrivateKey(
-      wallet.encrypted_private_key,
+      walletData.encrypted_private_key,
       sessionId,
       serviceSalt
     )
@@ -218,13 +222,15 @@ export async function POST(request: NextRequest) {
 
     // Record the claim in database
     try {
-      await adminClient.from("tide_harvest_claims").insert({
-        token_id: token.id,
-        wallet_address: walletAddress,
-        amount_sol: rewardsData.balance,
-        tx_signature: signature,
-        claimed_at: new Date().toISOString(),
-      })
+      if (tokenData.id) {
+        await adminClient.from("tide_harvest_claims").insert({
+          token_id: tokenData.id,
+          wallet_address: walletAddress,
+          amount_sol: rewardsData.balance,
+          tx_signature: signature,
+          claimed_at: new Date().toISOString(),
+        } as any)
+      }
     } catch (dbError) {
       console.warn("[CREATOR-REWARDS] Failed to record claim:", dbError)
     }
@@ -252,6 +258,9 @@ export async function POST(request: NextRequest) {
 
 /**
  * Fetch Pump.fun creator rewards from on-chain vault
+ * 
+ * The creator vault is a System Account PDA with seeds: ["creator-vault", creator_pubkey]
+ * This vault accumulates all creator fees from ALL tokens created by the creator (not per-token)
  */
 async function getPumpFunCreatorRewards(
   tokenMint: string, 
@@ -262,46 +271,42 @@ async function getPumpFunCreatorRewards(
   hasRewards: boolean
 }> {
   try {
-    const mintPubkey = new PublicKey(tokenMint)
     const creatorPubkey = new PublicKey(creatorWallet)
 
-    // Pump.fun uses a bonding curve PDA that holds creator fees
-    // Try multiple known PDA patterns
-
-    const pdaPatterns = [
-      // Pattern 1: Pump.fun bonding curve with mint seed
-      ["bonding-curve", mintPubkey.toBuffer()],
-      // Pattern 2: Creator vault with mint and creator seeds
-      ["creator-vault", mintPubkey.toBuffer(), creatorPubkey.toBuffer()],
-      // Pattern 3: Fee vault with mint seed
-      ["fee-vault", mintPubkey.toBuffer()],
-      // Pattern 4: Creator with creator pubkey
-      ["creator", creatorPubkey.toBuffer()],
-    ]
-
-    let totalBalance = 0
+    // ============================================================================
+    // CREATOR VAULT PDA - Direct on-chain balance query
+    // Based on Pump.fun official implementation: PDA seeds are ["creator-vault", creator_pubkey]
+    // This is a System Account that holds SOL directly
+    // The vault is per-creator (not per-token), accumulating fees from all tokens
+    // ============================================================================
+    let vaultBalance = 0
     let foundVault = ""
 
-    for (const seeds of pdaPatterns) {
       try {
-        const [pda] = PublicKey.findProgramAddressSync(
-          seeds.map(s => typeof s === "string" ? Buffer.from(s) : s),
+      const [creatorVaultPda] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("creator-vault"),
+          creatorPubkey.toBuffer()
+        ],
           PUMP_PROGRAM_ID
         )
         
-        const balance = await connection.getBalance(pda)
+      const vaultInfo = await connection.getAccountInfo(creatorVaultPda)
         
-        if (balance > 0) {
-          console.log(`[CREATOR-REWARDS] Found vault at ${pda.toBase58()}: ${balance / LAMPORTS_PER_SOL} SOL`)
-          totalBalance += balance
-          if (!foundVault) foundVault = pda.toBase58()
-        }
-      } catch {
-        // Invalid PDA, skip
+      if (vaultInfo && vaultInfo.lamports > 0) {
+        vaultBalance = vaultInfo.lamports
+        foundVault = creatorVaultPda.toBase58()
+        const solAmount = vaultBalance / LAMPORTS_PER_SOL
+        console.log(`[CREATOR-REWARDS] ✅ Creator vault balance: ${solAmount.toFixed(6)} SOL (${creatorVaultPda.toBase58().substring(0, 8)}...)`)
+      } else {
+        console.log("[CREATOR-REWARDS] ℹ️ Creator vault is empty or does not exist yet")
       }
+    } catch (vaultError) {
+      console.warn("[CREATOR-REWARDS] Failed to query creator vault:", 
+        vaultError instanceof Error ? vaultError.message : "Unknown error")
     }
 
-    // Also try to get bonding curve account data using Pump.fun's API
+    // Fallback: Try Pump.fun API to get creator balance (if available)
     try {
       const pumpResponse = await fetch(`https://frontend-api.pump.fun/coins/${tokenMint}`, {
         headers: { "Accept": "application/json" }
@@ -310,12 +315,11 @@ async function getPumpFunCreatorRewards(
         const pumpData = await pumpResponse.json()
         if (pumpData.creator_balance_sol) {
           const creatorBal = parseFloat(pumpData.creator_balance_sol)
-          if (creatorBal > totalBalance / LAMPORTS_PER_SOL) {
-            totalBalance = creatorBal * LAMPORTS_PER_SOL
+          // Use API value if it's higher (more accurate) or if on-chain query failed
+          if (creatorBal > vaultBalance / LAMPORTS_PER_SOL || vaultBalance === 0) {
+            vaultBalance = creatorBal * LAMPORTS_PER_SOL
+            console.log(`[CREATOR-REWARDS] Using Pump.fun API balance: ${creatorBal.toFixed(6)} SOL`)
           }
-        }
-        if (pumpData.bonding_curve) {
-          foundVault = pumpData.bonding_curve
         }
       }
     } catch (e) {
@@ -323,9 +327,9 @@ async function getPumpFunCreatorRewards(
     }
 
     return {
-      balance: totalBalance / LAMPORTS_PER_SOL,
+      balance: vaultBalance / LAMPORTS_PER_SOL,
       vaultAddress: foundVault,
-      hasRewards: totalBalance > 0,
+      hasRewards: vaultBalance > 0,
     }
   } catch (error) {
     console.error("[CREATOR-REWARDS] Pump.fun fetch error:", error)

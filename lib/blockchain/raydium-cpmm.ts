@@ -375,7 +375,7 @@ export async function addLiquidity(params: AddLiquidityParams): Promise<Liquidit
     console.log(`[RAYDIUM] Pool: ${poolAddress}`);
     console.log(`[RAYDIUM] Amount: ${tokenAmount} tokens, ${solAmount} SOL`);
 
-    const { Raydium, TxVersion } = await getRaydiumSDK();
+    const { Raydium, TxVersion, Percent } = await getRaydiumSDK();
     const BN = (await import('bn.js')).default;
     const Decimal = (await import('decimal.js')).default;
 
@@ -401,12 +401,12 @@ export async function addLiquidity(params: AddLiquidityParams): Promise<Liquidit
       new Decimal(tokenAmount).mul(new Decimal(10).pow(tokenDecimals)).toFixed(0)
     );
 
-    // Add liquidity
+    // Add liquidity using SDK's Percent class for slippage
     const result = await raydium.cpmm.addLiquidity({
       poolInfo: poolInfo.poolInfo,
       poolKeys: poolInfo.poolKeys,
       inputAmount,
-      slippage: slippageBps / 10000, // Convert bps to decimal
+      slippage: new Percent(slippageBps, 10000), // Use SDK Percent class
       baseIn: true, // Using base token as input
       txVersion: TxVersion.V0,
       computeBudgetConfig: {
@@ -455,7 +455,7 @@ export async function removeLiquidity(params: RemoveLiquidityParams): Promise<Li
     console.log(`[RAYDIUM] Pool: ${poolAddress}`);
     console.log(`[RAYDIUM] LP Amount: ${lpTokenAmount}`);
 
-    const { Raydium, TxVersion } = await getRaydiumSDK();
+    const { Raydium, TxVersion, Percent } = await getRaydiumSDK();
     const BN = (await import('bn.js')).default;
 
     // Initialize SDK
@@ -478,12 +478,12 @@ export async function removeLiquidity(params: RemoveLiquidityParams): Promise<Li
     // LP token amount
     const lpAmount = new BN(lpTokenAmount);
 
-    // Remove liquidity
+    // Remove liquidity using SDK's Percent class for slippage
     const result = await raydium.cpmm.withdrawLiquidity({
       poolInfo: poolInfo.poolInfo,
       poolKeys: poolInfo.poolKeys,
       lpAmount,
-      slippage: slippageBps / 10000,
+      slippage: new Percent(slippageBps, 10000), // Use SDK Percent class
       txVersion: TxVersion.V0,
       computeBudgetConfig: {
         units: 400000,
@@ -644,6 +644,265 @@ export function calculatePriceFromReserves(
   
   if (tokenAmount === 0) return 0;
   return solAmount / tokenAmount;
+}
+
+// ============================================================================
+// CREATOR FEE COLLECTION
+// ============================================================================
+
+/**
+ * Raydium CPMM Creator Fee - similar to Pump.fun creator rewards
+ * Pool creators earn a share of trading fees from their pools
+ */
+
+export interface CreatorFeeInfo {
+  poolId: string;
+  poolName: string;
+  mintA: { address: string; symbol?: string; decimals: number };
+  mintB: { address: string; symbol?: string; decimals: number };
+  feeAmountA: string;
+  feeAmountB: string;
+}
+
+export interface CreatorFeesResult {
+  success: boolean;
+  pools: CreatorFeeInfo[];
+  totalPools: number;
+  error?: string;
+}
+
+export interface CollectCreatorFeeResult {
+  success: boolean;
+  txSignature?: string;
+  allSignatures?: string[];
+  poolsProcessed?: number;
+  error?: string;
+}
+
+/**
+ * Get pending creator fees for a wallet across all CPMM pools
+ * Uses Raydium's temp API endpoint
+ */
+export async function getCreatorFees(
+  walletAddress: string,
+  isDevnet: boolean = false
+): Promise<CreatorFeesResult> {
+  try {
+    const axios = (await import('axios')).default;
+    
+    const host = isDevnet 
+      ? 'https://temp-api-v1-devnet.raydium.io'
+      : 'https://temp-api-v1.raydium.io';
+    
+    console.log(`[RAYDIUM] Fetching creator fees for ${walletAddress}...`);
+    
+    const response = await axios.get(`${host}/cp-creator-fee?wallet=${walletAddress}`, {
+      timeout: 30000,
+    });
+    
+    if (!response.data?.success) {
+      return {
+        success: false,
+        pools: [],
+        totalPools: 0,
+        error: 'Failed to fetch creator fees from Raydium API',
+      };
+    }
+    
+    const pools: CreatorFeeInfo[] = response.data.data.map((item: any) => ({
+      poolId: item.poolInfo.id,
+      poolName: `${item.poolInfo.mintA.symbol || 'Unknown'}/${item.poolInfo.mintB.symbol || 'Unknown'}`,
+      mintA: {
+        address: item.poolInfo.mintA.address,
+        symbol: item.poolInfo.mintA.symbol,
+        decimals: item.poolInfo.mintA.decimals,
+      },
+      mintB: {
+        address: item.poolInfo.mintB.address,
+        symbol: item.poolInfo.mintB.symbol,
+        decimals: item.poolInfo.mintB.decimals,
+      },
+      feeAmountA: item.fee.amountA,
+      feeAmountB: item.fee.amountB,
+    }));
+    
+    // Filter to only pools with pending fees
+    const poolsWithFees = pools.filter(
+      (p) => p.feeAmountA !== '0' || p.feeAmountB !== '0'
+    );
+    
+    console.log(`[RAYDIUM] Found ${poolsWithFees.length} pools with pending fees`);
+    
+    return {
+      success: true,
+      pools: poolsWithFees,
+      totalPools: pools.length,
+    };
+  } catch (error) {
+    console.error('[RAYDIUM] Error fetching creator fees:', error);
+    return {
+      success: false,
+      pools: [],
+      totalPools: 0,
+      error: error instanceof Error ? error.message : 'Failed to fetch creator fees',
+    };
+  }
+}
+
+/**
+ * Collect creator fees from a single CPMM pool
+ */
+export async function collectCreatorFee(
+  connection: Connection,
+  ownerKeypair: Keypair,
+  poolAddress: string
+): Promise<CollectCreatorFeeResult> {
+  try {
+    console.log(`[RAYDIUM] Collecting creator fees from pool ${poolAddress}...`);
+    
+    const { Raydium, TxVersion, CREATE_CPMM_POOL_PROGRAM } = await getRaydiumSDK();
+    
+    // Initialize SDK
+    const raydium = await Raydium.load({
+      connection,
+      owner: ownerKeypair,
+      cluster: 'mainnet',
+      disableFeatureCheck: true,
+      disableLoadToken: false,
+    });
+    
+    // Get pool info
+    const poolId = new PublicKey(poolAddress);
+    const poolData = await raydium.cpmm.getPoolInfoFromRpc(poolId.toBase58());
+    
+    if (!poolData) {
+      throw new Error('Pool not found');
+    }
+    
+    // Collect creator fees
+    const { execute } = await raydium.cpmm.collectCreatorFees({
+      programId: CREATE_CPMM_POOL_PROGRAM,
+      poolInfo: poolData.poolInfo,
+      poolKeys: poolData.poolKeys,
+      txVersion: TxVersion.V0,
+      computeBudgetConfig: {
+        units: 400000,
+        microLamports: 50000000,
+      },
+    });
+    
+    const txIds = await execute({
+      sendAndConfirm: true,
+    });
+    
+    console.log(`[RAYDIUM] Creator fees collected: ${txIds[0]}`);
+    
+    return {
+      success: true,
+      txSignature: txIds[0],
+      allSignatures: txIds,
+      poolsProcessed: 1,
+    };
+  } catch (error) {
+    console.error('[RAYDIUM] Collect creator fee error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to collect creator fees',
+    };
+  }
+}
+
+/**
+ * Collect creator fees from all CPMM pools for a wallet
+ */
+export async function collectAllCreatorFees(
+  connection: Connection,
+  ownerKeypair: Keypair,
+  isDevnet: boolean = false
+): Promise<CollectCreatorFeeResult> {
+  try {
+    const walletAddress = ownerKeypair.publicKey.toBase58();
+    console.log(`[RAYDIUM] Collecting all creator fees for ${walletAddress}...`);
+    
+    const { Raydium, TxVersion, CREATE_CPMM_POOL_PROGRAM, DEVNET_PROGRAM_ID } = await getRaydiumSDK();
+    const axios = (await import('axios')).default;
+    
+    // Fetch pending fees
+    const host = isDevnet 
+      ? 'https://temp-api-v1-devnet.raydium.io'
+      : 'https://temp-api-v1.raydium.io';
+    
+    const response = await axios.get(`${host}/cp-creator-fee?wallet=${walletAddress}`, {
+      timeout: 30000,
+    });
+    
+    if (!response.data?.data?.length) {
+      return {
+        success: false,
+        error: 'No CPMM pools with pending creator fees found',
+        poolsProcessed: 0,
+      };
+    }
+    
+    // Filter to pools with fees
+    const poolsWithFees = response.data.data.filter(
+      (d: any) => d.fee.amountA !== '0' || d.fee.amountB !== '0'
+    );
+    
+    if (poolsWithFees.length === 0) {
+      return {
+        success: true,
+        poolsProcessed: 0,
+        error: 'No pending creator fees to collect',
+      };
+    }
+    
+    console.log(`[RAYDIUM] Found ${poolsWithFees.length} pools with pending fees`);
+    
+    // Initialize SDK
+    const raydium = await Raydium.load({
+      connection,
+      owner: ownerKeypair,
+      cluster: isDevnet ? 'devnet' : 'mainnet',
+      disableFeatureCheck: true,
+      disableLoadToken: false,
+    });
+    
+    // Collect from all pools
+    const programId = isDevnet 
+      ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM 
+      : CREATE_CPMM_POOL_PROGRAM;
+    
+    const { execute, transactions } = await raydium.cpmm.collectMultiCreatorFees({
+      poolInfoList: poolsWithFees.map((d: any) => d.poolInfo),
+      programId,
+      txVersion: TxVersion.V0,
+    });
+    
+    const result = await execute({
+      sequentially: true,
+      sendAndConfirm: true,
+    });
+    
+    const signatures = Array.isArray(result) 
+      ? result.map((r: any) => r.txId || r)
+      : [result.txId || result];
+    
+    console.log(`[RAYDIUM] Collected fees from ${poolsWithFees.length} pools`);
+    
+    return {
+      success: true,
+      txSignature: signatures[0],
+      allSignatures: signatures,
+      poolsProcessed: poolsWithFees.length,
+    };
+  } catch (error) {
+    console.error('[RAYDIUM] Collect all creator fees error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to collect creator fees',
+    };
+  }
 }
 
 // ============================================================================
