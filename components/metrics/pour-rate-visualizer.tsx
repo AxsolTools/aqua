@@ -188,10 +188,10 @@ export function PourRateVisualizer({ rate, isLoading = false }: PourRateVisualiz
 
   return (
     <div className="relative">
-      <canvas ref={canvasRef} className="w-full h-32 rounded-lg" />
-      <div className="absolute bottom-3 left-0 right-0 text-center">
-        <p className="text-xl font-bold text-[var(--aqua-primary)] font-mono aqua-text-glow">{rate.toFixed(1)}%</p>
-        <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">per hour</p>
+      <canvas ref={canvasRef} className="w-full h-20 rounded-lg" />
+      <div className="absolute bottom-2 left-0 right-0 text-center">
+        <p className="text-lg font-bold text-[var(--aqua-primary)] font-mono aqua-text-glow">{rate.toFixed(1)}%</p>
+        <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">per hour</p>
       </div>
     </div>
   )

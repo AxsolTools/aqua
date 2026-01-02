@@ -165,11 +165,11 @@ export function ConstellationGauge({ strength, isLoading = false }: Constellatio
   }
 
   return (
-    <div className="relative">
-      <canvas ref={canvasRef} className="w-full aspect-square" />
+    <div className="relative h-20">
+      <canvas ref={canvasRef} className="w-full h-full" />
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <p className="text-3xl font-bold text-[var(--text-primary)] font-mono">{clampedStrength.toFixed(0)}</p>
-        <p className={cn("text-xs font-semibold uppercase tracking-wider", getHealthColor())}>{getHealthLabel()}</p>
+        <p className="text-xl font-bold text-[var(--text-primary)] font-mono">{clampedStrength.toFixed(0)}</p>
+        <p className={cn("text-[10px] font-semibold uppercase tracking-wider", getHealthColor())}>{getHealthLabel()}</p>
       </div>
     </div>
   )

@@ -123,16 +123,16 @@ export function EvaporationTracker({ totalEvaporated, evaporationRate, symbol, i
   }
 
   return (
-    <div className="relative h-32 rounded-lg overflow-hidden">
+    <div className="relative h-20 rounded-lg overflow-hidden">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       <div className="relative z-10 flex flex-col items-center justify-center h-full">
-        <p className="text-2xl font-bold text-[var(--warm-orange)] font-mono drop-shadow-[0_0_10px_rgba(255,107,53,0.5)]">
+        <p className="text-lg font-bold text-[var(--warm-orange)] font-mono drop-shadow-[0_0_10px_rgba(255,107,53,0.5)]">
           {formatNumber(totalEvaporated)}
         </p>
-        <p className="text-xs text-[var(--text-secondary)] mb-1">{symbol} burned</p>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[var(--warm-orange)]/10 border border-[var(--warm-orange)]/20">
-          <div className="w-1.5 h-1.5 rounded-full bg-[var(--warm-orange)] animate-pulse" />
-          <span className="text-xs font-mono text-[var(--warm-orange)]">{evaporationRate}%/hr</span>
+        <p className="text-[10px] text-[var(--text-secondary)]">{symbol} burned</p>
+        <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-[var(--warm-orange)]/10 border border-[var(--warm-orange)]/20 mt-1">
+          <div className="w-1 h-1 rounded-full bg-[var(--warm-orange)] animate-pulse" />
+          <span className="text-[10px] font-mono text-[var(--warm-orange)]">{evaporationRate}%/hr</span>
         </div>
       </div>
     </div>

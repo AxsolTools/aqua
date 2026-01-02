@@ -16,8 +16,8 @@ export function WaterLevelMeter({ level, size = "md", showLabel = true, isLoadin
 
   const heights = {
     sm: 40,
-    md: 80,
-    lg: 140,
+    md: 60,
+    lg: 100,
   }
 
   const height = heights[size]

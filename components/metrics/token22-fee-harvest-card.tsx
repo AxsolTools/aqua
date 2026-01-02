@@ -211,56 +211,46 @@ export function Token22FeeHarvestCard({
 
   if (isLoading) {
     return (
-      <div className="h-32 flex items-center justify-center bg-gradient-to-br from-purple-500/5 to-purple-600/10 rounded-lg border border-purple-500/20">
-        <div className="w-5 h-5 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
+      <div className="h-20 flex items-center justify-center bg-gradient-to-br from-purple-500/5 to-purple-600/10 rounded-lg border border-purple-500/20">
+        <div className="w-4 h-4 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" />
       </div>
     )
   }
 
   return (
-    <div className="relative h-32 rounded-lg overflow-hidden border border-purple-500/30">
+    <div className="relative h-20 rounded-lg overflow-hidden border border-purple-500/30">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-      
-      {/* Token22 Badge */}
-      <div className="absolute top-2 right-2 z-10 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30">
-        <span className="text-[9px] font-medium text-purple-300">Token-2022</span>
-      </div>
 
-      <div className="relative z-10 flex flex-col items-center justify-center h-full">
-        <div className="flex items-center gap-1.5 mb-1">
-          <Droplets className="w-3 h-3 text-purple-400" />
-          <span className="text-[10px] uppercase tracking-wider text-purple-400/70">Transfer Fees</span>
-        </div>
-        
-        <div className="flex items-baseline gap-1 mb-1">
+      <div className="relative z-10 flex flex-col items-center justify-center h-full py-1">
+        <div className="flex items-baseline gap-1">
           <motion.span
             key={totalWithheld}
             initial={{ scale: 1.2, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="text-2xl font-bold text-purple-300 font-mono"
+            className="text-lg font-bold text-purple-300 font-mono"
             style={{ textShadow: "0 0 10px rgba(138, 43, 226, 0.5)" }}
           >
             {formatTokenAmount(totalWithheld)}
           </motion.span>
-          <span className="text-sm text-[var(--text-secondary)]">{tokenSymbol}</span>
+          <span className="text-xs text-[var(--text-secondary)]">{tokenSymbol}</span>
         </div>
         
-        <p className="text-xs text-[var(--text-muted)] mb-2">
+        <p className="text-[10px] text-[var(--text-muted)] mb-1">
           {hasRewards 
             ? `from ${feesData?.accountCount || 0} accounts` 
-            : "no fees collected yet"}
+            : "no fees yet"}
         </p>
 
         {message && (
-          <div className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] mb-2 ${
+          <div className={`flex items-center gap-1 px-1 py-0.5 rounded text-[9px] mb-1 ${
             message.type === "success" 
               ? "bg-green-500/20 text-green-300" 
               : "bg-red-500/20 text-red-300"
           }`}>
             {message.type === "success" ? (
-              <Check className="w-3 h-3" />
+              <Check className="w-2 h-2" />
             ) : (
-              <AlertCircle className="w-3 h-3" />
+              <AlertCircle className="w-2 h-2" />
             )}
             <span>{message.text}</span>
           </div>
@@ -272,24 +262,14 @@ export function Token22FeeHarvestCard({
             disabled={isHarvesting}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="px-4 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-purple-600 text-white text-xs font-semibold hover:shadow-[0_0_20px_rgba(138,43,226,0.4)] transition-all disabled:opacity-50"
+            className="px-2 py-1 rounded-md bg-gradient-to-r from-purple-500 to-purple-600 text-white text-[10px] font-semibold hover:shadow-[0_0_20px_rgba(138,43,226,0.4)] transition-all disabled:opacity-50"
           >
-            {isHarvesting ? (
-              <span className="flex items-center gap-1.5">
-                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Harvesting...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Droplets className="w-3 h-3" />
-                Harvest Fees
-              </span>
-            )}
+            {isHarvesting ? "..." : "Harvest"}
           </motion.button>
         ) : (
-          <div className="px-3 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20">
-            <span className="text-xs text-[var(--text-muted)]">
-              Fees accumulate from transfers
+          <div className="px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20">
+            <span className="text-[9px] text-[var(--text-muted)]">
+              From transfers
             </span>
           </div>
         )}
