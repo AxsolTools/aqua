@@ -5,7 +5,7 @@ import Image from "next/image"
 import { cn, formatTimeAgo } from "@/lib/utils"
 import type { Token } from "@/lib/types/database"
 
-interface TokenWithMetrics extends Token {
+interface TokenWithMetrics extends Omit<Token, 'volume_24h'> {
   creator?: {
     username: string | null
     avatar_url: string | null
