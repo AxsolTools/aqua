@@ -60,8 +60,12 @@ export const useTokenConfig = (): UseTokenConfigReturn => {
           name: data.token.name || DEFAULT_TOKEN.name
         };
         
+        // Always update cache with fresh data from environment variables
         cachedToken = newToken;
         setToken(newToken);
+      } else {
+        // If API doesn't return success, clear cache to force retry
+        cachedToken = null;
       }
     } catch (err: any) {
       console.error('Error fetching token config:', err);
@@ -74,10 +78,9 @@ export const useTokenConfig = (): UseTokenConfigReturn => {
   }, []);
 
   useEffect(() => {
-    // Only fetch if not cached
-    if (!cachedToken) {
-      fetchTokenConfig();
-    }
+    // Always fetch to ensure we get the latest config from environment variables
+    // This ensures changes to env vars are reflected immediately
+    fetchTokenConfig();
   }, [fetchTokenConfig]);
 
   return {
