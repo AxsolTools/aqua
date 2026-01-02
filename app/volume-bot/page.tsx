@@ -6,7 +6,7 @@ import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { VolumeBotPanel } from "@/components/dashboard/volume-bot-panel"
 import { useAuth } from "@/components/providers/auth-provider"
 import { createClient } from "@/lib/supabase/client"
-import { Zap, Search, ChevronRight, Settings, Activity, Wallet } from "lucide-react"
+import { BarChart3, Search, ChevronRight, Settings, Activity, Wallet } from "lucide-react"
 import Link from "next/link"
 import Image from "next/image"
 
@@ -75,7 +75,7 @@ export default function VolumeBotPage() {
         <div className="px-4 py-16 max-w-lg mx-auto text-center">
           <div className="glass-panel p-8 rounded-2xl">
             <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-              <Zap className="w-10 h-10 text-purple-400" />
+              <BarChart3 className="w-10 h-10 text-purple-400" />
             </div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-3">Volume Bot</h1>
             <p className="text-[var(--text-muted)] mb-6">
@@ -104,7 +104,7 @@ export default function VolumeBotPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 border border-purple-500/30 flex items-center justify-center">
-                <Zap className="w-6 h-6 text-purple-400" />
+                <BarChart3 className="w-6 h-6 text-purple-400" />
               </div>
               <div>
                 <h1 className="text-xl font-bold text-[var(--text-primary)]">Volume Bot</h1>
