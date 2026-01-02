@@ -15,6 +15,7 @@ const navItems = [
   { href: "/launch", label: "Launch" },
   { href: "/launch22", label: "TOKEN22" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
+  { href: "/launch-bonk", label: "USD1", icon: DollarSign, color: "amber" },
   { href: "/volume-bot", label: "Volume Bot", icon: Zap },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
@@ -49,7 +50,7 @@ export function Header() {
                     pathname === item.href
                       ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                       : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
+                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${'color' in item && item.color === "amber" ? "text-amber-400 hover:text-amber-300" : ""}`}
                 >
                   {item.icon && <item.icon className="w-4 h-4" />}
                   {item.label}
@@ -59,15 +60,6 @@ export function Header() {
 
             {/* Right Actions */}
             <div className="flex items-center gap-2">
-              {/* USD1 Button - Links to Bonk.fun launch with USD1 */}
-              <Link
-                href="/launch-bonk"
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-gradient-to-r from-amber-500/20 to-yellow-500/20 border border-amber-500/30 text-amber-400 hover:from-amber-500/30 hover:to-yellow-500/30 transition-all text-sm font-medium"
-              >
-                <DollarSign className="w-4 h-4" />
-                USD1
-              </Link>
-
               {/* Launch Dropdown */}
               <div className="hidden sm:block relative group">
                 <button className="flex items-center gap-1.5 btn-primary text-sm py-2 px-4">
@@ -169,7 +161,7 @@ export function Header() {
                       pathname === item.href
                         ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
                         : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""}`}
+                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${'color' in item && item.color === "amber" ? "text-amber-400 hover:text-amber-300" : ""}`}
                   >
                     {item.icon && <item.icon className="w-4 h-4" />}
                     {item.label}
@@ -179,10 +171,6 @@ export function Header() {
                   <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className="btn-primary w-full text-sm flex items-center justify-center gap-2">
                     <Sparkles className="w-4 h-4" />
                     Pump.fun Launch
-                  </Link>
-                  <Link href="/launch-bonk" onClick={() => setMobileMenuOpen(false)} className="btn-secondary w-full text-sm flex items-center justify-center gap-2 bg-amber-500/10 border-amber-500/30 text-amber-400 hover:bg-amber-500/20">
-                    <DollarSign className="w-4 h-4" />
-                    Bonk.fun Launch
                   </Link>
                   <Link href="/launch22" onClick={() => setMobileMenuOpen(false)} className="btn-secondary w-full text-sm flex items-center justify-center gap-2 bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20">
                     <Coins className="w-4 h-4" />
