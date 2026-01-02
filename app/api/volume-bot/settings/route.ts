@@ -12,64 +12,41 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getSettings, saveSettings } from '@/lib/volume-bot';
-import { createClient } from '@supabase/supabase-js';
 
-// Get authenticated user ID
-async function getUserId(request: NextRequest): Promise<string | null> {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader) return null;
+// Get authenticated user from session headers
+function getAuthFromHeaders(request: NextRequest): { sessionId: string; userId: string } | null {
+  const sessionId = request.headers.get('x-session-id');
+  const userId = request.headers.get('x-user-id') || sessionId;
   
-  const token = authHeader.replace('Bearer ', '');
+  if (!sessionId) return null;
   
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-    
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return null;
-    
-    return user.id;
-  } catch {
-    return null;
-  }
+  return { sessionId, userId: userId || sessionId };
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserId(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = getAuthFromHeaders(request);
+    if (!auth) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
     
     const { searchParams } = new URL(request.url);
     const tokenMint = searchParams.get('tokenMint');
     
     if (!tokenMint) {
-      return NextResponse.json({ error: 'tokenMint is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'tokenMint is required' }, { status: 400 });
     }
     
-    const settings = await getSettings(userId, tokenMint);
+    const settings = await getSettings(auth.sessionId, tokenMint);
     
     return NextResponse.json({
       success: true,
-      settings,
-      // 💡 Helpful tips for degens
-      tips: {
-        strategy: {
-          DBPM: '🐂 Bullish mode - creates buy pressure',
-          PLD: '🛡️ Defensive mode - counters dumps',
-          CMWA: '🧠 Galaxy brain - multi-wallet arbitrage'
-        },
-        buyPressure: 'Higher % = more buys than sells. 70+ recommended for pumping.',
-        emergencyStop: '🚨 NEVER disable this unless you want to donate to the blockchain!'
-      }
+      data: settings,
     });
   } catch (error) {
     console.error('[VOLUME_BOT_API] GET settings error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to get settings' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to get settings' },
       { status: 500 }
     );
   }
@@ -77,16 +54,16 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserId(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = getAuthFromHeaders(request);
+    if (!auth) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
     
     const body = await request.json();
     const { tokenMint, settings } = body;
     
     if (!tokenMint) {
-      return NextResponse.json({ error: 'tokenMint is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'tokenMint is required' }, { status: 400 });
     }
     
     // Validate settings
@@ -95,8 +72,8 @@ export async function POST(request: NextRequest) {
       if (settings.buyPressurePercent !== undefined) {
         if (settings.buyPressurePercent < 0 || settings.buyPressurePercent > 100) {
           return NextResponse.json({ 
+            success: false,
             error: 'buyPressurePercent must be between 0 and 100',
-            tip: '💡 70+ recommended for bullish pressure' 
           }, { status: 400 });
         }
       }
@@ -104,28 +81,27 @@ export async function POST(request: NextRequest) {
       // Target volume must be positive
       if (settings.targetVolumeSol !== undefined && settings.targetVolumeSol <= 0) {
         return NextResponse.json({ 
+          success: false,
           error: 'targetVolumeSol must be positive',
-          tip: '💡 Start small (0.1-1 SOL) to test' 
         }, { status: 400 });
       }
       
       // Emergency stop should stay enabled (strong warning)
       if (settings.emergencyStopEnabled === false) {
-        console.warn(`[VOLUME_BOT] ⚠️ User ${userId} disabled emergency stop!`);
+        console.warn(`[VOLUME_BOT] ⚠️ Session ${auth.sessionId} disabled emergency stop!`);
       }
     }
     
-    const savedSettings = await saveSettings(userId, tokenMint, settings || {});
+    const savedSettings = await saveSettings(auth.sessionId, tokenMint, settings || {});
     
     return NextResponse.json({
       success: true,
-      settings: savedSettings,
-      message: '✅ Settings saved! Ready to go brrr 🚀'
+      data: savedSettings,
     });
   } catch (error) {
     console.error('[VOLUME_BOT_API] POST settings error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to save settings' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to save settings' },
       { status: 500 }
     );
   }

@@ -27,9 +27,9 @@ const activeManagers = new Map<string, SmartProfitManager>();
 export async function GET(request: NextRequest) {
   try {
     const sessionId = request.headers.get('x-session-id');
-    const userId = request.headers.get('x-user-id');
+    const userId = request.headers.get('x-user-id') || sessionId;
 
-    if (!sessionId || !userId) {
+    if (!sessionId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },
         { status: 401 }
@@ -46,11 +46,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get settings from database
-    const settings = await loadSmartProfitSettings(userId, tokenMint);
+    // Get settings from database - use sessionId as the key
+    const settings = await loadSmartProfitSettings(sessionId, tokenMint);
 
     // Get current state if manager is active
-    const managerKey = `${userId}:${tokenMint}`;
+    const managerKey = `${sessionId}:${tokenMint}`;
     const manager = activeManagers.get(managerKey);
     const state = manager?.getState() || null;
 
@@ -78,9 +78,9 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const sessionId = request.headers.get('x-session-id');
-    const userId = request.headers.get('x-user-id');
+    const userId = request.headers.get('x-user-id') || sessionId;
 
-    if (!sessionId || !userId) {
+    if (!sessionId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },
         { status: 401 }
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const managerKey = `${userId}:${tokenMint}`;
+    const managerKey = `${sessionId}:${tokenMint}`;
 
     // Handle different actions
     switch (action) {
@@ -111,14 +111,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Load or create settings
-        let settings = await loadSmartProfitSettings(userId, tokenMint);
+        let settings = await loadSmartProfitSettings(sessionId, tokenMint);
         
         if (!settings) {
           // Create default settings
           settings = {
             enabled: true,
             tokenMint,
-            userId,
+            userId: sessionId,
             sessionId,
             walletIds: newSettings?.walletIds || [],
             walletAddresses: newSettings?.walletAddresses || [],
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Load existing settings
-        let settings = await loadSmartProfitSettings(userId, tokenMint);
+        let settings = await loadSmartProfitSettings(sessionId, tokenMint);
         if (!settings) {
           return NextResponse.json(
             { success: false, error: 'No existing settings found. Start monitoring first.' },
@@ -247,9 +247,8 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const sessionId = request.headers.get('x-session-id');
-    const userId = request.headers.get('x-user-id');
 
-    if (!sessionId || !userId) {
+    if (!sessionId) {
       return NextResponse.json(
         { success: false, error: 'Authentication required' },
         { status: 401 }
@@ -266,7 +265,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const managerKey = `${userId}:${tokenMint}`;
+    const managerKey = `${sessionId}:${tokenMint}`;
     const manager = activeManagers.get(managerKey);
 
     if (manager) {

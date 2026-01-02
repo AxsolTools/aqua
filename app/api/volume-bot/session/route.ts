@@ -24,47 +24,31 @@ import {
   getSessionStatus,
   listActiveSessions
 } from '@/lib/volume-bot';
-import { createClient } from '@supabase/supabase-js';
+import { getAdminClient } from '@/lib/supabase/admin';
 
-// Get authenticated user ID
-async function getUserId(request: NextRequest): Promise<string | null> {
-  const authHeader = request.headers.get('authorization');
-  if (!authHeader) return null;
+// Get authenticated user from session headers
+async function getAuthFromHeaders(request: NextRequest): Promise<{ sessionId: string; userId: string } | null> {
+  const sessionId = request.headers.get('x-session-id');
+  const userId = request.headers.get('x-user-id') || sessionId;
   
-  const token = authHeader.replace('Bearer ', '');
+  if (!sessionId) return null;
   
-  try {
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-    
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-    if (error || !user) return null;
-    
-    return user.id;
-  } catch {
-    return null;
-  }
+  return { sessionId, userId: userId || sessionId };
 }
 
 // Get user wallets from database
-async function getUserWallets(userId: string): Promise<Array<{
+async function getUserWallets(sessionId: string): Promise<Array<{
   wallet_id: string;
-  user_id: string;
+  session_id: string;
   wallet_address: string;
   name?: string;
 }>> {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const adminClient = getAdminClient();
   
-  const { data, error } = await supabase
+  const { data, error } = await adminClient
     .from('wallets')
-    .select('id, user_id, address, name, is_active')
-    .eq('user_id', userId)
-    .eq('is_active', true);
+    .select('id, session_id, public_key, label, is_primary')
+    .eq('session_id', sessionId);
   
   if (error) {
     console.error('[VOLUME_BOT] Error fetching wallets:', error);
@@ -73,16 +57,16 @@ async function getUserWallets(userId: string): Promise<Array<{
   
   return (data || []).map(w => ({
     wallet_id: w.id,
-    user_id: w.user_id,
-    wallet_address: w.address,
-    name: w.name
+    session_id: w.session_id,
+    wallet_address: w.public_key,
+    name: w.label
   }));
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const userId = await getUserId(request);
-    if (!userId) {
+    const auth = await getAuthFromHeaders(request);
+    if (!auth) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
@@ -91,17 +75,25 @@ export async function GET(request: NextRequest) {
     
     if (tokenMint) {
       // Get specific session
-      const sessionInfo = getSessionStatus(userId, tokenMint);
+      const sessionInfo = getSessionStatus(auth.sessionId, tokenMint);
       
       return NextResponse.json({
         success: true,
+        data: sessionInfo ? {
+          status: sessionInfo.session?.status || 'stopped',
+          executedVolumeSol: sessionInfo.session?.executedVolumeSol || 0,
+          targetVolumeSol: sessionInfo.session?.targetVolumeSol || 0,
+          totalTrades: sessionInfo.session?.totalTrades || 0,
+          successfulTrades: sessionInfo.session?.successfulTrades || 0,
+          buyCount: sessionInfo.session?.buyCount || 0,
+          sellCount: sessionInfo.session?.sellCount || 0,
+          netPnlSol: sessionInfo.session?.netPnlSol || 0,
+        } : null,
         isRunning: !!sessionInfo,
-        session: sessionInfo?.session || null,
-        settings: sessionInfo?.settings || null
       });
     } else {
       // List all active sessions
-      const sessions = listActiveSessions(userId);
+      const sessions = listActiveSessions(auth.sessionId);
       
       return NextResponse.json({
         success: true,
@@ -118,7 +110,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('[VOLUME_BOT_API] GET session error:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to get session' },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to get session' },
       { status: 500 }
     );
   }
@@ -126,22 +118,25 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getUserId(request);
-    if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = await getAuthFromHeaders(request);
+    if (!auth) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
     
     const body = await request.json();
-    const { action, tokenMint, settings, walletIds, platform, currentPrice } = body;
+    const { action, tokenMint, config, walletIds, platform, currentPrice } = body;
     
     if (!tokenMint) {
-      return NextResponse.json({ error: 'tokenMint is required' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'tokenMint is required' }, { status: 400 });
     }
     
-    switch (action) {
+    // Default to 'start' action if not specified (for backwards compatibility with panel)
+    const actualAction = action || 'start';
+    
+    switch (actualAction) {
       case 'start': {
         // Get user wallets
-        let wallets = await getUserWallets(userId);
+        let wallets = await getUserWallets(auth.sessionId);
         
         // Filter by walletIds if specified
         if (walletIds && Array.isArray(walletIds) && walletIds.length > 0) {
@@ -150,16 +145,17 @@ export async function POST(request: NextRequest) {
         
         if (wallets.length === 0) {
           return NextResponse.json({
+            success: false,
             error: 'No wallets available',
             tip: '👛 Add some wallets first! You need at least one to start the volume bot.'
           }, { status: 400 });
         }
         
         const { session, settings: savedSettings } = await startSession({
-          userId,
+          userId: auth.sessionId,
           tokenMint,
           wallets,
-          settings,
+          settings: config || body.settings,
           platform,
           currentPrice
         });
@@ -179,36 +175,23 @@ export async function POST(request: NextRequest) {
             tradeInterval: savedSettings.tradeIntervalMs
           },
           walletsUsed: wallets.length,
-          tips: [
-            '📈 Watch the chart - you should see activity soon',
-            '🛑 Use emergency_stop if things go wrong',
-            '💰 Session will auto-stop when target volume is reached'
-          ]
         });
       }
       
       case 'stop': {
-        const stopped = await stopSession(userId, tokenMint, 'manual');
-        
-        if (!stopped) {
-          return NextResponse.json({
-            success: false,
-            message: 'No active session found for this token',
-            tip: '🤔 Maybe it already stopped or was never started?'
-          });
-        }
+        const stopped = await stopSession(auth.sessionId, tokenMint, 'manual');
         
         return NextResponse.json({
           success: true,
-          message: '🛑 Volume bot stopped. Good run, anon!',
-          tip: 'Check your wallet balances and review the session history'
+          stopped: !!stopped,
+          message: stopped ? '🛑 Volume bot stopped.' : 'No active session found',
         });
       }
       
       case 'emergency_stop': {
-        console.warn(`[VOLUME_BOT] 🚨 EMERGENCY STOP triggered by user ${userId} for ${tokenMint}`);
+        console.warn(`[VOLUME_BOT] 🚨 EMERGENCY STOP triggered by session ${auth.sessionId} for ${tokenMint}`);
         
-        const stopped = await emergencyStop(userId, tokenMint, {
+        const stopped = await emergencyStop(auth.sessionId, tokenMint, {
           reason: body.reason || 'user_triggered',
           timestamp: Date.now()
         });
@@ -217,24 +200,53 @@ export async function POST(request: NextRequest) {
           success: true,
           stopped,
           message: '🚨 EMERGENCY STOP executed! All trading halted.',
-          tip: 'Review what happened and check your wallet balances before restarting.'
         });
       }
       
       default:
         return NextResponse.json({
+          success: false,
           error: 'Invalid action',
           validActions: ['start', 'stop', 'emergency_stop'],
-          tip: '💡 Use "start" to begin, "stop" to end gracefully, or "emergency_stop" for the panic button'
         }, { status: 400 });
     }
   } catch (error) {
     console.error('[VOLUME_BOT_API] POST session error:', error);
     return NextResponse.json(
       { 
+        success: false,
         error: error instanceof Error ? error.message : 'Failed to process request',
-        tip: '🔧 Check the error message and try again. If persistent, contact support.'
       },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await getAuthFromHeaders(request);
+    if (!auth) {
+      return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+    }
+    
+    const { searchParams } = new URL(request.url);
+    const tokenMint = searchParams.get('tokenMint');
+    
+    if (!tokenMint) {
+      return NextResponse.json({ success: false, error: 'tokenMint is required' }, { status: 400 });
+    }
+    
+    const stopped = await stopSession(auth.sessionId, tokenMint, 'manual');
+    
+    return NextResponse.json({
+      success: true,
+      stopped: !!stopped,
+      message: stopped ? '🛑 Volume bot stopped.' : 'No active session found',
+    });
+  } catch (error) {
+    console.error('[VOLUME_BOT_API] DELETE session error:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Failed to stop session' },
       { status: 500 }
     );
   }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
@@ -23,13 +23,17 @@ import { WaterLevelMeter } from "@/components/metrics/water-level-meter"
 import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
 import { EvaporationTracker } from "@/components/metrics/evaporation-tracker"
 import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
+import { getAuthHeaders } from "@/lib/api"
 
 export default function DashboardPage() {
-  const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding } = useAuth()
+  const { isAuthenticated, isLoading, mainWallet, sessionId, setIsOnboarding, userId } = useAuth()
   const [createdTokens, setCreatedTokens] = useState<(Token & { harvest?: TideHarvest })[]>([])
   const [dataLoading, setDataLoading] = useState(true)
   const [totalRewards, setTotalRewards] = useState(0)
   const [selectedTokenForManage, setSelectedTokenForManage] = useState<string | null>(null)
+  const [claimingToken, setClaimingToken] = useState<string | null>(null)
+  const [claimMessage, setClaimMessage] = useState<{ tokenMint: string; message: string; success: boolean } | null>(null)
+  const rewardsPollingRef = useRef<NodeJS.Timeout | null>(null)
 
   const supabase = createClient()
   const router = useRouter()
@@ -53,30 +57,35 @@ export default function DashboardPage() {
     const handleFocus = () => {
       if (isAuthenticated && mainWallet) {
         console.log('[DASHBOARD] Window focused, refreshing data')
-        fetchCreatorData()
+        fetchCreatorData(false)
       }
     }
     
     window.addEventListener('focus', handleFocus)
     return () => window.removeEventListener('focus', handleFocus)
-  }, [isAuthenticated, mainWallet])
+  }, [isAuthenticated, mainWallet, fetchCreatorData])
 
-  // Refresh data when returning to dashboard (e.g., after token creation)
+  // Real-time polling for creator rewards (every 15 seconds)
   useEffect(() => {
-    const handleFocus = () => {
-      if (isAuthenticated && mainWallet) {
-        console.log('[DASHBOARD] Window focused, refreshing data')
-        fetchCreatorData()
+    if (!isAuthenticated || !mainWallet) return
+
+    // Start polling for rewards updates
+    rewardsPollingRef.current = setInterval(() => {
+      console.log('[DASHBOARD] Polling for rewards updates...')
+      fetchCreatorData(false) // Silent refresh without loading state
+    }, 15_000) // 15 seconds
+
+    return () => {
+      if (rewardsPollingRef.current) {
+        clearInterval(rewardsPollingRef.current)
+        rewardsPollingRef.current = null
       }
     }
-    
-    window.addEventListener('focus', handleFocus)
-    return () => window.removeEventListener('focus', handleFocus)
-  }, [isAuthenticated, mainWallet])
+  }, [isAuthenticated, mainWallet, fetchCreatorData])
 
-  const fetchCreatorData = async () => {
+  const fetchCreatorData = useCallback(async (showLoadingState = true) => {
     if (!mainWallet) return
-    setDataLoading(true)
+    if (showLoadingState) setDataLoading(true)
 
     console.log('[DASHBOARD] Fetching tokens for wallet:', mainWallet.public_key?.slice(0, 8))
 
@@ -113,17 +122,20 @@ export default function DashboardPage() {
               // Use DB market cap as fallback
             }
             
-            // Fetch creator rewards from on-chain
+            // Fetch creator rewards from on-chain (Pump.fun vault)
             try {
               const rewardsResponse = await fetch(`/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${mainWallet.public_key}`)
               if (rewardsResponse.ok) {
                 const rewardsData = await rewardsResponse.json()
-                if (rewardsData.success && rewardsData.data?.balance > 0) {
-                  rewards += rewardsData.data.balance
+                if (rewardsData.success && rewardsData.data) {
+                  const balance = rewardsData.data.balance || 0
+                  rewards += balance
                   harvest = { 
-                    total_accumulated: rewardsData.data.balance, 
+                    total_accumulated: balance, 
                     total_claimed: 0,
-                    vault_address: rewardsData.data.vaultAddress
+                    vault_address: rewardsData.data.vaultAddress,
+                    hasRewards: rewardsData.data.hasRewards,
+                    canClaimViaPumpPortal: rewardsData.data.canClaimViaPumpPortal
                   }
                 }
               }
@@ -149,8 +161,59 @@ export default function DashboardPage() {
     } catch (err) {
       console.error("Failed to fetch creator data:", err)
     } finally {
-      setDataLoading(false)
+      if (showLoadingState) setDataLoading(false)
     }
+  }, [mainWallet, supabase])
+
+  // Claim creator rewards handler
+  const handleClaimRewards = async (tokenMint: string, rewardsAmount: number) => {
+    if (!mainWallet || !sessionId) {
+      setClaimMessage({ tokenMint, message: "Please connect your wallet", success: false })
+      return
+    }
+
+    setClaimingToken(tokenMint)
+    setClaimMessage(null)
+
+    try {
+      const response = await fetch("/api/creator-rewards", {
+        method: "POST",
+        headers: getAuthHeaders({
+          sessionId: sessionId,
+          walletAddress: mainWallet.public_key,
+          userId: userId || sessionId,
+        }),
+        body: JSON.stringify({
+          tokenMint,
+          walletAddress: mainWallet.public_key,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setClaimMessage({ 
+          tokenMint, 
+          message: `Successfully claimed ${data.data?.amountClaimed?.toFixed(6) || rewardsAmount.toFixed(6)} SOL!`, 
+          success: true 
+        })
+        // Refresh rewards data
+        await fetchCreatorData(false)
+      } else {
+        // If claiming failed but we have a claim URL, open it
+        if (data.data?.claimUrl) {
+          window.open(data.data.claimUrl, "_blank")
+          setClaimMessage({ tokenMint, message: data.error || "Opening Pump.fun to claim...", success: false })
+        } else {
+          setClaimMessage({ tokenMint, message: data.error || "Failed to claim rewards", success: false })
+        }
+      }
+    } catch (error) {
+      console.error("[DASHBOARD] Claim failed:", error)
+      setClaimMessage({ tokenMint, message: "Failed to claim rewards. Please try again.", success: false })
+    }
+
+    setClaimingToken(null)
   }
 
   const formatNumber = (num: number | null | undefined) => {
@@ -400,13 +463,37 @@ export default function DashboardPage() {
                         </div>
 
                         {/* Rewards */}
-                        {token.harvest && (
+                        {token.harvest && token.harvest.total_accumulated > 0 && (
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <div className="p-2 rounded bg-amber-500/5 border border-amber-500/20">
                               <p className="text-[9px] text-zinc-500">Rewards</p>
-                              <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated - token.harvest.total_claimed)} SOL</p>
+                              <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated)} SOL</p>
                             </div>
-                            <button className="px-2 py-1.5 rounded bg-amber-500 text-[10px] font-semibold text-zinc-900 hover:bg-amber-400">Claim</button>
+                            <div className="flex flex-col items-start gap-1">
+                              <button 
+                                onClick={() => handleClaimRewards(token.mint_address, token.harvest?.total_accumulated || 0)}
+                                disabled={claimingToken === token.mint_address}
+                                className="px-2 py-1.5 rounded bg-amber-500 text-[10px] font-semibold text-zinc-900 hover:bg-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {claimingToken === token.mint_address ? (
+                                  <span className="flex items-center gap-1">
+                                    <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                    </svg>
+                                    Claiming...
+                                  </span>
+                                ) : "Claim"}
+                              </button>
+                              {claimMessage?.tokenMint === token.mint_address && (
+                                <p className={cn(
+                                  "text-[9px] max-w-[120px] truncate",
+                                  claimMessage.success ? "text-green-400" : "text-amber-400"
+                                )}>
+                                  {claimMessage.message}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         )}
 

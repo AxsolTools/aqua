@@ -199,7 +199,11 @@ export function VolumeBotPanel({
     try {
       setIsLoading(true)
       const response = await fetch(`/api/volume-bot/settings?tokenMint=${tokenMint}`, {
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({
+          sessionId,
+          walletAddress: activeWallet?.public_key || null,
+          userId,
+        }),
       })
       
       if (response.ok) {
@@ -220,7 +224,11 @@ export function VolumeBotPanel({
     
     try {
       const response = await fetch(`/api/volume-bot/smart-profit?tokenMint=${tokenMint}`, {
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({
+          sessionId,
+          walletAddress: activeWallet?.public_key || null,
+          userId,
+        }),
       })
       
       if (response.ok) {
@@ -242,7 +250,11 @@ export function VolumeBotPanel({
     
     try {
       const response = await fetch(`/api/volume-bot/session?tokenMint=${tokenMint}`, {
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({
+          sessionId,
+          walletAddress: activeWallet?.public_key || null,
+          userId,
+        }),
       })
       
       if (response.ok) {
@@ -267,7 +279,7 @@ export function VolumeBotPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
         },
         body: JSON.stringify({
           tokenMint,
@@ -309,7 +321,7 @@ export function VolumeBotPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
         },
         body: JSON.stringify({
           action: 'start',
@@ -334,7 +346,7 @@ export function VolumeBotPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
         },
         body: JSON.stringify({
           tokenMint,
@@ -375,7 +387,7 @@ export function VolumeBotPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
         },
         body: JSON.stringify({
           action: 'stop',
@@ -386,7 +398,7 @@ export function VolumeBotPanel({
       // Stop session
       await fetch(`/api/volume-bot/session?tokenMint=${tokenMint}`, {
         method: 'DELETE',
-        headers: getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+        headers: getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
       })
       
       setSettings(prev => ({ ...prev, enabled: false }))
@@ -415,7 +427,7 @@ export function VolumeBotPanel({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...getAuthHeaders(sessionId, activeWallet?.wallet_id || '', userId),
+          ...getAuthHeaders({ sessionId, walletAddress: activeWallet?.public_key || null, userId }),
         },
         body: JSON.stringify({
           action: 'emergency_stop',
@@ -753,6 +765,145 @@ export function VolumeBotPanel({
                       <span>More Sells</span>
                       <span>Balanced</span>
                       <span>More Buys</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Volume Settings */}
+        <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+          <button
+            onClick={() => toggleSection('volume')}
+            className="w-full p-3 flex items-center justify-between bg-[var(--bg-secondary)]/50 hover:bg-[var(--bg-secondary)] transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-[var(--text-primary)]">Volume Target</span>
+              <span className="text-xs px-2 py-0.5 bg-blue-500/10 text-blue-400 rounded font-mono">
+                {settings.targetVolumeSol} SOL
+              </span>
+            </div>
+            {expandedSection === 'volume' ? (
+              <ChevronUp className="w-4 h-4 text-[var(--text-muted)]" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+            )}
+          </button>
+          
+          <AnimatePresence>
+            {expandedSection === 'volume' && (
+              <motion.div
+                initial={{ height: 0 }}
+                animate={{ height: 'auto' }}
+                exit={{ height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-3 space-y-4 bg-[var(--bg-primary)]">
+                  {/* Target Volume */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Target Volume (SOL)
+                    </label>
+                    <p className="text-xs text-[var(--text-muted)] mb-2">
+                      Total SOL volume to generate. Bot automatically splits into buy/sell transactions.
+                    </p>
+                    <input
+                      type="number"
+                      min="0.1"
+                      step="0.1"
+                      value={settings.targetVolumeSol}
+                      onChange={(e) => setSettings(prev => ({ ...prev, targetVolumeSol: Number(e.target.value) }))}
+                      disabled={settings.enabled}
+                      className="w-full px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-sm font-mono"
+                      placeholder="1.0"
+                    />
+                  </div>
+
+                  {/* Transaction Size Range */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Transaction Size Range (SOL)
+                    </label>
+                    <p className="text-xs text-[var(--text-muted)] mb-2">
+                      Each trade will be a random amount between min and max.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-[var(--text-muted)]">Min per Tx</label>
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="0.001"
+                          value={settings.minTxSol}
+                          onChange={(e) => setSettings(prev => ({ ...prev, minTxSol: Number(e.target.value) }))}
+                          disabled={settings.enabled}
+                          className="w-full px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-sm font-mono"
+                          placeholder="0.01"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-[var(--text-muted)]">Max per Tx</label>
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="0.01"
+                          value={settings.maxTxSol}
+                          onChange={(e) => setSettings(prev => ({ ...prev, maxTxSol: Number(e.target.value) }))}
+                          disabled={settings.enabled}
+                          className="w-full px-3 py-2 bg-[var(--bg-secondary)] border border-[var(--border)] rounded text-sm font-mono"
+                          placeholder="0.1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trade Interval */}
+                  <div>
+                    <label className="block text-sm font-medium text-[var(--text-primary)] mb-2">
+                      Trade Interval: {(settings.tradeIntervalMs / 1000).toFixed(1)}s
+                    </label>
+                    <p className="text-xs text-[var(--text-muted)] mb-2">
+                      Time between trades. Faster = more organic activity, but uses more SOL for fees.
+                    </p>
+                    <input
+                      type="range"
+                      min="1000"
+                      max="30000"
+                      step="500"
+                      value={settings.tradeIntervalMs}
+                      onChange={(e) => setSettings(prev => ({ ...prev, tradeIntervalMs: Number(e.target.value) }))}
+                      disabled={settings.enabled}
+                      className="w-full accent-[var(--accent)]"
+                    />
+                    <div className="flex justify-between text-xs text-[var(--text-muted)]">
+                      <span>1s (Fast)</span>
+                      <span>15s</span>
+                      <span>30s (Slow)</span>
+                    </div>
+                  </div>
+
+                  {/* Estimated Info */}
+                  <div className="p-3 bg-[var(--bg-secondary)] rounded-lg border border-[var(--border-subtle)]">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <p className="text-[var(--text-muted)]">Est. Trades</p>
+                        <p className="font-mono text-[var(--text-primary)]">
+                          {Math.ceil(settings.targetVolumeSol / ((settings.minTxSol + settings.maxTxSol) / 2))}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[var(--text-muted)]">Est. Duration</p>
+                        <p className="font-mono text-[var(--text-primary)]">
+                          {(() => {
+                            const trades = Math.ceil(settings.targetVolumeSol / ((settings.minTxSol + settings.maxTxSol) / 2))
+                            const totalMs = trades * settings.tradeIntervalMs
+                            const minutes = Math.floor(totalMs / 60000)
+                            return minutes < 60 ? `~${minutes}m` : `~${(minutes / 60).toFixed(1)}h`
+                          })()}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </div>
