@@ -83,18 +83,24 @@ export function TokenRowCard({ token, showProgress = true, compact = false }: To
           "relative rounded-lg bg-[var(--bg-tertiary)] flex-shrink-0 overflow-hidden",
           compact ? "w-10 h-10" : "w-12 h-12"
         )}>
-          {token.image_url ? (
-            <Image src={token.image_url} alt={token.name} fill className="object-cover" />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
-              <span className={cn(
-                "font-bold text-[var(--text-muted)]",
-                compact ? "text-xs" : "text-sm"
-              )}>
-                {token.symbol?.slice(0, 2)}
-              </span>
-            </div>
-          )}
+          {(() => {
+            // Get image URL - use Jupiter static hosting for Jupiter tokens
+            const imageUrl = token.image_url 
+              || (token.pool_type === 'jupiter' ? `https://static-create.jup.ag/images/${token.mint_address}` : null)
+            
+            return imageUrl ? (
+              <Image src={imageUrl} alt={token.name} fill className="object-cover" />
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
+                <span className={cn(
+                  "font-bold text-[var(--text-muted)]",
+                  compact ? "text-xs" : "text-sm"
+                )}>
+                  {token.symbol?.slice(0, 2)}
+                </span>
+              </div>
+            )
+          })()}
           
           {/* Status badge overlay */}
           {isLive && (

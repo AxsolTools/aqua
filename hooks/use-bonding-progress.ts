@@ -12,10 +12,12 @@ interface BondingProgressData {
 /**
  * Hook to get real-time bonding curve progress for Pump.fun tokens
  * Uses PumpPortal WebSocket to subscribe to token trades and track vSolInBondingCurve
+ * Also fetches initial state from pump.fun API
  */
 export function useBondingProgress(mintAddresses: string[]) {
   const [progressMap, setProgressMap] = useState<Record<string, BondingProgressData>>({})
   const subscribedRef = useRef<Set<string>>(new Set())
+  const fetchedInitialRef = useRef<Set<string>>(new Set())
   const monitorRef = useRef<ReturnType<typeof getPumpPortalMonitor> | null>(null)
 
   // Handle trade events to update bonding progress
@@ -35,12 +37,48 @@ export function useBondingProgress(mintAddresses: string[]) {
     }
   }, [])
 
+  // Fetch initial bonding curve state from pump.fun API
+  const fetchInitialProgress = useCallback(async (mints: string[]) => {
+    const mintsToFetch = mints.filter(m => !fetchedInitialRef.current.has(m))
+    if (mintsToFetch.length === 0) return
+
+    for (const mint of mintsToFetch) {
+      try {
+        const response = await fetch(`https://frontend-api.pump.fun/coins/${mint}`)
+        if (response.ok) {
+          const coin = await response.json()
+          if (coin && coin.virtual_sol_reserves !== undefined) {
+            const vSol = coin.virtual_sol_reserves || 0
+            const migrationThreshold = 85
+            const progress = Math.min((vSol / migrationThreshold) * 100, 100)
+            
+            setProgressMap(prev => ({
+              ...prev,
+              [mint]: {
+                progress,
+                vSolInBondingCurve: vSol,
+                lastUpdated: Date.now(),
+              }
+            }))
+          }
+        }
+        fetchedInitialRef.current.add(mint)
+      } catch (error) {
+        console.debug(`[BONDING-PROGRESS] Failed to fetch initial state for ${mint}:`, error)
+        fetchedInitialRef.current.add(mint) // Mark as fetched to avoid retrying
+      }
+    }
+  }, [])
+
   useEffect(() => {
     if (typeof window === 'undefined') return // Server-side guard
     
     // Filter to only valid mint addresses
     const validMints = mintAddresses.filter(m => m && m.length > 0)
     if (validMints.length === 0) return
+
+    // Fetch initial progress from pump.fun API
+    fetchInitialProgress(validMints)
 
     // Get or create monitor instance
     if (!monitorRef.current) {
@@ -78,7 +116,7 @@ export function useBondingProgress(mintAddresses: string[]) {
         mintsToUnsubscribe.forEach(mint => subscribedRef.current.delete(mint))
       }
     }
-  }, [mintAddresses, handleTrade])
+  }, [mintAddresses, handleTrade, fetchInitialProgress])
 
   // Get progress for a specific mint
   const getProgress = useCallback((mint: string): number | undefined => {

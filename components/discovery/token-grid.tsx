@@ -246,13 +246,19 @@ export function TokenGrid() {
                 <div className="flex gap-3 p-3">
                   {/* Token Image - Square, left side */}
                   <div className="relative w-20 h-20 rounded-lg bg-[var(--bg-secondary)] flex-shrink-0 overflow-hidden">
-                    {token.image_url ? (
-                      <Image src={token.image_url} alt={token.name} fill className="object-cover" />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
-                        <span className="text-xl font-bold text-[var(--text-muted)]">{token.symbol?.slice(0, 2)}</span>
-                      </div>
-                    )}
+                    {(() => {
+                      // Get image URL - use Jupiter static hosting for Jupiter tokens
+                      const imageUrl = token.image_url 
+                        || (token.pool_type === 'jupiter' ? `https://static-create.jup.ag/images/${token.mint_address}` : null)
+                      
+                      return imageUrl ? (
+                        <Image src={imageUrl} alt={token.name} fill className="object-cover" />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--warm-pink)]/20">
+                          <span className="text-xl font-bold text-[var(--text-muted)]">{token.symbol?.slice(0, 2)}</span>
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Token Info - Right side */}
