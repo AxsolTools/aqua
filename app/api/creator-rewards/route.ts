@@ -214,6 +214,24 @@ export async function GET(request: NextRequest) {
     const tokenCreatorWallet = tokenData?.creator_wallet
     const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
 
+    // Final summary log
+    console.log(`[CREATOR-REWARDS-GET] ===== FINAL RESPONSE =====`)
+    console.log(`[CREATOR-REWARDS-GET] Token: ${tokenMint.slice(0, 12)}...`)
+    console.log(`[CREATOR-REWARDS-GET] Pool type: ${poolType}`)
+    console.log(`[CREATOR-REWARDS-GET] Platform: ${platformName}`)
+    console.log(`[CREATOR-REWARDS-GET] Balances:`, {
+      total: totalRewards.toFixed(9) + ' SOL',
+      pumpBalance: poolType !== 'jupiter' ? rewards.balance.toFixed(9) + ' SOL' : 'N/A',
+      jupiterBalance: poolType === 'jupiter' ? rewards.balance.toFixed(9) + ' SOL' : 'N/A',
+      migrationBalance: migrationRewards.toFixed(9) + ' SOL',
+    })
+    console.log(`[CREATOR-REWARDS-GET] Vault: ${rewards.vaultAddress?.slice(0, 20) || 'none'}`)
+    console.log(`[CREATOR-REWARDS-GET] Has rewards: ${totalRewards > 0}`)
+    console.log(`[CREATOR-REWARDS-GET] Creator match: ${tokenCreatorWallet === creatorWallet}`)
+    console.log(`[CREATOR-REWARDS-GET] Can claim Pump/Bonk: ${poolType !== 'jupiter' && rewards.balance > 0 && tokenStage !== "migrated"}`)
+    console.log(`[CREATOR-REWARDS-GET] Can claim Jupiter: ${poolType === 'jupiter' && rewards.balance > 0}`)
+    console.log(`[CREATOR-REWARDS-GET] ========== REQUEST END ==========\n`)
+
     return NextResponse.json({
       success: true,
       data: {
@@ -235,7 +253,7 @@ export async function GET(request: NextRequest) {
       }
     })
   } catch (error) {
-    console.error("[CREATOR-REWARDS] GET error:", error)
+    console.error("[CREATOR-REWARDS-GET] ❌ EXCEPTION:", error)
     return NextResponse.json(
       { success: false, error: "Failed to fetch creator rewards" },
       { status: 500 }
@@ -687,14 +705,27 @@ async function getJupiterCreatorRewards(
   vaultAddress: string
   hasRewards: boolean
 }> {
+  const debugPrefix = `[GET-JUPITER-REWARDS]`
+  console.log(`${debugPrefix} ========== FUNCTION START ==========`)
+  console.log(`${debugPrefix} DBC Pool Address: ${dbcPoolAddress}`)
+  
   try {
-    console.log(`[CREATOR-REWARDS] Fetching Jupiter DBC fees for pool: ${dbcPoolAddress}`)
-    
+    console.log(`${debugPrefix} Calling getJupiterFeeInfo...`)
     const feeInfo = await getJupiterFeeInfo(dbcPoolAddress)
+    
+    console.log(`${debugPrefix} Raw fee info:`, {
+      poolAddress: feeInfo.poolAddress,
+      totalFees: feeInfo.totalFees,
+      unclaimedFees: feeInfo.unclaimedFees,
+      claimedFees: feeInfo.claimedFees,
+    })
     
     const unclaimedSol = feeInfo.unclaimedFees / LAMPORTS_PER_SOL
     
-    console.log(`[CREATOR-REWARDS] ✅ Jupiter DBC unclaimed fees: ${unclaimedSol.toFixed(6)} SOL`)
+    console.log(`${debugPrefix} ========== FUNCTION RESULT ==========`)
+    console.log(`${debugPrefix} Unclaimed fees: ${unclaimedSol.toFixed(9)} SOL`)
+    console.log(`${debugPrefix} Has rewards: ${unclaimedSol > 0}`)
+    console.log(`${debugPrefix} ========== FUNCTION END ==========`)
     
     return {
       balance: unclaimedSol,
@@ -702,7 +733,7 @@ async function getJupiterCreatorRewards(
       hasRewards: unclaimedSol > 0,
     }
   } catch (error) {
-    console.error("[CREATOR-REWARDS] Jupiter fee fetch error:", error)
+    console.error(`${debugPrefix} ❌ EXCEPTION:`, error)
     return { balance: 0, vaultAddress: dbcPoolAddress, hasRewards: false }
   }
 }

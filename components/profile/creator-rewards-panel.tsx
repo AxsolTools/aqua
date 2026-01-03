@@ -86,6 +86,7 @@ export function CreatorRewardsPanel() {
       }
 
       // Fetch rewards for each token
+      console.log(`[REWARDS-DEBUG] Fetching rewards for ${tokens.length} tokens...`)
       const tokenRewards: TokenReward[] = []
       let pumpVaultCounted = false
       let bonkVaultCounted = false
@@ -95,39 +96,52 @@ export function CreatorRewardsPanel() {
 
       for (const token of tokens) {
         try {
-          const rewardsResponse = await fetch(
-            `/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${walletAddress}`
-          )
-          if (rewardsResponse.ok) {
-            const data = await rewardsResponse.json()
-            if (data.success && data.data) {
-              const reward: TokenReward = {
-                tokenMint: token.mint_address,
-                tokenName: token.name,
-                tokenSymbol: token.symbol,
-                imageUrl: token.image_url,
-                poolType: data.data.poolType || 'pump',
-                balance: data.data.balance || 0,
-                hasRewards: data.data.hasRewards,
-                canClaim: data.data.canClaimViaPumpPortal || data.data.canClaimViaJupiter,
-                platformName: data.data.platformName || 'Pump.fun',
-              }
-              tokenRewards.push(reward)
+          const apiUrl = `/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${walletAddress}&poolType=${token.pool_type || 'pump'}`
+          console.log(`[REWARDS-DEBUG] Fetching: ${token.symbol} (${token.pool_type || 'pump'})`)
+          
+          const rewardsResponse = await fetch(apiUrl)
+          const data = await rewardsResponse.json()
+          
+          console.log(`[REWARDS-DEBUG] Response for ${token.symbol}:`, {
+            success: data.success,
+            poolType: data.data?.poolType,
+            balance: data.data?.balance,
+            hasRewards: data.data?.hasRewards,
+            canClaim: data.data?.canClaimViaPumpPortal || data.data?.canClaimViaJupiter,
+            vaultAddress: data.data?.vaultAddress?.slice(0, 12) + '...' || 'none',
+            platformName: data.data?.platformName,
+          })
+          
+          if (data.success && data.data) {
+            const reward: TokenReward = {
+              tokenMint: token.mint_address,
+              tokenName: token.name,
+              tokenSymbol: token.symbol,
+              imageUrl: token.image_url,
+              poolType: data.data.poolType || 'pump',
+              balance: data.data.balance || 0,
+              hasRewards: data.data.hasRewards,
+              canClaim: data.data.canClaimViaPumpPortal || data.data.canClaimViaJupiter,
+              platformName: data.data.platformName || 'Pump.fun',
+            }
+            tokenRewards.push(reward)
 
-              // Track vault balances (pump/bonk are per-creator, jupiter is per-token)
-              if (reward.poolType === 'jupiter') {
-                jupiterFeesTotal += reward.balance
-              } else if (reward.poolType === 'pump' && !pumpVaultCounted) {
-                pumpVaultBalance = reward.balance
-                pumpVaultCounted = true
-              } else if (reward.poolType === 'bonk' && !bonkVaultCounted) {
-                bonkVaultBalance = reward.balance
-                bonkVaultCounted = true
-              }
+            // Track vault balances (pump/bonk are per-creator, jupiter is per-token)
+            if (reward.poolType === 'jupiter') {
+              jupiterFeesTotal += reward.balance
+              console.log(`[REWARDS-DEBUG] Jupiter token: +${reward.balance.toFixed(6)} SOL`)
+            } else if (reward.poolType === 'pump' && !pumpVaultCounted) {
+              pumpVaultBalance = reward.balance
+              pumpVaultCounted = true
+              console.log(`[REWARDS-DEBUG] Pump.fun vault (shared): ${reward.balance.toFixed(6)} SOL`)
+            } else if (reward.poolType === 'bonk' && !bonkVaultCounted) {
+              bonkVaultBalance = reward.balance
+              bonkVaultCounted = true
+              console.log(`[REWARDS-DEBUG] Bonk.fun vault (shared): ${reward.balance.toFixed(6)} SOL`)
             }
           }
         } catch (tokenError) {
-          console.debug(`[REWARDS] Failed to fetch rewards for ${token.symbol}:`, tokenError)
+          console.error(`[REWARDS-DEBUG] ❌ Failed to fetch rewards for ${token.symbol}:`, tokenError)
         }
       }
 

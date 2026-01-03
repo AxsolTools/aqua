@@ -52,34 +52,51 @@ export function JupiterFeeHarvestCard({
 
   // Fetch Jupiter fees from API
   const fetchFees = useCallback(async () => {
+    console.log(`[JUPITER-HARVEST-MONITOR] Checking fees:`, {
+      tokenAddress: tokenAddress?.slice(0, 12) + '...',
+      walletAddress: walletAddress?.slice(0, 12) + '...',
+      creatorWallet: creatorWallet?.slice(0, 12) + '...',
+      dbcPoolAddress: dbcPoolAddress?.slice(0, 12) + '...' || 'none',
+      isCreator,
+    })
+    
     if (!tokenAddress || !walletAddress || !isCreator) {
+      console.log(`[JUPITER-HARVEST-MONITOR] Skipping - not creator or missing data`)
       setIsLoading(false)
       return
     }
 
     try {
-      const response = await fetch(
-        `/api/jupiter/fees?mint=${tokenAddress}${dbcPoolAddress ? `&pool=${dbcPoolAddress}` : ''}`
-      )
+      const apiUrl = `/api/jupiter/fees?mint=${tokenAddress}${dbcPoolAddress ? `&pool=${dbcPoolAddress}` : ''}`
+      console.log(`[JUPITER-HARVEST-MONITOR] Fetching: ${apiUrl}`)
       
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.data) {
-          setFees({
-            totalFees: data.data.totalFees || 0,
-            unclaimedFees: data.data.unclaimedFees || 0,
-            claimedFees: data.data.claimedFees || 0,
-            poolAddress: data.data.poolAddress || '',
-            hasRewards: (data.data.unclaimedFees || 0) > 0,
-          })
-        }
+      const response = await fetch(apiUrl)
+      const data = await response.json()
+      
+      console.log(`[JUPITER-HARVEST-MONITOR] Response:`, {
+        success: data.success,
+        poolAddress: data.data?.poolAddress?.slice(0, 16) + '...' || 'none',
+        totalFees: data.data?.totalFees,
+        unclaimedFees: data.data?.unclaimedFees,
+        claimedFees: data.data?.claimedFees,
+        notJupiterToken: data.data?.notJupiterToken,
+      })
+      
+      if (data.success && data.data) {
+        setFees({
+          totalFees: data.data.totalFees || 0,
+          unclaimedFees: data.data.unclaimedFees || 0,
+          claimedFees: data.data.claimedFees || 0,
+          poolAddress: data.data.poolAddress || '',
+          hasRewards: (data.data.unclaimedFees || 0) > 0,
+        })
       }
     } catch (error) {
-      console.debug("[JUPITER-HARVEST] Failed to fetch fees:", error)
+      console.error("[JUPITER-HARVEST-MONITOR] ❌ Failed to fetch fees:", error)
     } finally {
       setIsLoading(false)
     }
-  }, [tokenAddress, walletAddress, isCreator, dbcPoolAddress])
+  }, [tokenAddress, walletAddress, creatorWallet, isCreator, dbcPoolAddress])
 
   useEffect(() => {
     fetchFees()

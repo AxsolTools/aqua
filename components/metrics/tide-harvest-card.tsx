@@ -51,29 +51,47 @@ export function TideHarvestCard({
 
   // Fetch creator rewards from API (only if user is creator)
   const fetchRewards = useCallback(async () => {
+    console.log(`[TIDE-HARVEST-MONITOR] Checking rewards:`, {
+      tokenAddress: tokenAddress?.slice(0, 12) + '...',
+      walletAddress: walletAddress?.slice(0, 12) + '...',
+      creatorWallet: creatorWallet?.slice(0, 12) + '...',
+      isCreator,
+    })
+    
     // Only fetch if user is the creator
     if (!tokenAddress || !walletAddress || !isCreator) {
+      console.log(`[TIDE-HARVEST-MONITOR] Skipping - not creator or missing data`)
       setIsLoading(false)
       return
     }
 
     try {
-      const response = await fetch(
-        `/api/creator-rewards?tokenMint=${tokenAddress}&creatorWallet=${walletAddress}`
-      )
+      const apiUrl = `/api/creator-rewards?tokenMint=${tokenAddress}&creatorWallet=${walletAddress}`
+      console.log(`[TIDE-HARVEST-MONITOR] Fetching: ${apiUrl}`)
       
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.data) {
-          setRewards(data.data)
-        }
+      const response = await fetch(apiUrl)
+      const data = await response.json()
+      
+      console.log(`[TIDE-HARVEST-MONITOR] Response:`, {
+        success: data.success,
+        balance: data.data?.balance,
+        poolType: data.data?.poolType,
+        platformName: data.data?.platformName,
+        hasRewards: data.data?.hasRewards,
+        canClaimPump: data.data?.canClaimViaPumpPortal,
+        canClaimJupiter: data.data?.canClaimViaJupiter,
+        vaultAddress: data.data?.vaultAddress?.slice(0, 16) + '...',
+      })
+      
+      if (data.success && data.data) {
+        setRewards(data.data)
       }
     } catch (error) {
-      console.debug("[TIDE-HARVEST] Failed to fetch rewards:", error)
+      console.error("[TIDE-HARVEST-MONITOR] ❌ Failed to fetch rewards:", error)
     } finally {
       setIsLoading(false)
     }
-  }, [tokenAddress, walletAddress, isCreator])
+  }, [tokenAddress, walletAddress, creatorWallet, isCreator])
 
   useEffect(() => {
     fetchRewards()
