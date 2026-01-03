@@ -30,8 +30,13 @@ const connection = new Connection(HELIUS_RPC, "confirmed")
 
 // Program IDs
 const PUMP_PROGRAM_ID = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P")
-// Bonk.fun uses LBP (Letsbonk Protocol) which shares infrastructure with pump.fun
-const BONK_PROGRAM_ID = new PublicKey("LBPPPwvAoMJZcnGgPFTT1oGVcnwHs8v3zKmAh8jd28o")
+// LetsBonk.fun uses Raydium LaunchLab program
+// Source: https://docs.raydium.io/raydium/pool-creation/launchlab/launchlab-typescript-sdk
+const RAYDIUM_LAUNCHLAB_PROGRAM_ID = new PublicKey("LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj")
+// LetsBonk platform config address
+const LETSBONK_PLATFORM_CONFIG = new PublicKey("FfYek5vEz23cMkWsdJwG2oa6EphsvXSHrGpdALN4g6W1")
+// Legacy - keeping for backwards compatibility but should use RAYDIUM_LAUNCHLAB_PROGRAM_ID
+const BONK_PROGRAM_ID = RAYDIUM_LAUNCHLAB_PROGRAM_ID
 const PUMPPORTAL_LOCAL_TRADE = "https://pumpportal.fun/api/trade-local"
 
 // Pool types
