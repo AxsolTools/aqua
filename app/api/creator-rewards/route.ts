@@ -57,7 +57,16 @@ export async function GET(request: NextRequest) {
     const poolTypeOverride = searchParams.get("poolType") as PoolType | null
     const dbcPoolOverride = searchParams.get("dbcPool")
 
+    console.log(`\n[CREATOR-REWARDS-GET] ========== REQUEST START ==========`)
+    console.log(`[CREATOR-REWARDS-GET] Input params:`, {
+      tokenMint: tokenMint?.slice(0, 12) + '...',
+      creatorWallet: creatorWallet?.slice(0, 12) + '...',
+      poolTypeOverride,
+      dbcPoolOverride: dbcPoolOverride?.slice(0, 12) + '...' || 'none',
+    })
+
     if (!tokenMint || !creatorWallet) {
+      console.log(`[CREATOR-REWARDS-GET] ❌ Missing required params`)
       return NextResponse.json(
         { success: false, error: "tokenMint and creatorWallet are required" },
         { status: 400 }
@@ -83,8 +92,17 @@ export async function GET(request: NextRequest) {
       tokenError = e
     }
 
+    console.log(`[CREATOR-REWARDS-GET] DB lookup result:`, {
+      found: !!tokenData,
+      error: tokenError?.message || 'none',
+      dbPoolType: tokenData?.pool_type || 'none',
+      dbCreatorWallet: tokenData?.creator_wallet?.slice(0, 12) + '...' || 'none',
+      dbDbcPool: tokenData?.dbc_pool_address?.slice(0, 12) + '...' || 'none',
+      dbStage: tokenData?.stage || 'none',
+    })
+
     if (tokenError) {
-      console.warn(`[CREATOR-REWARDS] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
+      console.warn(`[CREATOR-REWARDS-GET] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
     }
 
     // Determine pool type (prefer query override, then DB, else pump)
@@ -97,52 +115,92 @@ export async function GET(request: NextRequest) {
     
     let dbcPoolAddress = dbcPoolOverride || tokenData?.dbc_pool_address
 
-    console.log(`[CREATOR-REWARDS] Token ${tokenMint.slice(0, 8)}... pool_type=${poolType}, dbc_pool=${dbcPoolAddress || 'none'}, dbCreator=${tokenData?.creator_wallet?.slice(0,8) || 'n/a'}`)
+    console.log(`[CREATOR-REWARDS-GET] Resolved pool type:`, {
+      finalPoolType: poolType,
+      source: poolTypeOverride ? 'query override' : (tokenData?.pool_type ? 'database' : 'default'),
+      dbcPoolAddress: dbcPoolAddress?.slice(0, 12) + '...' || 'none',
+    })
 
     let rewards: { balance: number; vaultAddress: string; hasRewards: boolean }
     let platformName: string
 
+    console.log(`[CREATOR-REWARDS-GET] ===== FETCHING REWARDS FOR POOL TYPE: ${poolType.toUpperCase()} =====`)
+
     // Jupiter tokens use DBC pool fees (per-token) and must NOT fall back to Pump.fun
     if (poolType === 'jupiter') {
+      console.log(`[CREATOR-REWARDS-GET] [JUPITER] Processing Jupiter DBC token`)
+      console.log(`[CREATOR-REWARDS-GET] [JUPITER] DBC pool address: ${dbcPoolAddress || 'MISSING'}`)
+      
       if (dbcPoolAddress) {
+        console.log(`[CREATOR-REWARDS-GET] [JUPITER] Calling getJupiterCreatorRewards with pool: ${dbcPoolAddress.slice(0, 12)}...`)
         rewards = await getJupiterCreatorRewards(dbcPoolAddress)
+        console.log(`[CREATOR-REWARDS-GET] [JUPITER] Result:`, {
+          balance: rewards.balance,
+          vaultAddress: rewards.vaultAddress?.slice(0, 12) + '...' || 'none',
+          hasRewards: rewards.hasRewards,
+        })
         platformName = 'Jupiter'
       } else {
         // Jupiter token without DBC pool address - try to fetch it once
-        console.log(`[CREATOR-REWARDS] Jupiter token missing dbc_pool_address, attempting to fetch...`)
+        console.log(`[CREATOR-REWARDS-GET] [JUPITER] ⚠️ Missing dbc_pool_address, attempting to fetch from chain...`)
         try {
           const { getJupiterPoolAddress } = await import("@/lib/blockchain")
           const fetchedPoolAddress = await getJupiterPoolAddress(tokenMint)
+          console.log(`[CREATOR-REWARDS-GET] [JUPITER] Fetched pool result: ${fetchedPoolAddress || 'NOT FOUND'}`)
+          
           if (fetchedPoolAddress) {
-            console.log(`[CREATOR-REWARDS] Fetched Jupiter pool address: ${fetchedPoolAddress}`)
+            console.log(`[CREATOR-REWARDS-GET] [JUPITER] Calling getJupiterCreatorRewards with fetched pool: ${fetchedPoolAddress.slice(0, 12)}...`)
             rewards = await getJupiterCreatorRewards(fetchedPoolAddress)
+            console.log(`[CREATOR-REWARDS-GET] [JUPITER] Result:`, {
+              balance: rewards.balance,
+              vaultAddress: rewards.vaultAddress?.slice(0, 12) + '...' || 'none',
+              hasRewards: rewards.hasRewards,
+            })
             platformName = 'Jupiter'
             
             // Update the database with the pool address for next time
             try {
               const updateData: Record<string, string> = { dbc_pool_address: fetchedPoolAddress }
               await (adminClient.from("tokens") as any).update(updateData).eq("mint_address", tokenMint)
-              console.log(`[CREATOR-REWARDS] Updated dbc_pool_address in database`)
+              console.log(`[CREATOR-REWARDS-GET] [JUPITER] Updated dbc_pool_address in database`)
             } catch (updateErr) {
-              console.warn(`[CREATOR-REWARDS] Failed to update dbc_pool_address:`, updateErr)
+              console.warn(`[CREATOR-REWARDS-GET] [JUPITER] Failed to update dbc_pool_address:`, updateErr)
             }
           } else {
             // No Jupiter pool found, do NOT fall back to Pump.fun
-            console.warn(`[CREATOR-REWARDS] No Jupiter pool found for token ${tokenMint.slice(0,8)}...; returning zero rewards`)
+            console.warn(`[CREATOR-REWARDS-GET] [JUPITER] ❌ No Jupiter pool found - returning zero rewards (NOT falling back to Pump.fun)`)
             rewards = { balance: 0, vaultAddress: '', hasRewards: false }
             platformName = 'Jupiter'
           }
         } catch (fetchErr) {
-          console.warn(`[CREATOR-REWARDS] Failed to fetch Jupiter pool:`, fetchErr)
+          console.warn(`[CREATOR-REWARDS-GET] [JUPITER] ❌ Failed to fetch Jupiter pool:`, fetchErr)
           rewards = { balance: 0, vaultAddress: '', hasRewards: false }
           platformName = 'Jupiter'
         }
       }
+    } else if (poolType === 'bonk') {
+      // Bonk.fun uses creator vault (per-creator, accumulates all tokens)
+      console.log(`[CREATOR-REWARDS-GET] [BONK] Processing Bonk.fun token`)
+      console.log(`[CREATOR-REWARDS-GET] [BONK] Creator wallet for vault derivation: ${creatorWallet.slice(0, 12)}...`)
+      rewards = await getCreatorRewards(tokenMint, creatorWallet, 'bonk')
+      console.log(`[CREATOR-REWARDS-GET] [BONK] Result:`, {
+        balance: rewards.balance,
+        vaultAddress: rewards.vaultAddress?.slice(0, 12) + '...' || 'none',
+        hasRewards: rewards.hasRewards,
+      })
+      platformName = 'Bonk.fun'
     } else {
-      // Pump.fun and Bonk.fun use creator vault (per-creator, accumulates all tokens)
-      const pumpPoolType = poolType === 'bonk' ? 'bonk' : 'pump'
-      rewards = await getCreatorRewards(tokenMint, creatorWallet, pumpPoolType)
-      platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
+      // Pump.fun uses creator vault (per-creator, accumulates all tokens)
+      console.log(`[CREATOR-REWARDS-GET] [PUMP] Processing Pump.fun token`)
+      console.log(`[CREATOR-REWARDS-GET] [PUMP] Token mint: ${tokenMint.slice(0, 12)}...`)
+      console.log(`[CREATOR-REWARDS-GET] [PUMP] Creator wallet for vault derivation: ${creatorWallet.slice(0, 12)}...`)
+      rewards = await getCreatorRewards(tokenMint, creatorWallet, 'pump')
+      console.log(`[CREATOR-REWARDS-GET] [PUMP] Result:`, {
+        balance: rewards.balance,
+        vaultAddress: rewards.vaultAddress?.slice(0, 12) + '...' || 'none',
+        hasRewards: rewards.hasRewards,
+      })
+      platformName = 'Pump.fun'
     }
     
     // If migrated, also check for any Raydium/Meteora LP fee rewards
@@ -193,7 +251,14 @@ export async function POST(request: NextRequest) {
     const sessionId = request.headers.get("x-session-id")
     const userId = request.headers.get("x-user-id")
     
+    console.log(`\n[CREATOR-REWARDS-POST] ========== CLAIM REQUEST START ==========`)
+    console.log(`[CREATOR-REWARDS-POST] Headers:`, {
+      sessionId: sessionId?.slice(0, 12) + '...' || 'MISSING',
+      userId: userId?.slice(0, 12) + '...' || 'none',
+    })
+    
     if (!sessionId) {
+      console.log(`[CREATOR-REWARDS-POST] ❌ No session ID - authentication required`)
       return NextResponse.json(
         { success: false, error: "Authentication required" },
         { status: 401 }
@@ -203,7 +268,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { tokenMint, walletAddress, poolType: poolTypeBody, dbcPool: dbcPoolBody } = body
 
+    console.log(`[CREATOR-REWARDS-POST] Request body:`, {
+      tokenMint: tokenMint?.slice(0, 12) + '...' || 'MISSING',
+      walletAddress: walletAddress?.slice(0, 12) + '...' || 'MISSING',
+      poolTypeBody: poolTypeBody || 'not specified',
+      dbcPoolBody: dbcPoolBody?.slice(0, 12) + '...' || 'none',
+    })
+
     if (!tokenMint || !walletAddress) {
+      console.log(`[CREATOR-REWARDS-POST] ❌ Missing required params`)
       return NextResponse.json(
         { success: false, error: "tokenMint and walletAddress are required" },
         { status: 400 }
@@ -213,6 +286,9 @@ export async function POST(request: NextRequest) {
     const adminClient = getAdminClient()
 
     // Verify this wallet belongs to the user
+    console.log(`[CREATOR-REWARDS-POST] Verifying wallet ownership...`)
+    console.log(`[CREATOR-REWARDS-POST] Query: session_id=${sessionId.slice(0, 12)}..., public_key=${walletAddress.slice(0, 12)}...`)
+    
     const { data: wallet, error: walletError } = await adminClient
       .from("wallets")
       .select("encrypted_private_key")
@@ -221,13 +297,20 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (walletError || !wallet) {
+      console.log(`[CREATOR-REWARDS-POST] ❌ Wallet verification FAILED:`, {
+        error: walletError?.message || 'Wallet not found',
+        code: walletError?.code,
+      })
       return NextResponse.json(
         { success: false, error: "Wallet not found or unauthorized" },
         { status: 403 }
       )
     }
+    
+    console.log(`[CREATOR-REWARDS-POST] ✅ Wallet verified - belongs to this session`)
 
     // Verify this is the token creator (DB optional)
+    console.log(`[CREATOR-REWARDS-POST] Looking up token in database...`)
     let tokenData: TokenRow | null = null
     let tokenError: any = null
     try {
@@ -238,26 +321,52 @@ export async function POST(request: NextRequest) {
         .single()
       tokenData = data ? (data as TokenRow) : null
       tokenError = error
+      
+      console.log(`[CREATOR-REWARDS-POST] Token DB lookup result:`, {
+        found: !!tokenData,
+        error: tokenError?.message || 'none',
+        dbCreatorWallet: tokenData?.creator_wallet?.slice(0, 12) + '...' || 'none',
+        dbPoolType: tokenData?.pool_type || 'none',
+        dbStage: tokenData?.stage || 'none',
+        dbDbcPool: tokenData?.dbc_pool_address?.slice(0, 12) + '...' || 'none',
+      })
     } catch (e: any) {
       tokenData = null
       tokenError = e
     }
 
     if (tokenError) {
-      console.warn(`[CREATOR-REWARDS] Claim DB query error for ${tokenMint.slice(0,8)}...:`, tokenError.message || tokenError)
+      console.warn(`[CREATOR-REWARDS-POST] ⚠️ DB query error (proceeding anyway):`, tokenError.message || tokenError)
     }
     
+    // If DB lookup failed, use provided values as fallback
     const safeTokenData: TokenRow = tokenData || {
-      creator_wallet: walletAddress,
+      creator_wallet: walletAddress, // Assume caller is creator if no DB record
       pool_type: poolTypeBody || 'pump',
       dbc_pool_address: dbcPoolBody,
     }
 
+    console.log(`[CREATOR-REWARDS-POST] Safe token data (after fallback):`, {
+      creatorWallet: safeTokenData.creator_wallet?.slice(0, 12) + '...',
+      poolType: safeTokenData.pool_type,
+      dbcPool: safeTokenData.dbc_pool_address?.slice(0, 12) + '...' || 'none',
+      usedFallback: !tokenData,
+    })
+
+    // CREATOR VERIFICATION
     const creatorFromDb = safeTokenData.creator_wallet?.toLowerCase()
-    const isCreator = creatorFromDb ? creatorFromDb === walletAddress.toLowerCase() : true
-    console.log(`[CREATOR-REWARDS] Claim check: wallet=${walletAddress.slice(0, 8)}... creator=${tokenData?.creator_wallet?.slice(0, 8) || 'n/a'}... match=${isCreator}`)
+    const walletAddressLower = walletAddress.toLowerCase()
+    const isCreator = creatorFromDb ? creatorFromDb === walletAddressLower : true
+    
+    console.log(`[CREATOR-REWARDS-POST] ===== CREATOR VERIFICATION =====`)
+    console.log(`[CREATOR-REWARDS-POST] Provided wallet:  ${walletAddress}`)
+    console.log(`[CREATOR-REWARDS-POST] DB creator:       ${tokenData?.creator_wallet || 'NOT IN DB'}`)
+    console.log(`[CREATOR-REWARDS-POST] Safe creator:     ${safeTokenData.creator_wallet}`)
+    console.log(`[CREATOR-REWARDS-POST] Lowercase match:  ${creatorFromDb} === ${walletAddressLower} ? ${isCreator}`)
+    console.log(`[CREATOR-REWARDS-POST] Is creator:       ${isCreator ? '✅ YES' : '❌ NO'}`)
     
     if (!isCreator) {
+      console.log(`[CREATOR-REWARDS-POST] ❌ REJECTED - wallet does not match creator`)
       return NextResponse.json(
         { 
           success: false, 
@@ -265,6 +374,8 @@ export async function POST(request: NextRequest) {
           debug: {
             providedWallet: walletAddress,
             creatorWallet: tokenData?.creator_wallet,
+            providedLower: walletAddressLower,
+            creatorLower: creatorFromDb,
           }
         },
         { status: 403 }
@@ -278,6 +389,11 @@ export async function POST(request: NextRequest) {
     } else if (!poolTypeBody && safeTokenData.pool_type === 'jupiter') {
       poolType = 'jupiter'
     }
+    
+    console.log(`[CREATOR-REWARDS-POST] ===== POOL TYPE DETERMINATION =====`)
+    console.log(`[CREATOR-REWARDS-POST] Pool type from body: ${poolTypeBody || 'not specified'}`)
+    console.log(`[CREATOR-REWARDS-POST] Pool type from DB:   ${safeTokenData.pool_type || 'not specified'}`)
+    console.log(`[CREATOR-REWARDS-POST] Final pool type:     ${poolType}`)
 
     // Decrypt private key
     const serviceSalt = await getOrCreateServiceSalt(adminClient)
@@ -293,9 +409,17 @@ export async function POST(request: NextRequest) {
     // JUPITER DBC POOL CLAIM
     // ============================================================================
     if (poolType === 'jupiter') {
+      console.log(`[CREATOR-REWARDS-POST] ===== JUPITER CLAIM FLOW =====`)
       const dbcPoolAddress = dbcPoolBody || safeTokenData.dbc_pool_address
       
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] DBC pool address:`, {
+        fromBody: dbcPoolBody?.slice(0, 12) + '...' || 'none',
+        fromDB: safeTokenData.dbc_pool_address?.slice(0, 12) + '...' || 'none',
+        final: dbcPoolAddress?.slice(0, 12) + '...' || 'MISSING',
+      })
+      
       if (!dbcPoolAddress) {
+        console.log(`[CREATOR-REWARDS-POST] [JUPITER] ❌ No DBC pool address available`)
         return NextResponse.json({
           success: false,
           error: "Jupiter DBC pool address not found for this token"
@@ -303,21 +427,27 @@ export async function POST(request: NextRequest) {
       }
 
       // Get current rewards balance
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] Fetching rewards balance...`)
       const rewardsData = await getJupiterCreatorRewards(dbcPoolAddress)
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] Rewards data:`, rewardsData)
 
       if (rewardsData.balance <= 0) {
+        console.log(`[CREATOR-REWARDS-POST] [JUPITER] ❌ No fees to claim`)
         return NextResponse.json({
           success: false,
           error: "No Jupiter fees available to claim"
         })
       }
 
-      console.log(`[CREATOR-REWARDS] Claiming Jupiter DBC fees from pool: ${dbcPoolAddress}`)
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] Executing claim for ${rewardsData.balance} SOL...`)
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] Using wallet: ${keypair.publicKey.toBase58().slice(0, 12)}...`)
 
       // Use Jupiter API to claim fees
       const claimResult = await claimJupiterFees(connection, keypair, dbcPoolAddress)
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] Claim result:`, claimResult)
 
       if (!claimResult.success) {
+        console.log(`[CREATOR-REWARDS-POST] [JUPITER] ❌ Claim failed:`, claimResult.error)
         return NextResponse.json({
           success: false,
           error: claimResult.error || "Failed to claim Jupiter fees",
@@ -327,6 +457,8 @@ export async function POST(request: NextRequest) {
           }
         })
       }
+
+      console.log(`[CREATOR-REWARDS-POST] [JUPITER] ✅ Claim successful! TX: ${claimResult.txSignature}`)
 
       // Record the claim in database
       try {
@@ -338,11 +470,13 @@ export async function POST(request: NextRequest) {
             tx_signature: claimResult.txSignature,
             claimed_at: new Date().toISOString(),
           } as any)
+          console.log(`[CREATOR-REWARDS-POST] [JUPITER] Recorded claim in database`)
         }
       } catch (dbError) {
-        console.warn("[CREATOR-REWARDS] Failed to record claim:", dbError)
+        console.warn("[CREATOR-REWARDS-POST] [JUPITER] Failed to record claim:", dbError)
       }
 
+      console.log(`[CREATOR-REWARDS-POST] ========== CLAIM REQUEST END (JUPITER SUCCESS) ==========\n`)
       return NextResponse.json({
         success: true,
         data: {
@@ -358,11 +492,21 @@ export async function POST(request: NextRequest) {
     // PUMP.FUN / BONK.FUN CLAIM
     // ============================================================================
     const platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
+    console.log(`[CREATOR-REWARDS-POST] ===== ${platformName.toUpperCase()} CLAIM FLOW =====`)
+    console.log(`[CREATOR-REWARDS-POST] [${poolType.toUpperCase()}] Token mint: ${tokenMint.slice(0, 12)}...`)
+    console.log(`[CREATOR-REWARDS-POST] [${poolType.toUpperCase()}] Wallet: ${walletAddress.slice(0, 12)}...`)
 
     // Get current rewards balance
+    console.log(`[CREATOR-REWARDS-POST] [${poolType.toUpperCase()}] Fetching rewards balance...`)
     const rewardsData = await getCreatorRewards(tokenMint, walletAddress, poolType)
+    console.log(`[CREATOR-REWARDS-POST] [${poolType.toUpperCase()}] Rewards data:`, {
+      balance: rewardsData.balance,
+      vaultAddress: rewardsData.vaultAddress?.slice(0, 12) + '...' || 'none',
+      hasRewards: rewardsData.hasRewards,
+    })
 
     if (rewardsData.balance <= 0) {
+      console.log(`[CREATOR-REWARDS-POST] [${poolType.toUpperCase()}] ❌ No rewards to claim`)
       return NextResponse.json({
         success: false,
         error: "No rewards available to claim"
@@ -372,7 +516,7 @@ export async function POST(request: NextRequest) {
     // For migrated tokens, try Meteora DBC pool claim via PumpPortal
     // Pump.fun tokens migrate to Raydium but fees may still be claimable via meteora-dbc
     if (safeTokenData.stage === "migrated" && poolType === 'pump') {
-      console.log(`[CREATOR-REWARDS] Token is migrated, trying meteora-dbc pool...`)
+      console.log(`[CREATOR-REWARDS-POST] [PUMP] Token is MIGRATED - trying meteora-dbc pool...`)
       
       try {
         const meteoraTradeBody = {
@@ -582,11 +726,25 @@ async function getCreatorRewards(
   vaultAddress: string
   hasRewards: boolean
 }> {
+  const debugPrefix = `[GET-CREATOR-REWARDS][${poolType.toUpperCase()}]`
+  console.log(`${debugPrefix} ========== FUNCTION START ==========`)
+  console.log(`${debugPrefix} Input params:`, {
+    tokenMint: tokenMint.slice(0, 12) + '...',
+    creatorWallet: creatorWallet.slice(0, 12) + '...',
+    poolType,
+  })
+  
   try {
     const creatorPubkey = new PublicKey(creatorWallet)
     const mintPubkey = new PublicKey(tokenMint)
     const programId = poolType === 'bonk' ? BONK_PROGRAM_ID : PUMP_PROGRAM_ID
     const platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
+
+    console.log(`${debugPrefix} PublicKeys created:`, {
+      creator: creatorPubkey.toBase58().slice(0, 12) + '...',
+      mint: mintPubkey.toBase58().slice(0, 12) + '...',
+      programId: programId.toBase58().slice(0, 12) + '...',
+    })
 
     let claimableBalance = 0
     let feeAccountAddress = ""
@@ -732,22 +890,36 @@ async function getCreatorRewards(
     // Based on working Telegram bot implementation
     // ============================================================================
     if (claimableBalance === 0) {
+      console.log(`${debugPrefix} [METHOD 3] API/Preview returned no balance, trying on-chain PDA check...`)
+      console.log(`${debugPrefix} [METHOD 3] Deriving PDAs with:`)
+      console.log(`${debugPrefix}   - Creator pubkey: ${creatorPubkey.toBase58()}`)
+      console.log(`${debugPrefix}   - Mint pubkey: ${mintPubkey.toBase58()}`)
+      console.log(`${debugPrefix}   - Program ID: ${programId.toBase58()}`)
+      
       // Try multiple PDA patterns that Pump.fun might use
       // NOTE: "creator-vault" (hyphen) is the correct seed based on working Telegram bot
-      const pdaPatterns: Buffer[][] = [
+      const pdaPatterns: { seeds: Buffer[]; name: string }[] = [
         // Pattern 1: Per-creator vault (accumulates ALL creator fees across all tokens)
         // This is the primary pattern for Pump.fun creator rewards
-        [Buffer.from("creator-vault"), creatorPubkey.toBuffer()],
+        { seeds: [Buffer.from("creator-vault"), creatorPubkey.toBuffer()], name: "creator-vault (per-creator)" },
         // Pattern 2: Per-token fee account (older pattern)
-        [Buffer.from("creator_fee"), creatorPubkey.toBuffer(), mintPubkey.toBuffer()],
+        { seeds: [Buffer.from("creator_fee"), creatorPubkey.toBuffer(), mintPubkey.toBuffer()], name: "creator_fee (per-token)" },
         // Pattern 3: Alternative underscore naming
-        [Buffer.from("creator_vault"), creatorPubkey.toBuffer()],
+        { seeds: [Buffer.from("creator_vault"), creatorPubkey.toBuffer()], name: "creator_vault underscore" },
       ]
       
-      for (const seeds of pdaPatterns) {
+      for (const { seeds, name } of pdaPatterns) {
         try {
           const [pda] = PublicKey.findProgramAddressSync(seeds, programId)
+          console.log(`${debugPrefix} [METHOD 3] Trying pattern "${name}": PDA = ${pda.toBase58()}`)
+          
           const accountInfo = await connection.getAccountInfo(pda)
+          
+          if (accountInfo) {
+            console.log(`${debugPrefix} [METHOD 3] Account exists! Lamports: ${accountInfo.lamports}`)
+          } else {
+            console.log(`${debugPrefix} [METHOD 3] Account does not exist`)
+          }
           
           if (accountInfo && accountInfo.lamports > 0) {
             // For fee vaults, the full balance is typically claimable
@@ -757,21 +929,27 @@ async function getCreatorRewards(
             if (balance > 0) {
               feeAccountAddress = pda.toBase58()
               claimableBalance = balance
-              console.log(`[CREATOR-REWARDS] ✅ Found ${(balance / LAMPORTS_PER_SOL).toFixed(6)} SOL in vault ${pda.toBase58().slice(0, 8)} (seeds: ${seeds[0].toString()})`)
+              console.log(`${debugPrefix} [METHOD 3] ✅ FOUND! ${(balance / LAMPORTS_PER_SOL).toFixed(6)} SOL in vault ${pda.toBase58().slice(0, 12)}...`)
               break
             }
           }
         } catch (pdaError) {
-          // Continue to next pattern
+          console.log(`${debugPrefix} [METHOD 3] Pattern "${name}" error:`, pdaError instanceof Error ? pdaError.message : 'Unknown')
         }
+      }
+      
+      if (claimableBalance === 0) {
+        console.log(`${debugPrefix} [METHOD 3] No vault found with any pattern`)
       }
     }
 
     const finalBalance = claimableBalance / LAMPORTS_PER_SOL
     
-    if (finalBalance > 0) {
-      console.log(`[CREATOR-REWARDS] ✅ Total ${platformName} rewards for ${tokenMint.slice(0, 8)}: ${finalBalance.toFixed(6)} SOL`)
-    }
+    console.log(`${debugPrefix} ========== FUNCTION RESULT ==========`)
+    console.log(`${debugPrefix} Final balance: ${finalBalance.toFixed(9)} SOL`)
+    console.log(`${debugPrefix} Vault address: ${feeAccountAddress || 'none'}`)
+    console.log(`${debugPrefix} Has rewards: ${finalBalance > 0}`)
+    console.log(`${debugPrefix} ========== FUNCTION END ==========`)
 
     return {
       balance: finalBalance,
@@ -779,7 +957,7 @@ async function getCreatorRewards(
       hasRewards: finalBalance > 0,
     }
   } catch (error) {
-    console.error(`[CREATOR-REWARDS] ${poolType} fetch error:`, error)
+    console.error(`${debugPrefix} ❌ EXCEPTION:`, error)
     return { balance: 0, vaultAddress: "", hasRewards: false }
   }
 }

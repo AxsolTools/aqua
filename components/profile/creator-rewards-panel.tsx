@@ -50,7 +50,12 @@ export function CreatorRewardsPanel() {
 
   // Fetch creator rewards for all tokens
   const fetchRewards = useCallback(async (showRefreshing = false) => {
-    if (!walletAddress) return
+    if (!walletAddress) {
+      console.log(`[REWARDS-DEBUG] No wallet address, skipping fetch`)
+      return
+    }
+
+    console.log(`[REWARDS-DEBUG] Fetching rewards for wallet: ${walletAddress.slice(0, 8)}...`)
 
     if (showRefreshing) {
       setIsRefreshing(true)
@@ -61,10 +66,21 @@ export function CreatorRewardsPanel() {
       // First, get all tokens created by this wallet from Supabase
       const { data: tokens, error: tokensError } = await supabase
         .from("tokens")
-        .select("id, mint_address, name, symbol, image_url, pool_type")
+        .select("id, mint_address, name, symbol, image_url, pool_type, creator_wallet")
         .eq("creator_wallet", walletAddress)
         .order("created_at", { ascending: false })
       
+      console.log(`[REWARDS-DEBUG] Tokens query result:`, {
+        count: tokens?.length || 0,
+        error: tokensError?.message,
+        tokens: tokens?.map(t => ({
+          mint: t.mint_address?.slice(0, 8) + '...',
+          name: t.name,
+          pool_type: t.pool_type,
+          creator: t.creator_wallet?.slice(0, 8) + '...',
+        })),
+      })
+
       if (tokensError) {
         throw new Error("Failed to fetch tokens")
       }
@@ -153,14 +169,33 @@ export function CreatorRewardsPanel() {
   }, [isAuthenticated, walletAddress, fetchRewards])
 
   // Claim rewards for a specific token
-  const handleClaim = async (tokenMint: string, amount: number) => {
-    if (!walletAddress || !sessionId) return
+  const handleClaim = async (tokenMint: string, amount: number, poolType?: string) => {
+    console.log(`[CLAIM-DEBUG] Starting claim:`, {
+      tokenMint: tokenMint.slice(0, 8) + '...',
+      amount,
+      poolType,
+      walletAddress: walletAddress?.slice(0, 8) + '...',
+      sessionId: sessionId?.slice(0, 8) + '...',
+      userId: userId?.slice(0, 8) + '...',
+    })
+
+    if (!walletAddress || !sessionId) {
+      console.error(`[CLAIM-DEBUG] Missing auth: wallet=${!!walletAddress} session=${!!sessionId}`)
+      return
+    }
 
     setClaimingToken(tokenMint)
     setError(null)
     setSuccessMessage(null)
 
     try {
+      const requestBody = {
+        tokenMint,
+        walletAddress,
+        poolType: poolType || undefined,
+      }
+      console.log(`[CLAIM-DEBUG] Request body:`, requestBody)
+
       const response = await fetch("/api/creator-rewards", {
         method: "POST",
         headers: getAuthHeaders({
@@ -168,15 +203,14 @@ export function CreatorRewardsPanel() {
           walletAddress,
           userId: userId || sessionId,
         }),
-        body: JSON.stringify({
-          tokenMint,
-          walletAddress,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
+      console.log(`[CLAIM-DEBUG] Response:`, { status: response.status, data })
 
       if (data.success) {
+        console.log(`[CLAIM-DEBUG] ✅ Claim successful:`, data.data)
         setSuccessMessage(`Successfully claimed ${data.data?.amountClaimed?.toFixed(6) || amount.toFixed(6)} SOL!`)
         // Refresh rewards data
         setTimeout(() => {
@@ -184,6 +218,11 @@ export function CreatorRewardsPanel() {
           setSuccessMessage(null)
         }, 3000)
       } else {
+        console.error(`[CLAIM-DEBUG] ❌ Claim failed:`, {
+          error: data.error,
+          debug: data.debug,
+          claimUrl: data.data?.claimUrl,
+        })
         // If claiming failed but we have a claim URL, open it
         if (data.data?.claimUrl) {
           window.open(data.data.claimUrl, "_blank")
@@ -193,7 +232,7 @@ export function CreatorRewardsPanel() {
         }
       }
     } catch (err) {
-      console.error("[REWARDS] Claim failed:", err)
+      console.error("[CLAIM-DEBUG] Exception:", err)
       setError("Failed to claim rewards. Please try again.")
     }
 

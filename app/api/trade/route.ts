@@ -187,8 +187,19 @@ export async function POST(request: NextRequest) {
     // ========== EXECUTE TRADE ==========
     let tradeResult;
 
+    console.log('[TRADE] Executing trade:', {
+      isJupiterToken,
+      poolType: (token as any)?.pool_type,
+      action,
+      amount,
+      slippageBps,
+      tokenDecimals,
+      wallet: userKeypair.publicKey.toBase58().slice(0, 12),
+    });
+
     if (isJupiterToken) {
       // Use Jupiter swap API for Jupiter DBC tokens
+      console.log('[TRADE] Using Jupiter swap API...');
       const { executeJupiterSwap } = await import('@/lib/blockchain/jupiter-studio');
       
       tradeResult = await executeJupiterSwap(connection, {
@@ -199,9 +210,12 @@ export async function POST(request: NextRequest) {
         slippageBps,
         tokenDecimals,
       });
+      console.log('[TRADE] Jupiter swap result:', tradeResult);
     } else {
       // Use Pump.fun for standard bonding curve tokens
+      console.log('[TRADE] Using Pump.fun bonding curve...');
       if (action === 'buy') {
+        console.log('[TRADE] Executing buy on bonding curve:', { tokenMint: tokenMint.slice(0, 12), amountSol: amount });
         tradeResult = await buyOnBondingCurve(connection, {
           tokenMint,
           walletKeypair: userKeypair,
@@ -210,6 +224,7 @@ export async function POST(request: NextRequest) {
         });
       } else {
         // For sells, amount is in tokens
+        console.log('[TRADE] Executing sell on bonding curve:', { tokenMint: tokenMint.slice(0, 12), amountTokens: amount });
         tradeResult = await sellOnBondingCurve(connection, {
           tokenMint,
           walletKeypair: userKeypair,
@@ -219,6 +234,7 @@ export async function POST(request: NextRequest) {
           tokenDecimals,
         });
       }
+      console.log('[TRADE] Bonding curve trade result:', tradeResult);
     }
 
     if (!tradeResult.success) {

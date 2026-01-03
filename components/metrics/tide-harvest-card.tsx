@@ -140,12 +140,37 @@ export function TideHarvestCard({
   }, [])
 
   const handleClaim = async () => {
-    if (!rewards?.hasRewards || !tokenAddress || !walletAddress || !sessionId) return
+    console.log(`[TIDE-HARVEST] Claim button clicked:`, {
+      tokenAddress: tokenAddress?.slice(0, 8) + '...',
+      walletAddress: walletAddress?.slice(0, 8) + '...',
+      creatorWallet: creatorWallet?.slice(0, 8) + '...',
+      sessionId: sessionId?.slice(0, 8) + '...',
+      hasRewards: rewards?.hasRewards,
+      balance: rewards?.balance,
+      poolType: rewards?.poolType,
+    })
+
+    if (!rewards?.hasRewards || !tokenAddress || !walletAddress || !sessionId) {
+      console.error(`[TIDE-HARVEST] Missing required data:`, {
+        hasRewards: rewards?.hasRewards,
+        tokenAddress: !!tokenAddress,
+        walletAddress: !!walletAddress,
+        sessionId: !!sessionId,
+      })
+      return
+    }
 
     setIsClaiming(true)
     setClaimMessage(null)
 
     try {
+      const requestBody = {
+        tokenMint: tokenAddress,
+        walletAddress,
+        poolType: rewards?.poolType || 'pump',
+      }
+      console.log(`[TIDE-HARVEST] Sending claim request:`, requestBody)
+
       const response = await fetch("/api/creator-rewards", {
         method: "POST",
         headers: getAuthHeaders({
@@ -153,18 +178,18 @@ export function TideHarvestCard({
           walletAddress,
           userId,
         }),
-        body: JSON.stringify({
-          tokenMint: tokenAddress,
-          walletAddress,
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       const data = await response.json()
+      console.log(`[TIDE-HARVEST] Claim response:`, { status: response.status, data })
       
       if (data.success) {
+        console.log(`[TIDE-HARVEST] ✅ Claim successful`)
         setClaimMessage(`Successfully claimed ${data.data?.amountClaimed?.toFixed(6) || rewards.balance.toFixed(6)} SOL!`)
         await fetchRewards()
       } else {
+        console.error(`[TIDE-HARVEST] ❌ Claim failed:`, data.error, data.debug)
         // If claiming failed but we have a claim URL, show that
         if (data.data?.claimUrl) {
           setClaimMessage(data.error)
@@ -175,7 +200,7 @@ export function TideHarvestCard({
         }
       }
     } catch (error) {
-      console.error("[TIDE-HARVEST] Claim failed:", error)
+      console.error("[TIDE-HARVEST] Claim exception:", error)
       setClaimMessage("Failed to claim rewards")
     }
 
