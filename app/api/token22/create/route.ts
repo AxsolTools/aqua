@@ -360,10 +360,10 @@ export async function POST(request: NextRequest) {
         holders: 1,
         water_level: 50,
         constellation_strength: 50,
-        // Token-2022 specific fields (add via SQL if needed)
-        // token_standard: 'token22',
-        // transfer_fee_bps: enableTransferFee ? transferFeeBasisPoints : 0,
-        // max_transfer_fee: maxTransferFee,
+        // Token-2022 specific fields
+        pool_type: 'token22',
+        // Mark as created on our platform
+        is_platform_token: true,
       })
       .select('id')
       .single();

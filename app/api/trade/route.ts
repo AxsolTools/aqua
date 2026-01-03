@@ -139,12 +139,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get token info
+    // Get token info including pool_type for routing
     const { data: token } = await adminClient
       .from('tokens')
-      .select('id, stage, creator_wallet')
+      .select('id, stage, creator_wallet, pool_type, dbc_pool_address')
       .eq('mint_address', tokenMint)
       .single();
+
+    // Determine if this is a Jupiter DBC token
+    const isJupiterToken = token?.pool_type === 'jupiter';
+    
+    if (isJupiterToken) {
+      console.log('[TRADE] Detected Jupiter DBC token, using Jupiter swap API');
+    }
 
     // ========== BALANCE VALIDATION ==========
     const operationLamports = action === 'buy' ? solToLamports(amount) : 0n;
@@ -180,23 +187,38 @@ export async function POST(request: NextRequest) {
     // ========== EXECUTE TRADE ==========
     let tradeResult;
 
-    if (action === 'buy') {
-      tradeResult = await buyOnBondingCurve(connection, {
-        tokenMint,
+    if (isJupiterToken) {
+      // Use Jupiter swap API for Jupiter DBC tokens
+      const { executeJupiterSwap } = await import('@/lib/blockchain/jupiter-studio');
+      
+      tradeResult = await executeJupiterSwap(connection, {
         walletKeypair: userKeypair,
-        amountSol: amount,
-        slippageBps,
-      });
-    } else {
-      // For sells, amount is in tokens
-      tradeResult = await sellOnBondingCurve(connection, {
         tokenMint,
-        walletKeypair: userKeypair,
-        amountSol: 0, // Not used for sells
-        amountTokens: amount,
+        action,
+        amount, // SOL for buy, tokens for sell
         slippageBps,
         tokenDecimals,
       });
+    } else {
+      // Use Pump.fun for standard bonding curve tokens
+      if (action === 'buy') {
+        tradeResult = await buyOnBondingCurve(connection, {
+          tokenMint,
+          walletKeypair: userKeypair,
+          amountSol: amount,
+          slippageBps,
+        });
+      } else {
+        // For sells, amount is in tokens
+        tradeResult = await sellOnBondingCurve(connection, {
+          tokenMint,
+          walletKeypair: userKeypair,
+          amountSol: 0, // Not used for sells
+          amountTokens: amount,
+          slippageBps,
+          tokenDecimals,
+        });
+      }
     }
 
     if (!tradeResult.success) {

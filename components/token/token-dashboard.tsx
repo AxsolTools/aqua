@@ -39,7 +39,7 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
   const [token, setToken] = useState<Token | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [isExternal, setIsExternal] = useState(false) // True if token is not from our platform
+  const [isExternal, setIsExternal] = useState(false) // True if token was NOT created on PROPEL platform
   const [isToken22, setIsToken22] = useState(false) // True if token is Token-2022 standard
   
   const walletAddress = activeWallet?.public_key || mainWallet?.public_key
@@ -104,7 +104,8 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
         total_evaporated: tokenData.token_parameters?.total_evaporated ?? 0,
       } as Token
       setToken(tokenWithMetrics)
-      setIsExternal(false)
+      // Use is_platform_token field if available, otherwise check for creator_id
+      setIsExternal(!(tokenData.is_platform_token ?? (tokenData.creator_id !== null)))
       // Check if token is Token-2022 (has token_standard field or token22_parameters)
       setIsToken22(tokenData.token_standard === 'token22' || !!tokenData.token22_parameters)
       setIsLoading(false)

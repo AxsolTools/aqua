@@ -348,6 +348,7 @@ export async function POST(request: NextRequest) {
         stage: "bonding",
         launch_tx_signature: creationSignature,
         pool_type: "jupiter",
+        is_platform_token: true,
       } as any)
       .select("id")
       .single() as { data: { id: string } | null; error: any }

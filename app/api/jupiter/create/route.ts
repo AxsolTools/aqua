@@ -410,6 +410,8 @@ export async function POST(request: NextRequest) {
         // Jupiter specific
         pool_type: 'jupiter',
         dbc_pool_address: createResult.dbcPoolAddress || null,
+        // Mark as created on our platform
+        is_platform_token: true,
       })
       .select('id')
       .single();

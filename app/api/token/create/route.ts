@@ -410,6 +410,8 @@ export async function POST(request: NextRequest) {
         // Pool type (pump or bonk)
         pool_type: poolType,
         quote_mint: quoteType,
+        // Mark as created on our platform
+        is_platform_token: true,
       })
       .select('id')
       .single();

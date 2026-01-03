@@ -470,6 +470,8 @@ export async function POST(request: NextRequest) {
         migration_target: body.migrationTarget,
         treasury_wallet: body.treasuryWallet || walletAddress,
         dev_wallet: body.devWallet || walletAddress,
+        pool_type: 'pump',
+        is_platform_token: true,
       })
       .select("id")
       .single()

@@ -136,6 +136,11 @@ export interface Token {
   bonding_curve_progress: number;
   migrated_at: string | null;
   migration_pool_address: string | null;
+  
+  // Pool type for different token creation methods
+  pool_type: 'pump' | 'jupiter' | 'token22' | 'bonk' | null;
+  dbc_pool_address: string | null; // Jupiter DBC pool address
+  is_platform_token: boolean; // True if created on PROPEL platform
   website: string | null;
   twitter: string | null;
   telegram: string | null;

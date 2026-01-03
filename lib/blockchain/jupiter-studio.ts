@@ -575,7 +575,10 @@ export async function createJupiterTokenWithBuy(
 }
 
 /**
- * Perform a buy on Jupiter
+ * Perform a buy on Jupiter DBC token
+ * 
+ * Note: Newly created tokens may take a few seconds to be indexed by Jupiter.
+ * This function includes retry logic with delays to handle this.
  */
 async function performJupiterBuy(
   connection: Connection,
@@ -584,62 +587,110 @@ async function performJupiterBuy(
   amountSol: number,
   slippageBps: number
 ): Promise<{ success: boolean; txSignature?: string; error?: string }> {
-  try {
-    const amountLamports = Math.floor(amountSol * 1e9);
-    
-    // Use Jupiter's swap API
-    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${mintAddress}&amount=${amountLamports}&slippageBps=${slippageBps}`;
-    
-    console.log(`[JUPITER] Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 8)}...`);
-    
-    const quoteResponse = await fetch(quoteUrl);
-    if (!quoteResponse.ok) {
-      throw new Error(`Quote failed: ${quoteResponse.status}`);
+  const maxRetries = 3;
+  const retryDelayMs = 5000; // 5 seconds between retries
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const amountLamports = Math.floor(amountSol * 1e9);
+      
+      // Use Jupiter's swap API
+      const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${mintAddress}&amount=${amountLamports}&slippageBps=${slippageBps}`;
+      
+      console.log(`[JUPITER] Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 8)}... (attempt ${attempt}/${maxRetries})`);
+      
+      const quoteResponse = await fetch(quoteUrl, {
+        headers: { 'Accept': 'application/json' },
+      });
+      
+      if (!quoteResponse.ok) {
+        const errorText = await quoteResponse.text();
+        // If no route found, token might not be indexed yet
+        if (quoteResponse.status === 400 && errorText.includes('No route')) {
+          if (attempt < maxRetries) {
+            console.log(`[JUPITER] Token not indexed yet, waiting ${retryDelayMs}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+            continue;
+          }
+        }
+        throw new Error(`Quote failed: ${quoteResponse.status} - ${errorText}`);
+      }
+      
+      const quoteData = await quoteResponse.json();
+      
+      if (!quoteData || quoteData.error) {
+        if (attempt < maxRetries) {
+          console.log(`[JUPITER] Quote returned error, waiting ${retryDelayMs}ms before retry...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+          continue;
+        }
+        throw new Error(`Quote error: ${quoteData?.error || 'No quote data'}`);
+      }
+
+      // Get swap transaction
+      const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          quoteResponse: quoteData,
+          userPublicKey: buyerKeypair.publicKey.toBase58(),
+          wrapAndUnwrapSol: true,
+        }),
+      });
+
+      if (!swapResponse.ok) {
+        const swapError = await swapResponse.text();
+        throw new Error(`Swap transaction failed: ${swapResponse.status} - ${swapError}`);
+      }
+
+      const { swapTransaction } = await swapResponse.json();
+      
+      if (!swapTransaction) {
+        throw new Error('No swap transaction returned');
+      }
+      
+      // Deserialize and sign
+      const transaction = VersionedTransaction.deserialize(
+        Buffer.from(swapTransaction, 'base64')
+      );
+      transaction.sign([buyerKeypair]);
+
+      // Send transaction
+      const signature = await connection.sendRawTransaction(transaction.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      // Confirm
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log(`[JUPITER] ✅ Buy successful: ${signature}`);
+      return { success: true, txSignature: signature };
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Buy failed';
+      console.warn(`[JUPITER] Buy attempt ${attempt} failed: ${errorMessage}`);
+      
+      if (attempt < maxRetries) {
+        console.log(`[JUPITER] Waiting ${retryDelayMs}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        continue;
+      }
+      
+      return {
+        success: false,
+        error: errorMessage,
+      };
     }
-    const quoteData = await quoteResponse.json();
-
-    // Get swap transaction
-    const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        quoteResponse: quoteData,
-        userPublicKey: buyerKeypair.publicKey.toBase58(),
-        wrapAndUnwrapSol: true,
-      }),
-    });
-
-    if (!swapResponse.ok) {
-      throw new Error(`Swap transaction failed: ${swapResponse.status}`);
-    }
-
-    const { swapTransaction } = await swapResponse.json();
-    
-    // Deserialize and sign
-    const transaction = VersionedTransaction.deserialize(
-      Buffer.from(swapTransaction, 'base64')
-    );
-    transaction.sign([buyerKeypair]);
-
-    // Send transaction
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-
-    // Confirm
-    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-    if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-    }
-
-    return { success: true, txSignature: signature };
-  } catch (error) {
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : 'Buy failed',
-    };
   }
+  
+  return {
+    success: false,
+    error: 'Max retries exceeded',
+  };
 }
 
 // ============================================================================
@@ -792,6 +843,156 @@ export function validateJupiterTokenParams(params: {
     errors,
     warnings,
   };
+}
+
+// ============================================================================
+// TRADING
+// ============================================================================
+
+interface JupiterSwapParams {
+  walletKeypair: Keypair;
+  tokenMint: string;
+  action: 'buy' | 'sell';
+  amount: number; // SOL for buy, tokens for sell
+  slippageBps: number;
+  tokenDecimals?: number;
+}
+
+interface JupiterSwapResult {
+  success: boolean;
+  txSignature?: string;
+  amountSol?: number;
+  amountTokens?: number;
+  pricePerToken?: number;
+  error?: string;
+}
+
+/**
+ * Execute a swap on Jupiter
+ * Used for trading Jupiter DBC tokens
+ */
+export async function executeJupiterSwap(
+  connection: Connection,
+  params: JupiterSwapParams
+): Promise<JupiterSwapResult> {
+  const { walletKeypair, tokenMint, action, amount, slippageBps, tokenDecimals = 6 } = params;
+  
+  const SOL_MINT = 'So11111111111111111111111111111111111111112';
+  
+  try {
+    let inputMint: string;
+    let outputMint: string;
+    let amountRaw: number;
+    
+    if (action === 'buy') {
+      // Buy: SOL -> Token
+      inputMint = SOL_MINT;
+      outputMint = tokenMint;
+      amountRaw = Math.floor(amount * 1e9); // SOL has 9 decimals
+    } else {
+      // Sell: Token -> SOL
+      inputMint = tokenMint;
+      outputMint = SOL_MINT;
+      amountRaw = Math.floor(amount * Math.pow(10, tokenDecimals));
+    }
+    
+    console.log(`[JUPITER] ${action.toUpperCase()}: ${inputMint.slice(0, 8)} -> ${outputMint.slice(0, 8)}, amount: ${amountRaw}`);
+    
+    // Get quote
+    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountRaw}&slippageBps=${slippageBps}`;
+    
+    const quoteResponse = await fetch(quoteUrl, {
+      headers: { 'Accept': 'application/json' },
+    });
+    
+    if (!quoteResponse.ok) {
+      const errorText = await quoteResponse.text();
+      throw new Error(`Quote failed: ${quoteResponse.status} - ${errorText}`);
+    }
+    
+    const quoteData = await quoteResponse.json();
+    
+    if (!quoteData || quoteData.error) {
+      throw new Error(`Quote error: ${quoteData?.error || 'No quote data'}`);
+    }
+    
+    // Get swap transaction
+    const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        quoteResponse: quoteData,
+        userPublicKey: walletKeypair.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+      }),
+    });
+    
+    if (!swapResponse.ok) {
+      const swapError = await swapResponse.text();
+      throw new Error(`Swap failed: ${swapResponse.status} - ${swapError}`);
+    }
+    
+    const { swapTransaction } = await swapResponse.json();
+    
+    if (!swapTransaction) {
+      throw new Error('No swap transaction returned');
+    }
+    
+    // Deserialize and sign
+    const transaction = VersionedTransaction.deserialize(
+      Buffer.from(swapTransaction, 'base64')
+    );
+    transaction.sign([walletKeypair]);
+    
+    // Send transaction
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+    
+    // Confirm
+    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    }
+    
+    // Calculate amounts from quote
+    const inAmount = Number(quoteData.inAmount);
+    const outAmount = Number(quoteData.outAmount);
+    
+    let amountSol: number;
+    let amountTokens: number;
+    
+    if (action === 'buy') {
+      amountSol = inAmount / 1e9;
+      amountTokens = outAmount / Math.pow(10, tokenDecimals);
+    } else {
+      amountTokens = inAmount / Math.pow(10, tokenDecimals);
+      amountSol = outAmount / 1e9;
+    }
+    
+    const pricePerToken = amountSol / amountTokens;
+    
+    console.log(`[JUPITER] ✅ Swap successful: ${signature}`);
+    console.log(`[JUPITER] Amount SOL: ${amountSol}, Tokens: ${amountTokens}, Price: ${pricePerToken}`);
+    
+    return {
+      success: true,
+      txSignature: signature,
+      amountSol,
+      amountTokens,
+      pricePerToken,
+    };
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Swap failed';
+    console.error('[JUPITER] Swap error:', errorMessage);
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
 }
 
 // ============================================================================
