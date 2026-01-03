@@ -105,10 +105,10 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
         if (data.success && data.data) {
           return tokenList.map(token => {
             const priceData = data.data[token.mint_address]
-            if (priceData) {
+            if (priceData && priceData.marketCap > 0) {
               return { 
                 ...token, 
-                live_market_cap: priceData.marketCap || 0,
+                live_market_cap: priceData.marketCap,
                 volume_24h: priceData.volume24h || 0,
                 tx_count: priceData.txCount24h || 0,
               }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Aggregator",
+  title: "Token Aggregator | Propel",
 }
 
 export default function AggregatorLayout({

@@ -11,7 +11,7 @@ import { ChevronDown, Sparkles, Coins, Dice6, BarChart3, Zap, DollarSign } from 
 
 const navItems = [
   { href: "/", label: "Discover" },
-  { href: "/kol-monitor", label: "Token Aggregator", icon: BarChart3 },
+  { href: "/aggregator", label: "Token Aggregator", icon: BarChart3 },
   { href: "/launch", label: "Launch" },
   { href: "/launch22", label: "TOKEN22" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
