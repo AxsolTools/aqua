@@ -71,6 +71,9 @@ export async function GET(request: NextRequest) {
       dbc_pool_address?: string;
     } | null
 
+    // Log raw database values for debugging
+    console.log(`[CREATOR-REWARDS] DB query for ${tokenMint.slice(0, 8)}...: pool_type='${tokenData?.pool_type}', creator_wallet='${tokenData?.creator_wallet?.slice(0, 8) || 'null'}...', dbc_pool='${tokenData?.dbc_pool_address || 'null'}'`)
+
     // Determine pool type (pump, bonk, or jupiter)
     let poolType: PoolType = 'pump'
     if (tokenData?.pool_type === 'bonk') {
