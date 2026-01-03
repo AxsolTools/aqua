@@ -127,8 +127,10 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
     setIsLoading(true)
     const supabase = createClient()
     
+    console.log(`[DEBUG] TokenLane (${type}) fetching tokens...`)
+    
     // Fetch all tokens - we'll filter client side for the lanes
-    const { data: tokenData } = await supabase
+    const { data: tokenData, error } = await supabase
       .from("tokens")
       .select(`
         *,
@@ -139,6 +141,12 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
       `)
       .order("created_at", { ascending: false })
       .limit(200) // Fetch more to have enough for all lanes
+
+    console.log(`[DEBUG] TokenLane (${type}) Supabase response:`, { 
+      count: tokenData?.length, 
+      error,
+      tokens: tokenData?.map(t => ({ mint: t.mint_address, name: t.name, stage: t.stage, mc: t.market_cap }))
+    })
 
     if (tokenData) {
       let typedTokens = tokenData as TokenWithMetrics[]
@@ -152,10 +160,12 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
         .sort(config.sort)
         .slice(0, maxTokens)
       
+      console.log(`[DEBUG] TokenLane (${type}) filtered tokens:`, filteredTokens.map(t => ({ mint: t.mint_address, name: t.name, live_mc: t.live_market_cap })))
+      
       setTokens(filteredTokens)
     }
     setIsLoading(false)
-  }, [config, maxTokens, fetchLiveMarketCaps])
+  }, [config, maxTokens, fetchLiveMarketCaps, type])
 
   useEffect(() => {
     fetchTokens()

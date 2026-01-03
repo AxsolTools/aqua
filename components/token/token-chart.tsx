@@ -23,6 +23,8 @@ export function TokenChart({ mintAddress, tokenSymbol }: TokenChartProps) {
 
   // DEXScreener embed URL with TradingView Advanced Charts
   const chartUrl = `https://dexscreener.com/solana/${mintAddress}?embed=1&theme=dark&trades=0&info=0`
+  
+  console.log(`[DEBUG] TokenChart rendering:`, { mintAddress, tokenSymbol, chartUrl })
 
   return (
     <div className="glass-panel-elevated p-0 rounded-lg overflow-hidden">
@@ -82,8 +84,12 @@ export function TokenChart({ mintAddress, tokenSymbol }: TokenChartProps) {
           src={chartUrl}
           className="w-full h-full border-0"
           title="TradingView Chart"
-          onLoad={() => setIsLoading(false)}
+          onLoad={() => {
+            console.log(`[DEBUG] Chart iframe loaded for ${mintAddress}`)
+            setIsLoading(false)
+          }}
           onError={() => {
+            console.log(`[DEBUG] Chart iframe ERROR for ${mintAddress}`)
             setIsLoading(false)
             setHasError(true)
           }}

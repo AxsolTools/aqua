@@ -49,12 +49,16 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
     let channel: ReturnType<typeof supabase.channel> | null = null
 
     const fetchData = async (retryCount = 0) => {
+      console.log(`[DEBUG] Fetching token data for address: ${address}`)
+      
       // First try to fetch from database
       const { data: tokenData, error: tokenError } = await supabase
         .from("tokens")
         .select("*, token_parameters(*)")
         .eq("mint_address", address)
         .single()
+      
+      console.log(`[DEBUG] Supabase response:`, { tokenData, tokenError })
 
       if (tokenError) {
         // If token not found in DB, try fetching from on-chain
@@ -83,6 +87,16 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       }
 
       // Token found in database
+      console.log(`[DEBUG] Token found in DB:`, {
+        mint_address: tokenData.mint_address,
+        name: tokenData.name,
+        symbol: tokenData.symbol,
+        stage: tokenData.stage,
+        market_cap: tokenData.market_cap,
+        price_sol: tokenData.price_sol,
+        image_url: tokenData.image_url,
+      })
+      
       const tokenWithMetrics = {
         ...tokenData,
         pour_rate: tokenData.token_parameters?.pour_rate_percent ?? 0,
@@ -94,6 +108,8 @@ export function TokenDashboard({ address }: TokenDashboardProps) {
       // Check if token is Token-2022 (has token_standard field or token22_parameters)
       setIsToken22(tokenData.token_standard === 'token22' || !!tokenData.token22_parameters)
       setIsLoading(false)
+      
+      console.log(`[DEBUG] Token state set, stage: ${tokenData.stage}, isExternal: false`)
 
       // Set up real-time subscription for token updates
       channel = supabase
