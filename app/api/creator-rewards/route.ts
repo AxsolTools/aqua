@@ -82,13 +82,46 @@ export async function GET(request: NextRequest) {
     const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
     const dbcPoolAddress = tokenData?.dbc_pool_address
 
+    console.log(`[CREATOR-REWARDS] Token ${tokenMint.slice(0, 8)}... pool_type=${poolType}, dbc_pool=${dbcPoolAddress || 'none'}`)
+
     let rewards: { balance: number; vaultAddress: string; hasRewards: boolean }
     let platformName: string
 
     // Jupiter tokens use DBC pool fees (per-token)
-    if (poolType === 'jupiter' && dbcPoolAddress) {
-      rewards = await getJupiterCreatorRewards(dbcPoolAddress)
-      platformName = 'Jupiter'
+    if (poolType === 'jupiter') {
+      if (dbcPoolAddress) {
+        rewards = await getJupiterCreatorRewards(dbcPoolAddress)
+        platformName = 'Jupiter'
+      } else {
+        // Jupiter token without DBC pool address - try to fetch it
+        console.log(`[CREATOR-REWARDS] Jupiter token missing dbc_pool_address, attempting to fetch...`)
+        try {
+          const { getJupiterPoolAddress } = await import("@/lib/blockchain")
+          const fetchedPoolAddress = await getJupiterPoolAddress(tokenMint)
+          if (fetchedPoolAddress) {
+            console.log(`[CREATOR-REWARDS] Fetched Jupiter pool address: ${fetchedPoolAddress}`)
+            rewards = await getJupiterCreatorRewards(fetchedPoolAddress)
+            platformName = 'Jupiter'
+            
+            // Update the database with the pool address for next time
+            try {
+              const updateData: Record<string, string> = { dbc_pool_address: fetchedPoolAddress }
+              await (adminClient.from("tokens") as any).update(updateData).eq("mint_address", tokenMint)
+              console.log(`[CREATOR-REWARDS] Updated dbc_pool_address in database`)
+            } catch (updateErr) {
+              console.warn(`[CREATOR-REWARDS] Failed to update dbc_pool_address:`, updateErr)
+            }
+          } else {
+            // No Jupiter pool found, return empty
+            rewards = { balance: 0, vaultAddress: '', hasRewards: false }
+            platformName = 'Jupiter'
+          }
+        } catch (fetchErr) {
+          console.warn(`[CREATOR-REWARDS] Failed to fetch Jupiter pool:`, fetchErr)
+          rewards = { balance: 0, vaultAddress: '', hasRewards: false }
+          platformName = 'Jupiter'
+        }
+      }
     } else {
       // Pump.fun and Bonk.fun use creator vault (per-creator, accumulates all tokens)
       const pumpPoolType = poolType === 'bonk' ? 'bonk' : 'pump'
@@ -193,9 +226,27 @@ export async function POST(request: NextRequest) {
       dbc_pool_address?: string;
     } | null
 
-    if (!tokenData || tokenData.creator_wallet !== walletAddress) {
+    if (!tokenData) {
       return NextResponse.json(
-        { success: false, error: "Only the token creator can claim rewards" },
+        { success: false, error: "Token not found in database" },
+        { status: 404 }
+      )
+    }
+    
+    // Check if wallet is the creator
+    const isCreator = tokenData.creator_wallet?.toLowerCase() === walletAddress.toLowerCase()
+    console.log(`[CREATOR-REWARDS] Claim check: wallet=${walletAddress.slice(0, 8)}... creator=${tokenData.creator_wallet?.slice(0, 8)}... match=${isCreator}`)
+    
+    if (!isCreator) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: "Only the token creator can claim rewards",
+          debug: {
+            providedWallet: walletAddress,
+            creatorWallet: tokenData.creator_wallet,
+          }
+        },
         { status: 403 }
       )
     }
