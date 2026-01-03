@@ -37,6 +37,37 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
   const [isWatchlisted, setIsWatchlisted] = useState(false)
   const [stats, setStats] = useState<TokenStats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
+  const [tokenImageUrl, setTokenImageUrl] = useState<string | null>(token.image_url || null)
+
+  // Fetch image from on-chain metadata if not in database
+  useEffect(() => {
+    async function fetchImageFromChain() {
+      if (token.image_url) {
+        setTokenImageUrl(token.image_url)
+        return
+      }
+      
+      try {
+        // Try our metadata API first
+        const metadataResponse = await fetch(`/api/token/${token.mint_address}/metadata`)
+        if (metadataResponse.ok) {
+          const result = await metadataResponse.json()
+          if (result.success && result.data?.image) {
+            setTokenImageUrl(result.data.image)
+            return
+          }
+        }
+        
+        // Fallback to DexScreener CDN
+        setTokenImageUrl(`https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`)
+      } catch (error) {
+        console.debug("[TOKEN-HEADER] Failed to fetch image from chain:", error)
+        setTokenImageUrl(`https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`)
+      }
+    }
+    
+    fetchImageFromChain()
+  }, [token.mint_address, token.image_url])
 
   // Fetch live prices with 30-second polling
   const { priceUsd, priceSol, marketCap, isLoading: priceLoading } = useLivePrice(
@@ -144,16 +175,20 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
         {/* Token Identity */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center overflow-hidden">
-            <img
-              src={token.image_url || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`}
-              alt={token.name}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                target.parentElement!.innerHTML = `<span class="text-2xl font-bold text-[var(--ocean-deep)]">${token.symbol?.charAt(0) || '?'}</span>`;
-              }}
-            />
+            {tokenImageUrl ? (
+              <img
+                src={tokenImageUrl}
+                alt={token.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  target.parentElement!.innerHTML = `<span class="text-2xl font-bold text-[var(--ocean-deep)]">${token.symbol?.charAt(0) || '?'}</span>`;
+                }}
+              />
+            ) : (
+              <span className="text-2xl font-bold text-[var(--ocean-deep)]">{token.symbol?.charAt(0) || '?'}</span>
+            )}
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1">

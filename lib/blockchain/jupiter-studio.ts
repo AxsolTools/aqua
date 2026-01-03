@@ -126,6 +126,7 @@ export interface CreateJupiterTokenResult {
   success: boolean;
   mintAddress?: string;
   metadataUri?: string;
+  imageUrl?: string;
   txSignature?: string;
   dbcPoolAddress?: string;
   error?: string;
@@ -505,6 +506,7 @@ export async function createJupiterToken(
       success: true,
       mintAddress,
       metadataUri,
+      imageUrl,
       txSignature: submitResult.txSignature,
       dbcPoolAddress: submitResult.poolAddress,
     };

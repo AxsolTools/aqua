@@ -386,7 +386,7 @@ export async function POST(request: NextRequest) {
         name,
         symbol,
         description,
-        image_url: image || '',
+        image_url: createResult.imageUrl || '',
         metadata_uri: createResult.metadataUri || '',
         total_supply: totalSupply,
         decimals,
