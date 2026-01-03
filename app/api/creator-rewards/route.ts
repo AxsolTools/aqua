@@ -37,6 +37,15 @@ const PUMPPORTAL_LOCAL_TRADE = "https://pumpportal.fun/api/trade-local"
 // Pool types
 type PoolType = 'pump' | 'bonk' | 'jupiter'
 
+type TokenRow = {
+  id?: string
+  stage?: string
+  creator_wallet?: string
+  pool_type?: string
+  quote_mint?: string
+  dbc_pool_address?: string
+}
+
 /**
  * GET - Check creator rewards balance for a token
  */
@@ -45,6 +54,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const tokenMint = searchParams.get("tokenMint")
     const creatorWallet = searchParams.get("creatorWallet")
+    const poolTypeOverride = searchParams.get("poolType") as PoolType | null
+    const dbcPoolOverride = searchParams.get("dbcPool")
 
     if (!tokenMint || !creatorWallet) {
       return NextResponse.json(
@@ -56,50 +67,37 @@ export async function GET(request: NextRequest) {
     const adminClient = getAdminClient()
 
     // Check if token is migrated or on bonding curve, and get pool type
-    const { data: token, error: tokenError } = await adminClient
-      .from("tokens")
-      .select("id, stage, creator_wallet, pool_type, quote_mint, dbc_pool_address")
-      .eq("mint_address", tokenMint)
-      .single()
+    // DB is optional: use as a hint, but never block on it for read path
+    let tokenData: TokenRow | null = null
+    let tokenError: any = null
+    try {
+      const { data, error } = await adminClient
+        .from("tokens")
+        .select("id, stage, creator_wallet, pool_type, quote_mint, dbc_pool_address")
+        .eq("mint_address", tokenMint)
+        .single()
+      tokenData = data ? (data as TokenRow) : null
+      tokenError = error
+    } catch (e: any) {
+      tokenData = null
+      tokenError = e
+    }
 
-    // Log query result and any errors
     if (tokenError) {
       console.warn(`[CREATOR-REWARDS] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
     }
-    console.log(`[CREATOR-REWARDS] DB query result for ${tokenMint.slice(0, 8)}...: token=${token ? 'found' : 'null'}, error=${tokenError ? tokenError.message : 'none'}`)
 
-    const tokenData = (token as { 
-      id?: string; 
-      stage?: string; 
-      creator_wallet?: string; 
-      pool_type?: string;
-      quote_mint?: string;
-      dbc_pool_address?: string;
-    } | null) ?? {
-      // Fallback to allow on-chain rewards fetch even if DB lookup fails
-      id: undefined,
-      stage: undefined,
-      creator_wallet: creatorWallet,
-      pool_type: 'pump',
-      quote_mint: undefined,
-      dbc_pool_address: undefined,
-    }
-
-    // Log raw database values for debugging
-    console.log(`[CREATOR-REWARDS] DB query for ${tokenMint.slice(0, 8)}...: pool_type='${tokenData?.pool_type}', creator_wallet='${tokenData?.creator_wallet?.slice(0, 8) || 'null'}...', dbc_pool='${tokenData?.dbc_pool_address || 'null'}'`)
-
-    // Determine pool type (pump, bonk, or jupiter)
-    let poolType: PoolType = 'pump'
-    if (tokenData?.pool_type === 'bonk') {
+    // Determine pool type (prefer query override, then DB, else pump)
+    let poolType: PoolType = poolTypeOverride || 'pump'
+    if (!poolTypeOverride && tokenData?.pool_type === 'bonk') {
       poolType = 'bonk'
-    } else if (tokenData?.pool_type === 'jupiter') {
+    } else if (!poolTypeOverride && tokenData?.pool_type === 'jupiter') {
       poolType = 'jupiter'
     }
     
-    const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
-    const dbcPoolAddress = tokenData?.dbc_pool_address
+    let dbcPoolAddress = dbcPoolOverride || tokenData?.dbc_pool_address
 
-    console.log(`[CREATOR-REWARDS] Token ${tokenMint.slice(0, 8)}... pool_type=${poolType}, dbc_pool=${dbcPoolAddress || 'none'}`)
+    console.log(`[CREATOR-REWARDS] Token ${tokenMint.slice(0, 8)}... pool_type=${poolType}, dbc_pool=${dbcPoolAddress || 'none'}, dbCreator=${tokenData?.creator_wallet?.slice(0,8) || 'n/a'}`)
 
     let rewards: { balance: number; vaultAddress: string; hasRewards: boolean }
     let platformName: string
@@ -156,6 +154,7 @@ export async function GET(request: NextRequest) {
 
     const totalRewards = rewards.balance + migrationRewards
     const tokenCreatorWallet = tokenData?.creator_wallet
+    const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
 
     return NextResponse.json({
       success: true,
