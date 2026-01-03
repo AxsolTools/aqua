@@ -48,12 +48,25 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
       }
       
       try {
-        // Try our metadata API first
+        // Try our metadata API first (returns logoUri from Helius DAS or DexScreener)
         const metadataResponse = await fetch(`/api/token/${token.mint_address}/metadata`)
         if (metadataResponse.ok) {
           const result = await metadataResponse.json()
-          if (result.success && result.data?.image) {
-            setTokenImageUrl(result.data.image)
+          if (result.success && result.data) {
+            const imageUrl = result.data.logoUri || result.data.image
+            if (imageUrl) {
+              setTokenImageUrl(imageUrl)
+              return
+            }
+          }
+        }
+        
+        // Try Jupiter tokens API for Jupiter DBC tokens
+        const jupResponse = await fetch(`https://tokens.jup.ag/token/${token.mint_address}`)
+        if (jupResponse.ok) {
+          const jupData = await jupResponse.json()
+          if (jupData?.logoURI) {
+            setTokenImageUrl(jupData.logoURI)
             return
           }
         }
