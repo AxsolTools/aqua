@@ -182,6 +182,35 @@ export async function POST(request: NextRequest) {
     
     console.log(`[API/EARN/SWAP-TO-EARN] ✅ Swap-to-Earn confirmed: ${signature}`);
     
+    // Log activity for the ticker/feed - this is the main PROPEL swap-to-earn flow
+    try {
+      const userId = request.headers.get('x-user-id');
+      const vaultSymbol = normalizedTargetAsset === 'SOL' ? 'jlSOL' : 'jlUSDC';
+      
+      // Get estimated USD value from the result details if available
+      const estimatedUsd = result.details?.estimatedOutputUsd || 
+        (normalizedTargetAsset === 'SOL' ? amount * 200 : amount);
+      
+      await adminClient.from('earn_activity').insert({
+        user_id: userId || null,
+        wallet_address: walletAddress,
+        activity_type: 'deposit',
+        vault_symbol: vaultSymbol,
+        vault_address: null,
+        asset_symbol: normalizedTargetAsset,
+        propel_amount: amount, // PROPEL tokens being swapped
+        underlying_amount: result.details?.estimatedOutput || amount,
+        shares_amount: 0,
+        usd_value: estimatedUsd,
+        tx_signature: signature,
+      });
+      
+      console.log('[API/EARN/SWAP-TO-EARN] Activity logged');
+    } catch (activityError) {
+      console.warn('[API/EARN/SWAP-TO-EARN] Failed to log activity:', activityError);
+      // Don't fail the request if activity logging fails
+    }
+    
     return NextResponse.json({
       success: true,
       data: {

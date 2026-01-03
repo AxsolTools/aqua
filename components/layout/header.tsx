@@ -85,18 +85,18 @@ export function Header() {
                   : ""
                 
                 return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
-                      pathname === item.href
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                    pathname === item.href
                         ? `bg-[var(--bg-secondary)] ${hasColor ? colorClass : 'text-[var(--text-primary)]'}`
                         : `${hasColor ? colorClass : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`
                     }`}
-                  >
-                    {item.icon && <item.icon className="w-4 h-4" />}
-                    {item.label}
-                  </Link>
+                >
+                  {item.icon && <item.icon className="w-4 h-4" />}
+                  {item.label}
+                </Link>
                 )
               })}
             </nav>
@@ -222,19 +222,19 @@ export function Header() {
                     : ""
                   
                   return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                        pathname === item.href
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      pathname === item.href
                           ? `bg-[var(--bg-secondary)] ${hasColor ? colorClass : 'text-[var(--text-primary)]'}`
                           : `${hasColor ? colorClass : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`
                       }`}
-                    >
-                      {item.icon && <item.icon className="w-4 h-4" />}
-                      {item.label}
-                    </Link>
+                  >
+                    {item.icon && <item.icon className="w-4 h-4" />}
+                    {item.label}
+                  </Link>
                   )
                 })}
                 <div className="pt-2 space-y-2">

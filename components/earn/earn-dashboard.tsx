@@ -8,6 +8,7 @@ import { PositionCard } from "./position-card"
 import { EarningsSummary } from "./earnings-summary"
 import { DepositModal } from "./deposit-modal"
 import { WithdrawModal } from "./withdraw-modal"
+import { EarnActivityFeed } from "./earn-activity-feed"
 
 interface Vault {
   id: number
@@ -376,6 +377,57 @@ export function EarnDashboard() {
             ))}
           </div>
         )}
+      </section>
+
+      {/* Live Activity Feed */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <EarnActivityFeed maxItems={8} showHeader={true} />
+        </div>
+        <div className="space-y-4">
+          {/* Quick Stats Card */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Platform Stats</h3>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--text-muted)]">Active Vaults</span>
+                <span className="text-sm font-semibold text-[var(--aqua-primary)]">{vaults.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--text-muted)]">Your Positions</span>
+                <span className="text-sm font-semibold text-[var(--green)]">{positions.length}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--text-muted)]">Total Deposited</span>
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
+                  ${totalDeposited.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-[var(--text-muted)]">Total Earned</span>
+                <span className="text-sm font-semibold text-[var(--warm-pink)]">
+                  ${totalEarnings.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+          
+          {/* PROPEL Info Card */}
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/10 to-[var(--warm-pink)]/10 border border-[var(--aqua-border)]">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center">
+                <span className="text-sm font-bold text-white">P</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-[var(--text-primary)]">PROPEL Token</h3>
+                <p className="text-[10px] text-[var(--text-muted)]">Swap to earn yield</p>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              Deposit your PROPEL tokens to start earning. Your tokens are automatically swapped and deposited into yield vaults.
+            </p>
+          </div>
+        </div>
       </section>
 
       {/* Why Earn Section */}

@@ -2,11 +2,15 @@
 
 import { Header } from "@/components/layout/header"
 import { EarnDashboard } from "@/components/earn/earn-dashboard"
+import { EarnTicker } from "@/components/earn/earn-ticker"
 
 export default function EarnPage() {
   return (
     <main className="min-h-screen bg-[var(--bg-primary)]">
       <Header />
+      
+      {/* Live Stats Ticker - Only on Earn page */}
+      <EarnTicker />
       
       {/* Background Effects - matching rest of site */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">

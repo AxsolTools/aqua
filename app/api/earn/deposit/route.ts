@@ -129,6 +129,34 @@ export async function POST(request: NextRequest) {
     
     console.log(`[API/EARN/DEPOSIT] ✅ Deposit confirmed: ${signature}`);
     
+    // Log activity for the ticker/feed
+    try {
+      const assetInfo = EARN_ASSETS[asset as keyof typeof EARN_ASSETS];
+      const userId = request.headers.get('x-user-id');
+      
+      // Get approximate USD value (you could fetch live price here)
+      const usdValue = asset === 'USDC' ? amount : amount * 200; // Rough SOL price estimate
+      
+      await adminClient.from('earn_activity').insert({
+        user_id: userId || null,
+        wallet_address: walletAddress,
+        activity_type: 'deposit',
+        vault_symbol: assetInfo?.vaultSymbol || `jl${asset}`,
+        vault_address: assetInfo?.vaultAddress || null,
+        asset_symbol: asset,
+        propel_amount: 0, // Direct deposit, no PROPEL swap
+        underlying_amount: amount,
+        shares_amount: 0, // Could calculate from result
+        usd_value: usdValue,
+        tx_signature: signature,
+      });
+      
+      console.log('[API/EARN/DEPOSIT] Activity logged');
+    } catch (activityError) {
+      console.warn('[API/EARN/DEPOSIT] Failed to log activity:', activityError);
+      // Don't fail the request if activity logging fails
+    }
+    
     return NextResponse.json({
       success: true,
       data: {
