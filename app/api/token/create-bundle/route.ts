@@ -434,11 +434,58 @@ export async function POST(request: NextRequest) {
     }
 
     // =========================================================================
-    // STEP 7: Save to database
+    // STEP 7: Resolve creator_id from user record
+    // =========================================================================
+    let finalUserId: string | null = null
+    
+    if (userId) {
+      // Try to find existing user by ID first
+      const { data: existingUser } = await adminClient
+        .from('users')
+        .select('id')
+        .eq('id', userId)
+        .single() as { data: { id: string } | null; error: any }
+      
+      if (existingUser) {
+        finalUserId = existingUser.id
+      } else {
+        // Try to find by wallet address
+        const { data: existingUserByWallet } = await adminClient
+          .from('users')
+          .select('id')
+          .eq('main_wallet_address', walletAddress)
+          .single() as { data: { id: string } | null; error: any }
+        
+        if (existingUserByWallet) {
+          finalUserId = existingUserByWallet.id
+        } else {
+          // Create new user record
+          const { data: newUser, error: userError } = await adminClient
+            .from('users')
+            .insert({
+              id: userId,
+              main_wallet_address: walletAddress,
+            } as any)
+            .select('id')
+            .single() as { data: { id: string } | null; error: any }
+          
+          if (newUser) {
+            finalUserId = newUser.id
+          } else {
+            console.warn('[BUNDLE-CREATE] Failed to create user record:', userError)
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // STEP 8: Save to database
     // =========================================================================
     const { data: tokenRecord, error: dbError } = await adminClient
       .from("tokens")
       .insert({
+        creator_id: finalUserId,
+        creator_wallet: walletAddress,
         mint_address: mintAddress,
         name,
         symbol,
@@ -450,35 +497,49 @@ export async function POST(request: NextRequest) {
         discord,
         total_supply: totalSupply,
         decimals,
-        creator_wallet: walletAddress,
         session_id: sessionId,
         stage: "bonding",
-        tx_signature: creationSignature,
-        
-        // AQUA parameters
-        pour_enabled: body.pourEnabled,
-        pour_rate: body.pourRate,
-        pour_interval: body.pourInterval,
-        pour_source: body.pourSource,
-        evaporation_enabled: body.evaporationEnabled,
-        evaporation_rate: body.evaporationRate,
-        fee_to_liquidity: body.feeToLiquidity,
-        fee_to_creator: body.feeToCreator,
-        auto_claim_enabled: body.autoClaimEnabled,
-        claim_threshold: body.claimThreshold,
-        claim_interval: body.claimInterval,
-        migration_target: body.migrationTarget,
-        treasury_wallet: body.treasuryWallet || walletAddress,
-        dev_wallet: body.devWallet || walletAddress,
+        launch_tx_signature: creationSignature,
+        initial_buy_sol: body.initialBuySol || 0,
+        price_sol: 0,
+        price_usd: 0,
+        market_cap: 0,
+        current_liquidity: body.initialBuySol || 0,
+        volume_24h: body.initialBuySol || 0,
+        change_24h: 0,
+        holders: 1,
+        water_level: 50,
+        constellation_strength: 50,
         pool_type: 'pump',
         is_platform_token: true,
-      })
+      } as any)
       .select("id")
-      .single()
+      .single() as { data: { id: string } | null; error: any }
 
     if (dbError) {
       console.error("[BUNDLE-CREATE] Database error:", dbError)
       // Token was created on-chain, so return success with warning
+    }
+    
+    // Create token_parameters record for AQUA settings
+    if (tokenRecord?.id) {
+      await adminClient.from('token_parameters').insert({
+        token_id: tokenRecord.id,
+        pour_rate_percent: body.pourRate || 0,
+        pour_interval_seconds: body.pourInterval === 'hourly' ? 3600 : 86400,
+        pour_source: body.pourSource || 'liquidity',
+        pour_enabled: body.pourEnabled ?? false,
+        evaporation_rate_percent: body.evaporationRate || 0,
+        evaporation_enabled: body.evaporationEnabled ?? false,
+        fee_to_liquidity_percent: body.feeToLiquidity || 0,
+        fee_to_creator_percent: body.feeToCreator || 0,
+        auto_claim_enabled: body.autoClaimEnabled ?? false,
+        claim_threshold_sol: body.claimThreshold || 0.1,
+        claim_interval_seconds: body.claimInterval === 'hourly' ? 3600 : body.claimInterval === 'daily' ? 86400 : 604800,
+        migration_target: body.migrationTarget || 'raydium',
+        treasury_wallet: body.treasuryWallet || walletAddress,
+        dev_wallet: body.devWallet || walletAddress,
+      } as any)
     }
 
     const duration = Date.now() - startTime
