@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   // Parse params - NO artificial limits
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '100')
-  const sort = (searchParams.get('sort') || 'trending') as 'trending' | 'new' | 'volume' | 'gainers' | 'losers' | 'buy_signal' | 'risk'
+  const sort = (searchParams.get('sort') || 'trending') as 'trending' | 'new' | 'volume' | 'gainers' | 'losers' | 'buy_signal' | 'risk' | 'prepump'
   
   try {
     const result = await fetchMasterTokenFeed({

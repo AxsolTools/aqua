@@ -40,6 +40,8 @@ import {
   ArrowDown,
   CircleDot,
   TrendingUpIcon,
+  Users,
+  Radio,
 } from "lucide-react"
 
 // ============================================================================
@@ -88,6 +90,19 @@ interface TokenData {
   liquidityScore?: number
   volatility24h?: number
   accumulationScore?: number
+  // Pre-pump detection signals
+  prePumpScore?: number
+  prePumpSignals?: {
+    freshWalletInflux: number
+    walletVelocity: number
+    txClustering: number
+    bondingVelocity: number
+    sellAbsence: number
+    buySizeShift: number
+  }
+  prePumpAlerts?: string[]
+  freshWalletRate?: number
+  coordinatedWallets?: number
 }
 
 interface AggregatorFilters {
@@ -99,7 +114,8 @@ interface AggregatorFilters {
   showBoostedOnly: boolean
   showPumpFunOnly: boolean
   showBuySignals: boolean
-  sortBy: 'trending' | 'volume' | 'priceChange' | 'marketCap' | 'liquidity' | 'new' | 'momentum' | 'buySignal' | 'risk'
+  showPrePump: boolean
+  sortBy: 'trending' | 'volume' | 'priceChange' | 'marketCap' | 'liquidity' | 'new' | 'momentum' | 'buySignal' | 'risk' | 'prePump'
   sortDir: 'desc' | 'asc'
 }
 
@@ -116,6 +132,7 @@ const DEFAULT_FILTERS: AggregatorFilters = {
   showBoostedOnly: false,
   showPumpFunOnly: false,
   showBuySignals: false,
+  showPrePump: false,
   sortBy: 'trending',
   sortDir: 'desc',
 }
@@ -259,6 +276,7 @@ export function TokenAggregator() {
       if (filters.showBoostedOnly && !t.hasDexScreenerBoost) return false
       if (filters.showPumpFunOnly && !t.isPumpFun) return false
       if (filters.showBuySignals && (t.buySignal || 0) < 65) return false
+      if (filters.showPrePump && (t.prePumpScore || 0) < 50) return false
       
       return true
     })
@@ -286,6 +304,12 @@ export function TokenAggregator() {
           return ((a.riskScore || 0) - (b.riskScore || 0)) * dir // Lower risk first
         case 'new':
           return (b.pairCreatedAt - a.pairCreatedAt) * dir
+        case 'prePump':
+          // Sort by pre-pump score (highest first)
+          const scoreA = a.prePumpScore || 0
+          const scoreB = b.prePumpScore || 0
+          if (scoreA !== scoreB) return (scoreB - scoreA) * dir
+          return ((b.trendingScore || 0) - (a.trendingScore || 0)) * dir
         default:
           return 0
       }
@@ -336,6 +360,9 @@ export function TokenAggregator() {
       avgBuyPressure: filteredTokens.length > 0 
         ? filteredTokens.reduce((sum, t) => sum + (t.buyPressure || 50), 0) / filteredTokens.length 
         : 50,
+      // Pre-pump stats
+      prePumpSignals: filteredTokens.filter(t => (t.prePumpScore || 0) >= 50).length,
+      highPrePump: filteredTokens.filter(t => (t.prePumpScore || 0) >= 70).length,
     }
   }, [filteredTokens])
 
@@ -477,12 +504,13 @@ export function TokenAggregator() {
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-3">
+        <div className="grid grid-cols-4 sm:grid-cols-9 gap-2 mb-3">
           <StatCard icon={Target} label="Total" value={stats.totalTokens} color="text-[var(--text-primary)]" />
           <StatCard icon={Sparkles} label="New 1h" value={stats.newTokens1h} color="text-[var(--aqua-primary)]" />
           <StatCard icon={Zap} label="Boosted" value={stats.boostedTokens} color="text-yellow-400" />
           <StatCard icon={Rocket} label="Pump.fun" value={stats.pumpFunTokens} color="text-purple-400" />
           <StatCard icon={TrendingUp} label="Buy Signals" value={stats.buySignals} color="text-[var(--green)]" />
+          <StatCard icon={Radio} label="Pre-Pump" value={stats.prePumpSignals} color="text-cyan-400" />
           <StatCard icon={Flame} label="Hot" value={stats.highMomentum} color="text-orange-400" />
           <StatCard icon={DollarSign} label="24h Vol" value={`$${(stats.totalVolume / 1e6).toFixed(1)}M`} color="text-[var(--text-primary)]" isString />
           <StatCard icon={Gauge} label="Buy Press." value={`${stats.avgBuyPressure.toFixed(0)}%`} color={stats.avgBuyPressure > 55 ? "text-[var(--green)]" : "text-[var(--text-muted)]"} isString />
@@ -505,6 +533,7 @@ export function TokenAggregator() {
           <div className="flex items-center gap-1">
             {[
               { key: 'trending', label: 'Hot', icon: Flame },
+              { key: 'prePump', label: 'Pump', icon: Radio },
               { key: 'buySignal', label: 'Buy', icon: TrendingUp },
               { key: 'volume', label: 'Vol', icon: DollarSign },
               { key: 'new', label: 'New', icon: Sparkles },
@@ -586,6 +615,21 @@ export function TokenAggregator() {
             >
               <TrendingUp className="w-3.5 h-3.5" />
               <span className="text-[9px]">BUY</span>
+            </button>
+            
+            {/* Pre-Pump Filter */}
+            <button
+              onClick={() => setFilters(f => ({ ...f, showPrePump: !f.showPrePump }))}
+              className={cn(
+                "flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium transition-all border",
+                filters.showPrePump
+                  ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-400"
+                  : "bg-[var(--bg-secondary)] border-transparent text-[var(--text-muted)]"
+              )}
+              title="Show pre-pump signals only (50+)"
+            >
+              <Radio className="w-3.5 h-3.5" />
+              <span className="text-[9px]">PUMP</span>
             </button>
           </div>
           
@@ -823,6 +867,24 @@ function TokenCard({
         <div className="card-interactive overflow-hidden group bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--aqua-primary)]/50 transition-all relative">
           {/* Badge Row - Top Right */}
           <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+            {/* Pre-Pump Signal Badge */}
+            {(token.prePumpScore || 0) >= 50 && (
+              <div 
+                className={cn(
+                  "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full border animate-pulse",
+                  (token.prePumpScore || 0) >= 70 
+                    ? "bg-gradient-to-r from-cyan-500/40 to-blue-500/40 border-cyan-400/70" 
+                    : "bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border-cyan-500/50"
+                )} 
+                title={`Pre-Pump Score: ${token.prePumpScore}${token.prePumpAlerts?.length ? ' - ' + token.prePumpAlerts[0] : ''}`}
+              >
+                <Radio className={cn("w-2.5 h-2.5", (token.prePumpScore || 0) >= 70 ? "text-cyan-300" : "text-cyan-400")} />
+                <span className={cn("text-[8px] font-bold", (token.prePumpScore || 0) >= 70 ? "text-cyan-300" : "text-cyan-400")}>
+                  {token.prePumpScore}
+                </span>
+              </div>
+            )}
+            
             {/* DexScreener Boost Badge - Lightning with real DexScreener icon */}
             {token.hasDexScreenerBoost && (
               <div 

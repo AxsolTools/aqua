@@ -13,7 +13,10 @@
  * - Helius: On-chain data, new tokens via DAS
  * - Birdeye: Token analytics
  * - Pump.fun: Pre-migration bonding curve tokens
+ * - Pre-Pump Engine: Real-time pump detection signals
  */
+
+import { getCachedSignal } from './prepump-engine'
 
 // ============================================================================
 // TYPES
@@ -63,6 +66,20 @@ export interface TokenData {
   volatility24h?: number
   accumulationScore?: number
   lastUpdated: number // When this token was last updated
+  
+  // Pre-pump detection signals (from prepump-engine)
+  prePumpScore?: number           // 0-100 composite score
+  prePumpSignals?: {
+    freshWalletInflux: number     // 0-100
+    walletVelocity: number        // 0-100
+    txClustering: number          // 0-100
+    bondingVelocity: number       // 0-100
+    sellAbsence: number           // 0-100
+    buySizeShift: number          // 0-100
+  }
+  prePumpAlerts?: string[]        // Alert messages
+  freshWalletRate?: number        // % of txns from fresh wallets
+  coordinatedWallets?: number     // Number of coordinated wallets detected
 }
 
 export interface FeedResult {
@@ -698,6 +715,9 @@ async function fetchAndAccumulate(): Promise<void> {
     
     // Calculate scores for all tokens
     for (const [address, token] of MASTER_TOKEN_CACHE) {
+      // Get pre-pump signal if available (from webhook data)
+      const prePumpSignal = getCachedSignal(address)
+      
       const updatedToken = {
         ...token,
         trendingScore: calculateTrendingScore(token),
@@ -705,6 +725,14 @@ async function fetchAndAccumulate(): Promise<void> {
         sellSignal: calculateSellSignal(token),
         riskScore: calculateRiskScore(token),
         momentumScore: calculateMomentumScore(token),
+        // Add pre-pump detection data
+        ...(prePumpSignal ? {
+          prePumpScore: prePumpSignal.score,
+          prePumpSignals: prePumpSignal.signals,
+          prePumpAlerts: prePumpSignal.alerts,
+          freshWalletRate: prePumpSignal.metrics.freshWalletRate,
+          coordinatedWallets: prePumpSignal.metrics.coordinatedWallets,
+        } : {}),
       }
       MASTER_TOKEN_CACHE.set(address, updatedToken)
     }
@@ -723,7 +751,7 @@ async function fetchAndAccumulate(): Promise<void> {
 export async function fetchMasterTokenFeed(options: {
   page?: number
   limit?: number
-  sort?: 'trending' | 'new' | 'volume' | 'gainers' | 'losers' | 'buy_signal' | 'risk'
+  sort?: 'trending' | 'new' | 'volume' | 'gainers' | 'losers' | 'buy_signal' | 'risk' | 'prepump'
 } = {}): Promise<FeedResult> {
   const { page = 1, limit = 100, sort = 'trending' } = options
   const startTime = Date.now()
@@ -758,6 +786,15 @@ export async function fetchMasterTokenFeed(options: {
       break
     case 'risk':
       allTokens.sort((a, b) => (a.riskScore || 0) - (b.riskScore || 0))
+      break
+    case 'prepump':
+      // Sort by pre-pump score (highest first), then by trending for tokens without signals
+      allTokens.sort((a, b) => {
+        const scoreA = a.prePumpScore || 0
+        const scoreB = b.prePumpScore || 0
+        if (scoreA !== scoreB) return scoreB - scoreA
+        return (b.trendingScore || 0) - (a.trendingScore || 0)
+      })
       break
   }
   

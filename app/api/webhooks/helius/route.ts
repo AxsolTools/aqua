@@ -8,6 +8,7 @@
  * - Token transfers (buys/sells)
  * - Account changes
  * - Transaction confirmations
+ * - Pre-pump detection signals (feeds into prepump-engine)
  * 
  * To set up webhooks:
  * 1. Go to https://dashboard.helius.dev/webhooks
@@ -20,6 +21,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { recordTransaction, startCleanup, getEngineStats } from '@/lib/api/prepump-engine'
+
+// Start cleanup on module load
+startCleanup()
 
 // Webhook secret for verification (set in Helius dashboard)
 const WEBHOOK_SECRET = process.env.HELIUS_WEBHOOK_SECRET
@@ -200,6 +205,7 @@ function determineTransactionType(tx: TransactionData): string {
 /**
  * Process swap/buy/sell transactions
  * Store in database for display in Recent Trades panel
+ * Feed into pre-pump detection engine
  */
 async function processSwapTransaction(tx: TransactionData, type: string): Promise<void> {
   try {
@@ -234,6 +240,18 @@ async function processSwapTransaction(tx: TransactionData, type: string): Promis
 
     if (!tokenMint) return
 
+    // ========== FEED INTO PRE-PUMP ENGINE ==========
+    // Record this transaction for pre-pump signal calculation
+    // This happens for ALL tokens, not just our platform tokens
+    recordTransaction({
+      tokenAddress: tokenMint,
+      wallet: tx.feePayer,
+      type: type === 'buy' ? 'buy' : 'sell',
+      amountSOL: solAmount,
+      signature: tx.signature,
+      timestamp: tx.timestamp * 1000, // Convert to ms
+    })
+
     // Look up token in our database
     const { data: token } = await supabase
       .from('tokens')
@@ -242,8 +260,7 @@ async function processSwapTransaction(tx: TransactionData, type: string): Promis
       .single()
 
     if (!token) {
-      // Token not in our platform, but we can still log it
-      console.log('[WEBHOOK] External token trade:', tokenMint.slice(0, 8), type)
+      // Token not in our platform, but we still track it for pre-pump signals
       return
     }
 
@@ -307,11 +324,14 @@ function flushEventBuffer(): void {
  * GET handler for webhook health check
  */
 export async function GET() {
+  const engineStats = getEngineStats()
+  
   return NextResponse.json({
     status: 'ok',
     service: 'helius-webhook',
     timestamp: new Date().toISOString(),
     bufferSize: eventBuffer.size,
+    prepumpEngine: engineStats,
   })
 }
 
