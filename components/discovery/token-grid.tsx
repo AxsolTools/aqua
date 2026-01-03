@@ -7,6 +7,7 @@ import { motion } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import type { Token } from "@/lib/types/database"
 import { cn, formatTimeAgo } from "@/lib/utils"
+import { useBondingProgress } from "@/hooks/use-bonding-progress"
 
 interface TokenWithCreator extends Token {
   creator?: {
@@ -26,39 +27,14 @@ export function TokenGrid() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
 
-  // Fetch bonding curve progress from PumpPortal
-  const fetchBondingProgress = useCallback(async (tokenList: TokenWithCreator[]) => {
-    if (tokenList.length === 0) return
+  // Get bonding token mint addresses for WebSocket subscription
+  const bondingMints = tokens
+    .filter(t => t.stage === "bonding" && t.pool_type !== 'jupiter')
+    .map(t => t.mint_address)
+    .filter(Boolean)
 
-    try {
-      // Only fetch for bonding stage tokens
-      const bondingTokens = tokenList.filter(t => t.stage === "bonding")
-      if (bondingTokens.length === 0) return
-
-      const mintAddresses = bondingTokens.map(t => t.mint_address).filter(Boolean)
-      
-      const response = await fetch('/api/pump/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mints: mintAddresses }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.data) {
-          setTokens(prev => prev.map(token => {
-            const progressData = data.data[token.mint_address]
-            if (progressData) {
-              return { ...token, bonding_progress: progressData.progress }
-            }
-            return token
-          }))
-        }
-      }
-    } catch (error) {
-      console.debug('[TOKEN-GRID] Failed to fetch bonding progress:', error)
-    }
-  }, [])
+  // Subscribe to real-time bonding progress via PumpPortal WebSocket
+  const { progressMap } = useBondingProgress(bondingMints)
 
   // Fetch live market caps for all tokens
   const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithCreator[]) => {
@@ -123,12 +99,11 @@ export function TokenGrid() {
     if (tokenData) {
       const typedTokens = tokenData as TokenWithCreator[]
       setTokens(typedTokens)
-      // Fetch live market caps and bonding progress after initial load
+      // Fetch live market caps after initial load
       fetchLiveMarketCaps(typedTokens)
-      fetchBondingProgress(typedTokens)
     }
     setIsLoading(false)
-  }, [fetchLiveMarketCaps, fetchBondingProgress])
+  }, [fetchLiveMarketCaps])
 
   useEffect(() => {
     fetchTokens(currentPage)
@@ -247,7 +222,12 @@ export function TokenGrid() {
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3">
       {tokens.map((token, index) => {
-        const progress = getMigrationProgress(token)
+        // Get real-time bonding progress from WebSocket if available
+        const realtimeProgress = progressMap[token.mint_address]?.progress
+        const tokenWithProgress = realtimeProgress !== undefined 
+          ? { ...token, bonding_progress: realtimeProgress }
+          : token
+        const progress = getMigrationProgress(tokenWithProgress)
         const isLive = token.stage === "bonding"
         const isMigrated = token.stage === "migrated"
         const isPositive = (token.change_24h || 0) >= 0

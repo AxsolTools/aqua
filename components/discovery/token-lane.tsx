@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client"
 import { TokenRowCard } from "./token-row-card"
 import type { Token } from "@/lib/types/database"
 import { cn } from "@/lib/utils"
+import { useBondingProgress } from "@/hooks/use-bonding-progress"
 
 interface TokenWithMetrics extends Token {
   creator?: {
@@ -93,43 +94,14 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
 
   const config = LANE_CONFIG[type]
 
-  // Fetch bonding curve progress from PumpPortal
-  const fetchBondingProgress = useCallback(async (tokenList: TokenWithMetrics[]) => {
-    if (tokenList.length === 0) return tokenList
+  // Get bonding token mint addresses for WebSocket subscription
+  const bondingMints = tokens
+    .filter(t => t.stage === "bonding" && t.pool_type !== 'jupiter')
+    .map(t => t.mint_address)
+    .filter(Boolean)
 
-    try {
-      // Only fetch for bonding stage tokens
-      const bondingTokens = tokenList.filter(t => t.stage === "bonding")
-      if (bondingTokens.length === 0) return tokenList
-
-      const mintAddresses = bondingTokens.map(t => t.mint_address).filter(Boolean)
-      
-      const response = await fetch('/api/pump/progress', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mints: mintAddresses }),
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && data.data) {
-          return tokenList.map(token => {
-            const progressData = data.data[token.mint_address]
-            if (progressData) {
-              return { 
-                ...token, 
-                bonding_progress: progressData.progress,
-              }
-            }
-            return token
-          })
-        }
-      }
-    } catch (error) {
-      console.debug('[TOKEN-LANE] Failed to fetch bonding progress:', error)
-    }
-    return tokenList
-  }, [])
+  // Subscribe to real-time bonding progress via PumpPortal WebSocket
+  const { progressMap } = useBondingProgress(bondingMints)
 
   // Fetch live market caps for tokens
   const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithMetrics[]) => {
@@ -198,9 +170,6 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
       // Fetch live market caps
       typedTokens = await fetchLiveMarketCaps(typedTokens)
       
-      // Fetch bonding curve progress from PumpPortal
-      typedTokens = await fetchBondingProgress(typedTokens)
-      
       // Filter and sort based on lane type
       const filteredTokens = typedTokens
         .filter(config.filter)
@@ -212,7 +181,7 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
       setTokens(filteredTokens)
     }
     setIsLoading(false)
-  }, [config, maxTokens, fetchLiveMarketCaps, fetchBondingProgress, type])
+  }, [config, maxTokens, fetchLiveMarketCaps, type])
 
   useEffect(() => {
     fetchTokens()
@@ -317,20 +286,28 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
               ) : (
                 // Token list
                 <div className="space-y-1">
-                  {tokens.map((token, index) => (
-                    <motion.div
-                      key={token.id}
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ duration: 0.15, delay: index * 0.02 }}
-                    >
-                      <TokenRowCard 
-                        token={token} 
-                        showProgress={type !== "migrated"}
-                        compact={true}
-                      />
-                    </motion.div>
-                  ))}
+                  {tokens.map((token, index) => {
+                    // Get real-time bonding progress from WebSocket if available
+                    const realtimeProgress = progressMap[token.mint_address]?.progress
+                    const tokenWithProgress = realtimeProgress !== undefined 
+                      ? { ...token, bonding_progress: realtimeProgress }
+                      : token
+                    
+                    return (
+                      <motion.div
+                        key={token.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ duration: 0.15, delay: index * 0.02 }}
+                      >
+                        <TokenRowCard 
+                          token={tokenWithProgress} 
+                          showProgress={type !== "migrated"}
+                          compact={true}
+                        />
+                      </motion.div>
+                    )
+                  })}
                 </div>
               )}
             </div>
