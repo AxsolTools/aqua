@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion"
 import { Keypair } from "@solana/web3.js"
 import bs58 from "bs58"
 import { GlassPanel, StepIndicator } from "@/components/ui/glass-panel"
-import { StepBasics } from "@/components/launch/step-basics"
+import { JupiterStepBasics } from "@/components/launch-jupiter/jupiter-step-basics"
 import { StepAquaSettings } from "@/components/launch/step-aqua-settings"
 import { StepBundle } from "@/components/launch/step-bundle"
 import { JupiterReview } from "@/components/launch-jupiter/jupiter-review"
@@ -305,7 +305,12 @@ export function JupiterWizard({ creatorWallet }: JupiterWizardProps) {
               transition={{ duration: 0.2 }}
             >
               {currentStep === 1 && (
-                <StepBasics formData={formData} updateFormData={updateFormData} onNext={nextStep} />
+                <JupiterStepBasics 
+                  formData={formData} 
+                  updateFormData={updateFormData} 
+                  onNext={nextStep} 
+                  creatorWallet={creatorWallet}
+                />
               )}
               {currentStep === 2 && (
                 <StepAquaSettings
