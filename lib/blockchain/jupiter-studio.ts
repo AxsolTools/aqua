@@ -4,7 +4,13 @@
  * Creates tokens on Jupiter's Dynamic Bonding Curve (DBC) pools
  * and manages post-launch fee collection.
  * 
- * API Documentation: https://dev.jup.ag/docs/studio-api/create-token
+ * API Documentation: https://dev.jup.ag/docs/studio/create-token
+ * 
+ * IMPORTANT: This follows the official Jupiter Studio API spec:
+ * - POST /dbc-pool/create-tx - Get unsigned transaction + presigned URLs
+ * - PUT presigned URLs - Upload image and metadata
+ * - POST /dbc-pool/submit - Submit signed transaction (multipart/form-data)
+ * - POST /dbc-pool/fee/claim-tx - Get fee claim transaction
  */
 
 import {
@@ -21,6 +27,47 @@ import bs58 from 'bs58';
 
 const JUPITER_API_BASE = 'https://api.jup.ag';
 const JUPITER_STUDIO_API = `${JUPITER_API_BASE}/studio/v1`;
+
+// Quote mint addresses
+export const JUPITER_QUOTE_MINTS = {
+  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  SOL: 'So11111111111111111111111111111111111111112',
+  JUP: 'JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN',
+} as const;
+
+// Preset configurations from Jupiter docs
+export const JUPITER_PRESETS = {
+  // Meme preset - Great for memes, similar profile to traditional meme launches
+  // 16K initial MC, 69K migration MC, ~17.94K USDC raised before graduation
+  MEME: {
+    quoteMint: JUPITER_QUOTE_MINTS.USDC,
+    initialMarketCap: 16000,
+    migrationMarketCap: 69000,
+    tokenQuoteDecimal: 6,
+    lockedVestingParam: {
+      totalLockedVestingAmount: 0,
+      cliffUnlockAmount: 0,
+      numberOfVestingPeriod: 0,
+      totalVestingDuration: 0,
+      cliffDurationFromMigrationTime: 0,
+    },
+  },
+  // Indie preset - For projects ready to take it up a notch
+  // 32K initial MC, 240K migration MC, ~57.78K USDC raised, 10% vested over 12 months
+  INDIE: {
+    quoteMint: JUPITER_QUOTE_MINTS.USDC,
+    initialMarketCap: 32000,
+    migrationMarketCap: 240000,
+    tokenQuoteDecimal: 6,
+    lockedVestingParam: {
+      totalLockedVestingAmount: 100000000, // 10% of 1B supply
+      cliffUnlockAmount: 0,
+      numberOfVestingPeriod: 365,
+      totalVestingDuration: 31536000, // 1 year in seconds
+      cliffDurationFromMigrationTime: 0,
+    },
+  },
+} as const;
 
 // Get API key from environment
 const getJupiterApiKey = (): string => {
@@ -46,12 +93,33 @@ export interface JupiterTokenMetadata {
   discord?: string;
 }
 
+export interface JupiterCurveParams {
+  quoteMint: string; // USDC, SOL, or JUP mint address
+  initialMarketCap: number; // In quote currency (e.g., 16000 = 16K USDC)
+  migrationMarketCap: number; // When to migrate to DEX
+  tokenQuoteDecimal: number; // Decimals for quote token (6 for USDC)
+  lockedVestingParam: {
+    totalLockedVestingAmount: number;
+    cliffUnlockAmount: number;
+    numberOfVestingPeriod: number;
+    totalVestingDuration: number;
+    cliffDurationFromMigrationTime: number;
+  };
+}
+
 export interface CreateJupiterTokenParams {
   metadata: JupiterTokenMetadata;
   creatorKeypair: Keypair;
-  initialBuySol?: number;
+  curveParams?: JupiterCurveParams; // Uses MEME preset if not provided
+  feeBps?: number; // Trading fee in basis points (default 100 = 1%)
+  antiSniping?: boolean; // Enable anti-sniping protection
+  isLpLocked?: boolean; // Lock LP tokens (default true)
+  initialBuySol?: number; // Initial buy in SOL (converted to quote)
   slippageBps?: number;
   mintKeypair?: Keypair;
+  // Optional Studio page customization
+  pageContent?: string; // Description for Jupiter Studio page
+  headerImage?: Buffer; // Header image for Studio page
 }
 
 export interface CreateJupiterTokenResult {
@@ -83,30 +151,39 @@ export interface ClaimFeesResult {
   error?: string;
 }
 
-// Response types from Jupiter API
+// Response types from Jupiter API (matching official docs)
 interface CreateTxResponse {
-  transaction: string; // base64 encoded
+  transaction: string; // base64 encoded unsigned transaction
+  mint: string; // The mint address of the token being created
+  imagePresignedUrl: string; // PUT request endpoint to upload token image
+  metadataPresignedUrl: string; // PUT request endpoint to upload token metadata
+  imageUrl: string; // The token's static image URL to use in metadata
+}
+
+interface SubmitResponse {
+  txSignature: string;
   mint: string;
-  imageUploadUrl: string;
-  metadataUploadUrl: string;
+  poolAddress?: string;
 }
 
 interface PoolAddressResponse {
   data: {
     dbcPoolAddress: string;
+    meteoraDammV2PoolAddress?: string;
+    configKey?: string;
   };
 }
 
-interface FeeResponse {
+interface FeeInfoResponse {
   data: {
     totalFee: number;
     unclaimedFee: number;
-    claimedFee: number;
+    claimedFee?: number;
   };
 }
 
 interface ClaimTxResponse {
-  transaction: string; // base64 encoded
+  transaction: string; // base64 encoded unsigned transaction
 }
 
 // ============================================================================
@@ -122,7 +199,10 @@ async function jupiterRequest<T>(
 ): Promise<T> {
   const apiKey = getJupiterApiKey();
   
-  const response = await fetch(`${JUPITER_STUDIO_API}${endpoint}`, {
+  const url = `${JUPITER_STUDIO_API}${endpoint}`;
+  console.log(`[JUPITER] API Request: ${options.method || 'GET'} ${url}`);
+  
+  const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
@@ -135,6 +215,56 @@ async function jupiterRequest<T>(
     const errorText = await response.text();
     console.error(`[JUPITER] API error: ${response.status} - ${errorText}`);
     throw new Error(`Jupiter API error: ${response.status} - ${errorText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Submit signed transaction to Jupiter (multipart/form-data)
+ */
+async function jupiterSubmit(
+  signedTransaction: string,
+  owner: string,
+  pageContent?: string,
+  headerImage?: Buffer
+): Promise<SubmitResponse> {
+  const apiKey = getJupiterApiKey();
+  
+  const formData = new FormData();
+  formData.append('transaction', signedTransaction);
+  formData.append('owner', owner);
+  
+  if (pageContent) {
+    formData.append('content', pageContent);
+  }
+  
+  if (headerImage) {
+    // Convert Buffer to Uint8Array for Blob compatibility
+    const uint8Array = new Uint8Array(headerImage);
+    formData.append(
+      'headerImage',
+      new Blob([uint8Array], { type: 'image/jpeg' }),
+      'header.jpeg'
+    );
+  }
+
+  const url = `${JUPITER_STUDIO_API}/dbc-pool/submit`;
+  console.log(`[JUPITER] Submit Request: POST ${url}`);
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'x-api-key': apiKey,
+      // Note: Don't set Content-Type for FormData, browser sets it with boundary
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`[JUPITER] Submit error: ${response.status} - ${errorText}`);
+    throw new Error(`Jupiter submit error: ${response.status} - ${errorText}`);
   }
 
   return response.json();
@@ -156,6 +286,20 @@ function dataUriToBuffer(dataUri: string): { buffer: Buffer; mimeType: string } 
 }
 
 /**
+ * Get content type from mime type
+ */
+function getImageContentType(mimeType: string): string {
+  const typeMap: Record<string, string> = {
+    'image/png': 'image/png',
+    'image/jpeg': 'image/jpeg',
+    'image/jpg': 'image/jpeg',
+    'image/gif': 'image/gif',
+    'image/webp': 'image/webp',
+  };
+  return typeMap[mimeType] || 'image/jpeg';
+}
+
+/**
  * Upload file to presigned URL
  */
 async function uploadToPresignedUrl(
@@ -163,24 +307,31 @@ async function uploadToPresignedUrl(
   data: Buffer | string,
   contentType: string
 ): Promise<void> {
+  console.log(`[JUPITER] Uploading to presigned URL (${contentType})...`);
+  
+  // Convert Buffer to Uint8Array for fetch compatibility
+  const body = typeof data === 'string' ? data : new Uint8Array(data);
+  
   const response = await fetch(url, {
     method: 'PUT',
     headers: {
       'Content-Type': contentType,
     },
-    body: data,
+    body,
   });
 
   if (!response.ok) {
     const errorText = await response.text();
     throw new Error(`Failed to upload to presigned URL: ${response.status} - ${errorText}`);
   }
+  
+  console.log(`[JUPITER] ✅ Upload successful`);
 }
 
 /**
- * Build Metaplex-compatible metadata JSON
+ * Build Metaplex-compatible metadata JSON for Jupiter
  */
-function buildMetaplexMetadata(
+function buildJupiterMetadata(
   metadata: JupiterTokenMetadata,
   imageUrl: string
 ): object {
@@ -189,24 +340,10 @@ function buildMetaplexMetadata(
     symbol: metadata.symbol,
     description: metadata.description,
     image: imageUrl,
-    showName: true,
-    createdOn: 'https://aqua.launchpad',
-    ...(metadata.website && { external_url: metadata.website }),
-    properties: {
-      files: [
-        {
-          uri: imageUrl,
-          type: 'image/png',
-        },
-      ],
-      category: 'image',
-    },
-    attributes: [
-      ...(metadata.twitter ? [{ trait_type: 'twitter', value: metadata.twitter }] : []),
-      ...(metadata.telegram ? [{ trait_type: 'telegram', value: metadata.telegram }] : []),
-      ...(metadata.discord ? [{ trait_type: 'discord', value: metadata.discord }] : []),
-      ...(metadata.website ? [{ trait_type: 'website', value: metadata.website }] : []),
-    ],
+    // Optional social links
+    ...(metadata.website && { website: metadata.website }),
+    ...(metadata.twitter && { twitter: metadata.twitter }),
+    ...(metadata.telegram && { telegram: metadata.telegram }),
   };
 }
 
@@ -217,11 +354,12 @@ function buildMetaplexMetadata(
 /**
  * Create a new token on Jupiter's Dynamic Bonding Curve
  * 
- * Flow:
- * 1. Request create-tx from Jupiter (returns unsigned tx + presigned URLs)
- * 2. Upload image to presigned URL
- * 3. Upload metadata JSON to presigned URL
- * 4. Sign and submit transaction
+ * Flow (per official docs):
+ * 1. POST /dbc-pool/create-tx - Get unsigned tx + presigned URLs
+ * 2. PUT imagePresignedUrl - Upload token image
+ * 3. PUT metadataPresignedUrl - Upload token metadata JSON
+ * 4. Sign transaction with creator + mint keypairs
+ * 5. POST /dbc-pool/submit - Submit signed transaction (multipart/form-data)
  */
 export async function createJupiterToken(
   connection: Connection,
@@ -230,41 +368,68 @@ export async function createJupiterToken(
   const {
     metadata,
     creatorKeypair,
+    curveParams = JUPITER_PRESETS.MEME,
+    feeBps = 100, // 1% trading fee
+    antiSniping = false,
+    isLpLocked = true,
     initialBuySol = 0,
     slippageBps = 500,
     mintKeypair: providedMintKeypair,
+    pageContent,
+    headerImage,
   } = params;
 
   try {
     console.log(`[JUPITER] Creating token: ${metadata.name} (${metadata.symbol})`);
+    console.log(`[JUPITER] Curve: ${curveParams.initialMarketCap} -> ${curveParams.migrationMarketCap} (${curveParams.quoteMint.slice(0, 8)}...)`);
 
-    // Step 1: Use provided mint keypair or generate new one
-    const mintKeypair = providedMintKeypair || Keypair.generate();
-    console.log(`[JUPITER] Mint address: ${mintKeypair.publicKey.toBase58()}`);
+    // Determine image content type
+    let imageContentType = 'image/jpeg';
+    if (metadata.image.startsWith('data:')) {
+      const parsed = dataUriToBuffer(metadata.image);
+      imageContentType = getImageContentType(parsed.mimeType);
+    }
 
-    // Step 2: Request create transaction from Jupiter
-    console.log('[JUPITER] Requesting create transaction...');
+    // Step 1: Request create transaction from Jupiter
+    console.log('[JUPITER] Step 1: Requesting create transaction...');
     
-    const createTxResponse = await jupiterRequest<CreateTxResponse>('/create-tx', {
+    const createTxBody = {
+      buildCurveByMarketCapParam: {
+        quoteMint: curveParams.quoteMint,
+        initialMarketCap: curveParams.initialMarketCap,
+        migrationMarketCap: curveParams.migrationMarketCap,
+        tokenQuoteDecimal: curveParams.tokenQuoteDecimal,
+        lockedVestingParam: curveParams.lockedVestingParam,
+      },
+      antiSniping,
+      fee: { feeBps },
+      isLpLocked,
+      tokenName: metadata.name,
+      tokenSymbol: metadata.symbol,
+      tokenImageContentType: imageContentType,
+      creator: creatorKeypair.publicKey.toBase58(),
+    };
+
+    console.log('[JUPITER] Create TX body:', JSON.stringify(createTxBody, null, 2));
+
+    const createTxResponse = await jupiterRequest<CreateTxResponse>('/dbc-pool/create-tx', {
       method: 'POST',
-      body: JSON.stringify({
-        publicKey: creatorKeypair.publicKey.toBase58(),
-        mint: mintKeypair.publicKey.toBase58(),
-        name: metadata.name,
-        symbol: metadata.symbol,
-        description: metadata.description,
-        // Initial buy amount in lamports
-        ...(initialBuySol > 0 && {
-          buyAmount: Math.floor(initialBuySol * 1e9),
-          slippageBps,
-        }),
-      }),
+      body: JSON.stringify(createTxBody),
     });
 
-    const { transaction: txBase64, imageUploadUrl, metadataUploadUrl } = createTxResponse;
+    const { 
+      transaction: txBase64, 
+      mint: mintAddress,
+      imagePresignedUrl, 
+      metadataPresignedUrl,
+      imageUrl 
+    } = createTxResponse;
 
-    // Step 3: Upload image to presigned URL
-    console.log('[JUPITER] Uploading image...');
+    console.log(`[JUPITER] Received mint address: ${mintAddress}`);
+    console.log(`[JUPITER] Image URL will be: ${imageUrl}`);
+
+    // Step 2: Upload image to presigned URL
+    console.log('[JUPITER] Step 2: Uploading image...');
     
     let imageBuffer: Buffer;
     let imageMimeType: string;
@@ -287,66 +452,61 @@ export async function createJupiterToken(
       throw new Error('Invalid image format. Must be data URI or URL.');
     }
 
-    await uploadToPresignedUrl(imageUploadUrl, imageBuffer, imageMimeType);
+    await uploadToPresignedUrl(imagePresignedUrl, imageBuffer, getImageContentType(imageMimeType));
     console.log('[JUPITER] ✅ Image uploaded');
 
-    // Step 4: Upload metadata JSON to presigned URL
-    console.log('[JUPITER] Uploading metadata...');
+    // Step 3: Upload metadata JSON to presigned URL
+    console.log('[JUPITER] Step 3: Uploading metadata...');
     
-    // Extract the image URL from the presigned URL (remove query params)
-    const imageUrl = imageUploadUrl.split('?')[0];
-    const metadataJson = buildMetaplexMetadata(metadata, imageUrl);
+    const metadataJson = buildJupiterMetadata(metadata, imageUrl);
+    console.log('[JUPITER] Metadata:', JSON.stringify(metadataJson, null, 2));
     
     await uploadToPresignedUrl(
-      metadataUploadUrl,
+      metadataPresignedUrl,
       JSON.stringify(metadataJson),
       'application/json'
     );
     console.log('[JUPITER] ✅ Metadata uploaded');
 
-    // Step 5: Deserialize, sign, and submit transaction
-    console.log('[JUPITER] Signing and submitting transaction...');
+    // Step 4: Deserialize and sign transaction
+    console.log('[JUPITER] Step 4: Signing transaction...');
     
     const transaction = VersionedTransaction.deserialize(
       Buffer.from(txBase64, 'base64')
     );
     
-    // Sign with both creator and mint keypairs
-    transaction.sign([creatorKeypair, mintKeypair]);
+    // Sign with creator keypair
+    // Note: Jupiter's create-tx generates the mint internally, we don't need to sign with mint keypair
+    transaction.sign([creatorKeypair]);
     
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
+    const signedTransaction = Buffer.from(transaction.serialize()).toString('base64');
 
-    console.log(`[JUPITER] Transaction submitted: ${signature}`);
-
-    // Wait for confirmation
-    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    // Step 5: Submit via Jupiter's submit endpoint
+    console.log('[JUPITER] Step 5: Submitting to Jupiter...');
     
-    if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-    }
+    const submitResult = await jupiterSubmit(
+      signedTransaction,
+      creatorKeypair.publicKey.toBase58(),
+      pageContent,
+      headerImage
+    );
 
-    console.log(`[JUPITER] ✅ Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
-
-    // Get the DBC pool address
-    let dbcPoolAddress: string | undefined;
-    try {
-      dbcPoolAddress = await getJupiterPoolAddress(mintKeypair.publicKey.toBase58());
-    } catch (poolError) {
-      console.warn('[JUPITER] Could not fetch pool address immediately:', poolError);
+    console.log(`[JUPITER] ✅ Token created successfully!`);
+    console.log(`[JUPITER] Mint: ${mintAddress}`);
+    console.log(`[JUPITER] TX: ${submitResult.txSignature}`);
+    if (submitResult.poolAddress) {
+      console.log(`[JUPITER] Pool: ${submitResult.poolAddress}`);
     }
 
     // Extract metadata URI from presigned URL
-    const metadataUri = metadataUploadUrl.split('?')[0];
+    const metadataUri = metadataPresignedUrl.split('?')[0];
 
     return {
       success: true,
-      mintAddress: mintKeypair.publicKey.toBase58(),
+      mintAddress,
       metadataUri,
-      txSignature: signature,
-      dbcPoolAddress,
+      txSignature: submitResult.txSignature,
+      dbcPoolAddress: submitResult.poolAddress,
     };
 
   } catch (error) {
@@ -358,12 +518,139 @@ export async function createJupiterToken(
   }
 }
 
+/**
+ * Create token with initial buy
+ * 
+ * Note: For initial buys, we need to create the token first, then buy separately
+ * because Jupiter's create-tx doesn't support initial buy in the same transaction
+ */
+export async function createJupiterTokenWithBuy(
+  connection: Connection,
+  params: CreateJupiterTokenParams
+): Promise<CreateJupiterTokenResult> {
+  const { initialBuySol = 0 } = params;
+  
+  // First create the token
+  const createResult = await createJupiterToken(connection, params);
+  
+  if (!createResult.success || !createResult.mintAddress) {
+    return createResult;
+  }
+
+  // If initial buy is requested, perform it after token creation
+  if (initialBuySol > 0) {
+    console.log(`[JUPITER] Performing initial buy of ${initialBuySol} SOL...`);
+    
+    try {
+      // Use Jupiter swap API for the initial buy
+      const buyResult = await performJupiterBuy(
+        connection,
+        params.creatorKeypair,
+        createResult.mintAddress,
+        initialBuySol,
+        params.slippageBps || 500
+      );
+      
+      if (!buyResult.success) {
+        console.warn(`[JUPITER] Initial buy failed: ${buyResult.error}`);
+        // Token was created but buy failed - still return success with warning
+        return {
+          ...createResult,
+          error: `Token created but initial buy failed: ${buyResult.error}`,
+        };
+      }
+      
+      console.log(`[JUPITER] ✅ Initial buy successful: ${buyResult.txSignature}`);
+    } catch (buyError) {
+      console.warn('[JUPITER] Initial buy error:', buyError);
+      // Token was created but buy failed
+      return {
+        ...createResult,
+        error: `Token created but initial buy failed: ${buyError instanceof Error ? buyError.message : 'Unknown error'}`,
+      };
+    }
+  }
+
+  return createResult;
+}
+
+/**
+ * Perform a buy on Jupiter
+ */
+async function performJupiterBuy(
+  connection: Connection,
+  buyerKeypair: Keypair,
+  mintAddress: string,
+  amountSol: number,
+  slippageBps: number
+): Promise<{ success: boolean; txSignature?: string; error?: string }> {
+  try {
+    const amountLamports = Math.floor(amountSol * 1e9);
+    
+    // Use Jupiter's swap API
+    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${mintAddress}&amount=${amountLamports}&slippageBps=${slippageBps}`;
+    
+    console.log(`[JUPITER] Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 8)}...`);
+    
+    const quoteResponse = await fetch(quoteUrl);
+    if (!quoteResponse.ok) {
+      throw new Error(`Quote failed: ${quoteResponse.status}`);
+    }
+    const quoteData = await quoteResponse.json();
+
+    // Get swap transaction
+    const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        quoteResponse: quoteData,
+        userPublicKey: buyerKeypair.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+      }),
+    });
+
+    if (!swapResponse.ok) {
+      throw new Error(`Swap transaction failed: ${swapResponse.status}`);
+    }
+
+    const { swapTransaction } = await swapResponse.json();
+    
+    // Deserialize and sign
+    const transaction = VersionedTransaction.deserialize(
+      Buffer.from(swapTransaction, 'base64')
+    );
+    transaction.sign([buyerKeypair]);
+
+    // Send transaction
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
+      skipPreflight: false,
+      maxRetries: 3,
+    });
+
+    // Confirm
+    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    if (confirmation.value.err) {
+      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+    }
+
+    return { success: true, txSignature: signature };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Buy failed',
+    };
+  }
+}
+
 // ============================================================================
 // POOL & FEE MANAGEMENT
 // ============================================================================
 
 /**
  * Get the DBC pool address for a token
+ * 
+ * Per docs: GET /dbc-pool/addresses/{mint}
+ * Returns: { data: { dbcPoolAddress, meteoraDammV2PoolAddress, configKey } }
  */
 export async function getJupiterPoolAddress(mintAddress: string): Promise<string> {
   console.log(`[JUPITER] Fetching pool address for mint: ${mintAddress}`);
@@ -377,45 +664,56 @@ export async function getJupiterPoolAddress(mintAddress: string): Promise<string
 
 /**
  * Get unclaimed fees for a Jupiter DBC pool
+ * 
+ * Per docs: POST /dbc/fee with body { poolAddress }
+ * Returns: { data: { totalFee, unclaimedFee } }
  */
-export async function getJupiterFeeInfo(poolAddress: string): Promise<JupiterFeeInfo> {
+export async function getJupiterFeeInfo(
+  poolAddress: string
+): Promise<JupiterFeeInfo> {
   console.log(`[JUPITER] Fetching fee info for pool: ${poolAddress}`);
   
-  const response = await jupiterRequest<FeeResponse>('/dbc/fee', {
+  const response = await jupiterRequest<FeeInfoResponse>('/dbc/fee', {
     method: 'POST',
-    body: JSON.stringify({
-      poolAddress,
-    }),
+    body: JSON.stringify({ poolAddress }),
   });
   
   return {
-    totalFees: response.data.totalFee,
-    unclaimedFees: response.data.unclaimedFee,
-    claimedFees: response.data.claimedFee,
+    totalFees: response.data.totalFee || 0,
+    unclaimedFees: response.data.unclaimedFee || 0,
+    claimedFees: response.data.claimedFee || 0,
     poolAddress,
   };
 }
 
 /**
  * Claim fees from a Jupiter DBC pool
+ * 
+ * Per docs: POST /dbc/fee/create-tx with body { ownerWallet, poolAddress, maxQuoteAmount }
+ * Returns: { transaction } - unsigned transaction to sign and submit
  */
 export async function claimJupiterFees(
   connection: Connection,
   creatorKeypair: Keypair,
   poolAddress: string,
-  maxQuoteAmount: number = 1_000_000_000_000 // Default to very high to claim all
+  maxQuoteAmount?: number
 ): Promise<ClaimFeesResult> {
   try {
     console.log(`[JUPITER] Creating claim transaction for pool: ${poolAddress}`);
 
-    // Step 1: Get the claim transaction
+    // Step 1: Get the claim transaction from Jupiter
+    const claimBody: Record<string, unknown> = {
+      ownerWallet: creatorKeypair.publicKey.toBase58(),
+      poolAddress,
+    };
+    
+    if (maxQuoteAmount !== undefined) {
+      claimBody.maxQuoteAmount = maxQuoteAmount;
+    }
+
     const claimTxResponse = await jupiterRequest<ClaimTxResponse>('/dbc/fee/create-tx', {
       method: 'POST',
-      body: JSON.stringify({
-        ownerWallet: creatorKeypair.publicKey.toBase58(),
-        poolAddress,
-        maxQuoteAmount,
-      }),
+      body: JSON.stringify(claimBody),
     });
 
     const { transaction: txBase64 } = claimTxResponse;
@@ -427,12 +725,12 @@ export async function claimJupiterFees(
     
     transaction.sign([creatorKeypair]);
 
-    // Step 3: Submit transaction
+    // Step 3: Submit transaction directly to RPC
     console.log('[JUPITER] Submitting claim transaction...');
     
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: true,
-      maxRetries: 0,
+      skipPreflight: false,
+      maxRetries: 3,
     });
 
     console.log(`[JUPITER] Claim transaction submitted: ${signature}`);
@@ -504,4 +802,3 @@ export {
   JUPITER_API_BASE,
   JUPITER_STUDIO_API,
 };
-

@@ -5,7 +5,7 @@
  * Includes:
  * - Metadata upload via Jupiter presigned URLs
  * - Token creation on DBC pool
- * - Optional initial buy
+ * - Optional initial buy (performed after creation)
  * - Fee collection
  * - Database record creation
  */
@@ -17,7 +17,13 @@ import { getAdminClient } from '@/lib/supabase/admin';
 import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
 import { validateBalanceForTransaction, collectPlatformFee, TOKEN_CREATION_FEE_LAMPORTS, TOKEN_CREATION_FEE_SOL } from '@/lib/fees';
 import { solToLamports, lamportsToSol, calculatePlatformFee } from '@/lib/precision';
-import { createJupiterToken, validateJupiterTokenParams, getJupiterPoolAddress } from '@/lib/blockchain/jupiter-studio';
+import { 
+  createJupiterTokenWithBuy, 
+  validateJupiterTokenParams, 
+  JUPITER_PRESETS,
+  JUPITER_QUOTE_MINTS,
+  type JupiterCurveParams,
+} from '@/lib/blockchain/jupiter-studio';
 import { getReferrer, addReferralEarnings } from '@/lib/referral';
 
 // ============================================================================
@@ -86,6 +92,15 @@ export async function POST(request: NextRequest) {
       claimThreshold = 0.1,
       claimInterval = 'daily',
       
+      // Jupiter-specific settings
+      preset = 'meme', // 'meme' or 'indie'
+      quoteMint = 'usdc', // 'usdc', 'sol', or 'jup'
+      initialMarketCap,
+      migrationMarketCap,
+      feeBps = 100, // 1% trading fee
+      antiSniping = false,
+      isLpLocked = true,
+      
       // Advanced settings
       migrationThreshold = 85,
       migrationTarget = 'raydium',
@@ -96,7 +111,7 @@ export async function POST(request: NextRequest) {
       initialBuySol = 0,
       slippageBps = 500,
       
-      // Pre-generated mint keypair from frontend
+      // Pre-generated mint keypair from frontend (not used by Jupiter, but kept for consistency)
       mintSecretKey,
       mintAddress: preGeneratedMintAddress,
     } = body;
@@ -146,7 +161,7 @@ export async function POST(request: NextRequest) {
     const creatorKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
 
     // ========== BALANCE VALIDATION ==========
-    const estimatedCostSol = MIN_CREATE_BALANCE_SOL + initialBuySol;
+    const estimatedCostSol = MIN_CREATE_BALANCE_SOL + initialBuySol + TOKEN_CREATION_FEE_SOL;
     const operationLamports = solToLamports(estimatedCostSol);
     const priorityFeeLamports = solToLamports(0.001);
 
@@ -175,28 +190,60 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ========== CREATE TOKEN ON JUPITER ==========
-    console.log(`[JUPITER] Creating token: ${name} (${symbol})`);
-
-    // Decode pre-generated mint keypair from frontend if provided
-    let mintKeypair: Keypair | undefined;
-    if (mintSecretKey) {
-      try {
-        mintKeypair = Keypair.fromSecretKey(bs58.decode(mintSecretKey));
-        console.log(`[JUPITER] Using pre-generated mint: ${mintKeypair.publicKey.toBase58()}`);
-        
-        // Verify it matches the claimed address
-        if (preGeneratedMintAddress && mintKeypair.publicKey.toBase58() !== preGeneratedMintAddress) {
-          console.warn(`[JUPITER] Mint address mismatch! Frontend: ${preGeneratedMintAddress}, Decoded: ${mintKeypair.publicKey.toBase58()}`);
-        }
-      } catch (decodeError) {
-        console.warn('[JUPITER] Failed to decode mint keypair, will generate new one');
-        mintKeypair = undefined;
-      }
+    // ========== BUILD CURVE PARAMETERS ==========
+    // Determine quote mint
+    let selectedQuoteMint: string;
+    let tokenQuoteDecimal: number;
+    
+    switch (quoteMint.toLowerCase()) {
+      case 'sol':
+        selectedQuoteMint = JUPITER_QUOTE_MINTS.SOL;
+        tokenQuoteDecimal = 9;
+        break;
+      case 'jup':
+        selectedQuoteMint = JUPITER_QUOTE_MINTS.JUP;
+        tokenQuoteDecimal = 6;
+        break;
+      case 'usdc':
+      default:
+        selectedQuoteMint = JUPITER_QUOTE_MINTS.USDC;
+        tokenQuoteDecimal = 6;
+        break;
     }
 
+    // Build curve params - use preset or custom values
+    let curveParams: JupiterCurveParams;
+    
+    if (preset === 'indie') {
+      curveParams = {
+        ...JUPITER_PRESETS.INDIE,
+        quoteMint: selectedQuoteMint,
+        tokenQuoteDecimal,
+      };
+    } else {
+      // Default to meme preset
+      curveParams = {
+        ...JUPITER_PRESETS.MEME,
+        quoteMint: selectedQuoteMint,
+        tokenQuoteDecimal,
+      };
+    }
+
+    // Override with custom values if provided
+    if (initialMarketCap) {
+      curveParams.initialMarketCap = initialMarketCap;
+    }
+    if (migrationMarketCap) {
+      curveParams.migrationMarketCap = migrationMarketCap;
+    }
+
+    // ========== CREATE TOKEN ON JUPITER ==========
+    console.log(`[JUPITER] Creating token: ${name} (${symbol})`);
+    console.log(`[JUPITER] Preset: ${preset}, Quote: ${quoteMint}`);
+    console.log(`[JUPITER] Curve: ${curveParams.initialMarketCap} -> ${curveParams.migrationMarketCap}`);
+
     // Create token via Jupiter Studio API
-    const createResult = await createJupiterToken(connection, {
+    const createResult = await createJupiterTokenWithBuy(connection, {
       metadata: {
         name,
         symbol,
@@ -208,9 +255,12 @@ export async function POST(request: NextRequest) {
         discord,
       },
       creatorKeypair,
+      curveParams,
+      feeBps,
+      antiSniping,
+      isLpLocked,
       initialBuySol,
       slippageBps,
-      mintKeypair,
     });
 
     if (!createResult.success || !createResult.mintAddress) {
@@ -434,7 +484,7 @@ export async function POST(request: NextRequest) {
       source_tx_signature: createResult.txSignature,
       operation_type: 'jupiter_create',
       transaction_amount_lamports: Number(solToLamports(feeBaseSol)),
-      fee_amount_lamports: Number(platformFeeLamports),
+      fee_amount_lamports: Number(totalFeeLamports),
       fee_percentage: 2,
       referral_split_lamports: feeResult.referralShare ? Number(feeResult.referralShare) : 0,
       referrer_id: referrerUserId,
@@ -453,8 +503,14 @@ export async function POST(request: NextRequest) {
         metadataUri: createResult.metadataUri,
         txSignature: createResult.txSignature,
         dbcPoolAddress: createResult.dbcPoolAddress,
-        platformFee: lamportsToSol(platformFeeLamports),
+        platformFee: lamportsToSol(totalFeeLamports),
         pool: 'jupiter',
+        preset,
+        curveParams: {
+          quoteMint: quoteMint,
+          initialMarketCap: curveParams.initialMarketCap,
+          migrationMarketCap: curveParams.migrationMarketCap,
+        },
       },
     });
 
@@ -473,4 +529,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-

@@ -13,7 +13,7 @@ import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
 import { executeBundle } from "@/lib/blockchain/jito-bundles"
 import { solToLamports, lamportsToSol, calculatePlatformFee } from "@/lib/precision"
-import { createJupiterToken, getJupiterPoolAddress } from "@/lib/blockchain/jupiter-studio"
+import { createJupiterToken, getJupiterPoolAddress, JUPITER_PRESETS } from "@/lib/blockchain/jupiter-studio"
 import { collectPlatformFee, TOKEN_CREATION_FEE_LAMPORTS, TOKEN_CREATION_FEE_SOL } from "@/lib/fees"
 import { getReferrer, addReferralEarnings } from "@/lib/referral"
 
@@ -173,9 +173,12 @@ export async function POST(request: NextRequest) {
         discord,
       },
       creatorKeypair,
+      curveParams: JUPITER_PRESETS.MEME, // Default to meme preset
+      feeBps: 100, // 1% trading fee
+      antiSniping: false,
+      isLpLocked: true,
       initialBuySol,
       slippageBps: 1000, // 10% for bundle
-      mintKeypair,
     })
 
     if (!createResult.success || !createResult.mintAddress) {
