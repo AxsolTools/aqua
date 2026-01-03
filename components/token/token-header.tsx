@@ -48,6 +48,13 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
       }
       
       try {
+        // For Jupiter DBC tokens, use Jupiter's static image hosting
+        // Jupiter hosts images at: https://static-create.jup.ag/images/{mintAddress}
+        if (token.pool_type === 'jupiter') {
+          setTokenImageUrl(`https://static-create.jup.ag/images/${token.mint_address}`)
+          return
+        }
+        
         // Try our metadata API first (returns logoUri from Helius DAS or DexScreener)
         const metadataResponse = await fetch(`/api/token/${token.mint_address}/metadata`)
         if (metadataResponse.ok) {
@@ -61,16 +68,6 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
           }
         }
         
-        // Try Jupiter tokens API for Jupiter DBC tokens
-        const jupResponse = await fetch(`https://tokens.jup.ag/token/${token.mint_address}`)
-        if (jupResponse.ok) {
-          const jupData = await jupResponse.json()
-          if (jupData?.logoURI) {
-            setTokenImageUrl(jupData.logoURI)
-            return
-          }
-        }
-        
         // Fallback to DexScreener CDN
         setTokenImageUrl(`https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`)
       } catch (error) {
@@ -80,7 +77,7 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
     }
     
     fetchImageFromChain()
-  }, [token.mint_address, token.image_url])
+  }, [token.mint_address, token.image_url, token.pool_type])
 
   // Fetch live prices with 30-second polling
   const { priceUsd, priceSol, marketCap, isLoading: priceLoading } = useLivePrice(
