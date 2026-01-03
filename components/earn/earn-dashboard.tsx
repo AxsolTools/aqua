@@ -59,7 +59,7 @@ interface Earnings {
 const PROPEL_MINT = process.env.NEXT_PUBLIC_PROPEL_TOKEN_MINT || ''
 
 export function EarnDashboard() {
-  const { sessionId, activeWallet, wallets, isAuthenticated } = useAuth()
+  const { sessionId, activeWallet, wallets, isAuthenticated, setIsOnboarding } = useAuth()
   
   const [vaults, setVaults] = useState<Vault[]>([])
   const [positions, setPositions] = useState<Position[]>([])
@@ -135,16 +135,14 @@ export function EarnDashboard() {
     if (!activeWallet || !PROPEL_MINT) return
     
     try {
-      // Use existing balance API or token balance endpoint
-      const response = await fetch(`/api/token/balance?wallet=${activeWallet.publicKey}&mint=${PROPEL_MINT}`)
+      const response = await fetch(`/api/token/balance?wallet=${activeWallet.public_key}&mint=${PROPEL_MINT}`)
       const data = await response.json()
       
       if (data.success) {
-        setPropelBalance(data.balance || 0)
+        setPropelBalance(data.data?.balance || 0)
       }
     } catch (err) {
       console.error('PROPEL balance fetch error:', err)
-      // Set a mock balance for now if API doesn't exist
       setPropelBalance(0)
     }
   }, [activeWallet])
@@ -177,7 +175,7 @@ export function EarnDashboard() {
     const interval = setInterval(() => {
       fetchPositions()
       fetchEarnings()
-    }, 30000) // Every 30 seconds
+    }, 30000)
 
     return () => clearInterval(interval)
   }, [fetchPositions, fetchEarnings])
@@ -203,7 +201,6 @@ export function EarnDashboard() {
   }
 
   const handleSuccess = () => {
-    // Refresh data after successful transaction
     fetchPositions()
     fetchEarnings()
     fetchPropelBalance()
@@ -224,32 +221,44 @@ export function EarnDashboard() {
   }
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-[var(--text-primary)]">
-            PROPEL <span className="text-[var(--aqua-primary)]">Earn</span>
-          </h1>
-          <p className="text-[var(--text-muted)] mt-1">
-            Swap PROPEL tokens into yield-bearing positions
-          </p>
-        </div>
+    <div className="space-y-10">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--bg-card)] via-[var(--bg-elevated)] to-[var(--bg-card)] border border-[var(--border-subtle)] p-8 md:p-12">
+        {/* Background decoration */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-[var(--aqua-primary)]/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-[var(--green)]/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2" />
         
-        {/* PROPEL Balance Badge */}
-        {activeWallet && PROPEL_MINT && (
-          <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-gradient-to-r from-[var(--aqua-primary)]/10 to-[var(--warm-pink)]/10 border border-[var(--aqua-border)]">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center shadow-lg">
-              <span className="text-xs font-bold text-white">P</span>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--text-muted)]">Your PROPEL</p>
-              <p className="text-lg font-semibold text-[var(--text-primary)] tabular-nums">
-                {propelBalance.toLocaleString()}
-              </p>
-            </div>
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+          <div className="max-w-2xl">
+            <h1 className="text-4xl md:text-5xl font-bold text-[var(--text-primary)] mb-4">
+              PROPEL <span className="text-transparent bg-clip-text bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--green)]">Earn</span>
+            </h1>
+            <p className="text-lg text-[var(--text-secondary)] mb-2">
+              Turn your idle tokens into yield-generating assets
+            </p>
+            <p className="text-sm text-[var(--text-muted)]">
+              Deposit PROPEL in one click. We handle the swap and deposit atomically. 
+              Earn passive income while you sleep.
+            </p>
           </div>
-        )}
+          
+          {/* PROPEL Balance Badge */}
+          {isAuthenticated && activeWallet && PROPEL_MINT && (
+            <div className="flex-shrink-0 p-5 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/10 to-[var(--warm-pink)]/10 border border-[var(--aqua-border)]">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center shadow-lg shadow-[var(--aqua-primary)]/25">
+                  <span className="text-lg font-bold text-white">P</span>
+                </div>
+                <div>
+                  <p className="text-xs text-[var(--text-muted)] mb-1">Your PROPEL Balance</p>
+                  <p className="text-2xl font-bold text-[var(--text-primary)] tabular-nums">
+                    {propelBalance.toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Earnings Summary - Only show if user has positions */}
@@ -264,13 +273,18 @@ export function EarnDashboard() {
 
       {/* Your Positions */}
       {positions.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-[var(--text-primary)]">Your Positions</h2>
-            <span className="text-sm text-[var(--text-muted)]">{positions.length} active</span>
+        <section>
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-[var(--text-primary)]">Your Positions</h2>
+              <p className="text-sm text-[var(--text-muted)] mt-1">Track your yield-generating assets</p>
+            </div>
+            <span className="px-3 py-1.5 rounded-full bg-[var(--green)]/10 text-[var(--green)] text-sm font-medium">
+              {positions.length} active
+            </span>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {positions.map((position, index) => {
               const vault = vaults.find(v => v.address === position.vaultAddress)
               const positionEarnings = earnings.find(
@@ -288,13 +302,59 @@ export function EarnDashboard() {
               )
             })}
           </div>
-        </div>
+        </section>
       )}
 
+      {/* How It Works - Educational Section */}
+      <section className="p-8 rounded-3xl bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-elevated)] border border-[var(--border-subtle)]">
+        <div className="text-center mb-10">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">How You Earn Money</h2>
+          <p className="text-[var(--text-muted)] max-w-2xl mx-auto">
+            Your deposited assets are lent to traders and protocols across Solana who pay interest to borrow. 
+            That interest flows back to you as yield. You're essentially becoming the bank.
+          </p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
+              <span className="text-2xl font-bold text-[var(--aqua-primary)]">1</span>
+            </div>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Swap & Deposit</h3>
+            <p className="text-sm text-[var(--text-muted)]">
+              Your PROPEL tokens are automatically swapped to USDC or SOL and deposited into secure yield vaults — all in one transaction.
+            </p>
+          </div>
+          
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
+              <span className="text-2xl font-bold text-[var(--aqua-primary)]">2</span>
+            </div>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Earn Yield</h3>
+            <p className="text-sm text-[var(--text-muted)]">
+              Your assets earn interest from lending plus additional rewards. APY fluctuates based on market demand — when more people want to borrow, you earn more.
+            </p>
+          </div>
+          
+          <div className="text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
+              <span className="text-2xl font-bold text-[var(--aqua-primary)]">3</span>
+            </div>
+            <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-2">Withdraw Anytime</h3>
+            <p className="text-sm text-[var(--text-muted)]">
+              No lockups. No vesting. No waiting periods. Your funds stay liquid. Withdraw your deposited assets plus accumulated yield whenever you want.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Available Vaults */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-[var(--text-primary)]">Available Vaults</h2>
+      <section>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h2 className="text-2xl font-bold text-[var(--text-primary)]">Available Vaults</h2>
+            <p className="text-sm text-[var(--text-muted)] mt-1">Choose where to put your assets to work</p>
+          </div>
           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
             <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
             <span>Live rates</span>
@@ -302,11 +362,11 @@ export function EarnDashboard() {
         </div>
 
         {vaults.length === 0 ? (
-          <div className="p-8 rounded-xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-center">
+          <div className="p-12 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)] text-center">
             <p className="text-[var(--text-muted)]">No vaults available at this time</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {vaults.map((vault) => (
               <VaultCard
                 key={vault.id}
@@ -316,69 +376,75 @@ export function EarnDashboard() {
             ))}
           </div>
         )}
-      </div>
+      </section>
 
-      {/* Info Section */}
-      <div className="p-6 rounded-2xl bg-gradient-to-br from-[var(--bg-card)] to-[var(--bg-elevated)] border border-[var(--border-subtle)]">
-        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4">How PROPEL Earn Works</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
-              <span className="text-lg font-bold text-[var(--aqua-primary)]">1</span>
-            </div>
-            <div>
-              <h4 className="font-medium text-[var(--text-primary)] mb-1">Swap PROPEL</h4>
-              <p className="text-sm text-[var(--text-muted)]">
-                Your PROPEL tokens are automatically swapped to the vault's underlying asset (USDC or SOL)
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
-              <span className="text-lg font-bold text-[var(--aqua-primary)]">2</span>
-            </div>
-            <div>
-              <h4 className="font-medium text-[var(--text-primary)] mb-1">Deposit & Earn</h4>
-              <p className="text-sm text-[var(--text-muted)]">
-                Assets are deposited into secure yield vaults, earning yield from lending and rewards
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex gap-3">
-            <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)]/20 to-[var(--aqua-secondary)]/10 flex items-center justify-center">
-              <span className="text-lg font-bold text-[var(--aqua-primary)]">3</span>
-            </div>
-            <div>
-              <h4 className="font-medium text-[var(--text-primary)] mb-1">Withdraw Anytime</h4>
-              <p className="text-sm text-[var(--text-muted)]">
-                Withdraw your position plus earnings whenever you want, subject to available liquidity
-              </p>
-            </div>
-          </div>
+      {/* Why Earn Section */}
+      <section className="p-8 rounded-3xl bg-gradient-to-r from-[var(--aqua-primary)]/5 via-[var(--bg-card)] to-[var(--green)]/5 border border-[var(--border-subtle)]">
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-4">Why This Matters</h2>
+          <p className="text-[var(--text-secondary)] mb-6">
+            Tokens sitting idle is dead capital. Every day your PROPEL sits in your wallet doing nothing, 
+            you're missing potential yield. Now those same tokens can generate <span className="text-[var(--aqua-primary)] font-semibold">5-15% APY</span> passive 
+            income while you maintain exposure to the ecosystem.
+          </p>
+          <p className="text-[var(--text-muted)]">
+            If you're bullish long-term anyway, why not earn yield on top of whatever price appreciation happens? 
+            This turns PROPEL from a speculative hold into a productive asset. You're not just hoping number goes up — 
+            you're collecting yield regardless of price action.
+          </p>
         </div>
-      </div>
+      </section>
+
+      {/* Multi-Wallet Info */}
+      {isAuthenticated && wallets.length > 1 && (
+        <section className="p-6 rounded-2xl bg-[var(--bg-card)] border border-[var(--border-subtle)]">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0">
+              <svg className="w-5 h-5 text-purple-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-3" strokeLinecap="round" />
+                <path d="M19 7h-8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold text-[var(--text-primary)] mb-1">Multi-Wallet Support</h3>
+              <p className="text-sm text-[var(--text-muted)]">
+                You have {wallets.length} wallets connected. Your Earn positions work across all of them. 
+                The dashboard aggregates everything — total deposited value, total earnings, positions per wallet — 
+                giving you a complete picture of your yield farming across your entire portfolio.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Connect Wallet CTA */}
       {!isAuthenticated && (
-        <div className="p-8 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)]/10 via-[var(--bg-card)] to-[var(--warm-pink)]/10 border border-[var(--aqua-border)] text-center">
-          <h3 className="text-xl font-semibold text-[var(--text-primary)] mb-2">
-            Connect Your Wallet to Start Earning
+        <section className="p-10 rounded-3xl bg-gradient-to-br from-[var(--aqua-primary)]/10 via-[var(--bg-card)] to-[var(--warm-pink)]/10 border border-[var(--aqua-border)] text-center">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--aqua-secondary)] flex items-center justify-center shadow-lg shadow-[var(--aqua-primary)]/25">
+            <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h13a1 1 0 0 0 1-1v-3" strokeLinecap="round" />
+              <path d="M19 7h-8a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
+              <circle cx="16" cy="12" r="1" fill="currentColor" />
+            </svg>
+          </div>
+          <h3 className="text-2xl font-bold text-[var(--text-primary)] mb-3">
+            Start Earning Today
           </h3>
-          <p className="text-[var(--text-muted)] mb-4">
-            Swap your PROPEL tokens into yield-bearing positions with one click
+          <p className="text-[var(--text-muted)] mb-6 max-w-md mx-auto">
+            Connect your wallet to deposit PROPEL and start earning yield. One click deposit, withdraw anytime.
           </p>
-          <button className={cn(
-            "px-6 py-3 rounded-xl font-semibold text-sm transition-all",
-            "bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)]",
-            "text-white shadow-lg shadow-[var(--aqua-primary)]/25",
-            "hover:shadow-xl hover:shadow-[var(--aqua-primary)]/30 hover:scale-[1.02]"
-          )}>
+          <button 
+            onClick={() => setIsOnboarding(true)}
+            className={cn(
+              "px-8 py-4 rounded-xl font-semibold text-base transition-all",
+              "bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)]",
+              "text-white shadow-lg shadow-[var(--aqua-primary)]/25",
+              "hover:shadow-xl hover:shadow-[var(--aqua-primary)]/30 hover:scale-[1.02]"
+            )}
+          >
             Connect Wallet
           </button>
-        </div>
+        </section>
       )}
 
       {/* Modals */}
@@ -410,4 +476,3 @@ export function EarnDashboard() {
     </div>
   )
 }
-

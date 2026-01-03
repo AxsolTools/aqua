@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Image from "next/image"
 import { cn } from "@/lib/utils"
 
 interface VaultCardProps {
@@ -27,11 +28,21 @@ interface VaultCardProps {
   isSelected?: boolean
 }
 
+// Official token logos
+const ASSET_LOGOS: Record<string, string> = {
+  USDC: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png',
+  SOL: 'https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png',
+}
+
 export function VaultCard({ vault, onDeposit, isSelected }: VaultCardProps) {
   const [isHovered, setIsHovered] = useState(false)
+  const [imageError, setImageError] = useState(false)
   
-  // Determine asset icon based on symbol
-  const getAssetIcon = () => {
+  // Get logo URL - use official logos or fallback
+  const logoUrl = ASSET_LOGOS[vault.asset.symbol] || vault.asset.logoUrl
+  
+  // Fallback icon if image fails
+  const renderFallbackIcon = () => {
     if (vault.asset.symbol === 'USDC') {
       return (
         <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
@@ -41,9 +52,11 @@ export function VaultCard({ vault, onDeposit, isSelected }: VaultCardProps) {
     }
     if (vault.asset.symbol === 'SOL') {
       return (
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 via-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-purple-500/25">
-          <svg className="w-6 h-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M4.5 7.5L12 3l7.5 4.5v9L12 21l-7.5-4.5v-9z" />
+        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195] flex items-center justify-center shadow-lg shadow-purple-500/25">
+          <svg className="w-6 h-6 text-white" viewBox="0 0 397.7 311.7" fill="currentColor">
+            <path d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7z"/>
+            <path d="M64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8z"/>
+            <path d="M333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z"/>
           </svg>
         </div>
       )
@@ -80,7 +93,20 @@ export function VaultCard({ vault, onDeposit, isSelected }: VaultCardProps) {
         {/* Header */}
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-center gap-4">
-            {getAssetIcon()}
+            {/* Asset Logo */}
+            {logoUrl && !imageError ? (
+              <div className="relative w-12 h-12 rounded-full overflow-hidden shadow-lg">
+                <Image
+                  src={logoUrl}
+                  alt={vault.asset.symbol}
+                  fill
+                  className="object-cover"
+                  onError={() => setImageError(true)}
+                />
+              </div>
+            ) : (
+              renderFallbackIcon()
+            )}
             <div>
               <h3 className="text-lg font-semibold text-[var(--text-primary)]">{vault.symbol}</h3>
               <p className="text-sm text-[var(--text-muted)]">{vault.asset.name}</p>
@@ -164,4 +190,3 @@ export function VaultCard({ vault, onDeposit, isSelected }: VaultCardProps) {
     </div>
   )
 }
-
