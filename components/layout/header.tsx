@@ -38,9 +38,9 @@ const EarnIcon = ({ className }: { className?: string }) => (
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/aggregator", label: "Token Aggregator", icon: BarChart3 },
-  { href: "/launch", label: "Launch" },
+  { href: "/launch", label: "Pump", color: "pump" },
   { href: "/launch-jupiter", label: "JUP", icon: JupiterIcon, color: "orange" },
-  { href: "/launch22", label: "TOKEN22" },
+  { href: "/launch22", label: "TOKEN22", color: "aqua" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
   { href: "/launch-bonk", label: "USD1", icon: DollarSign, color: "amber" },
   { href: "/earn", label: "Earn", icon: EarnIcon, color: "aqua" },
@@ -75,10 +75,12 @@ export function Header() {
                   ? item.color === "amber" 
                     ? "text-amber-400 hover:text-amber-300" 
                     : item.color === "aqua"
-                      ? "text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
+                      ? "text-[#00D9FF] hover:text-[#00F0FF]"
                       : item.color === "orange"
                         ? "text-orange-400 hover:text-orange-300"
-                        : ""
+                        : item.color === "pump"
+                          ? "text-[#00E676] hover:text-[#69F0AE]"
+                          : ""
                   : ""
                 
                 return (
@@ -209,10 +211,12 @@ export function Header() {
                     ? item.color === "amber" 
                       ? "text-amber-400 hover:text-amber-300" 
                       : item.color === "aqua"
-                        ? "text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
+                        ? "text-[#00D9FF] hover:text-[#00F0FF]"
                         : item.color === "orange"
                           ? "text-orange-400 hover:text-orange-300"
-                          : ""
+                          : item.color === "pump"
+                            ? "text-[#00E676] hover:text-[#69F0AE]"
+                            : ""
                     : ""
                   
                   return (
