@@ -18,6 +18,23 @@ const JupiterIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
+// Custom Earn icon - Vault with yield rays
+const EarnIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    {/* Vault base */}
+    <rect x="3" y="11" width="18" height="10" rx="2" />
+    {/* Vault door circle */}
+    <circle cx="12" cy="16" r="2.5" />
+    {/* Yield rays emanating upward */}
+    <path d="M12 3v4" />
+    <path d="M8 5l1.5 3" />
+    <path d="M16 5l-1.5 3" />
+    {/* Small sparkle accents */}
+    <circle cx="6" cy="4" r="0.5" fill="currentColor" />
+    <circle cx="18" cy="4" r="0.5" fill="currentColor" />
+  </svg>
+)
+
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/aggregator", label: "Token Aggregator", icon: BarChart3 },
@@ -26,6 +43,7 @@ const navItems = [
   { href: "/launch22", label: "TOKEN22" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
   { href: "/launch-bonk", label: "USD1", icon: DollarSign, color: "amber" },
+  { href: "/earn", label: "Earn", icon: EarnIcon, color: "aqua" },
   { href: "/volume-bot", label: "Volume Bot", icon: Activity },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
@@ -52,20 +70,32 @@ export function Header() {
 
             {/* Center Nav */}
             <nav className="hidden md:flex items-center gap-1">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
-                    pathname === item.href
-                      ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
-                      : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                  } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${'color' in item && item.color === "amber" ? "text-amber-400 hover:text-amber-300" : ""}`}
-                >
-                  {item.icon && <item.icon className="w-4 h-4" />}
-                  {item.label}
-                </Link>
-              ))}
+              {navItems.map((item) => {
+                const colorClass = 'color' in item 
+                  ? item.color === "amber" 
+                    ? "text-amber-400 hover:text-amber-300" 
+                    : item.color === "aqua"
+                      ? "text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
+                      : item.color === "orange"
+                        ? "text-orange-400 hover:text-orange-300"
+                        : ""
+                  : ""
+                
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
+                      pathname === item.href
+                        ? `text-[var(--text-primary)] bg-[var(--bg-secondary)] ${colorClass}`
+                        : `text-[var(--text-muted)] hover:text-[var(--text-secondary)] ${colorClass}`
+                    }`}
+                  >
+                    {item.icon && <item.icon className="w-4 h-4" />}
+                    {item.label}
+                  </Link>
+                )
+              })}
             </nav>
 
             {/* Right Actions */}
@@ -174,21 +204,33 @@ export function Header() {
               className="md:hidden border-t border-[var(--border-subtle)]"
             >
               <nav className="p-3 space-y-1">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                      pathname === item.href
-                        ? "text-[var(--text-primary)] bg-[var(--bg-secondary)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    } ${item.href === "/dice" ? "text-[var(--aqua-primary)]" : ""} ${'color' in item && item.color === "amber" ? "text-amber-400 hover:text-amber-300" : ""}`}
-                  >
-                    {item.icon && <item.icon className="w-4 h-4" />}
-                    {item.label}
-                  </Link>
-                ))}
+                {navItems.map((item) => {
+                  const colorClass = 'color' in item 
+                    ? item.color === "amber" 
+                      ? "text-amber-400 hover:text-amber-300" 
+                      : item.color === "aqua"
+                        ? "text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
+                        : item.color === "orange"
+                          ? "text-orange-400 hover:text-orange-300"
+                          : ""
+                    : ""
+                  
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        pathname === item.href
+                          ? `text-[var(--text-primary)] bg-[var(--bg-secondary)] ${colorClass}`
+                          : `text-[var(--text-muted)] hover:text-[var(--text-secondary)] ${colorClass}`
+                      }`}
+                    >
+                      {item.icon && <item.icon className="w-4 h-4" />}
+                      {item.label}
+                    </Link>
+                  )
+                })}
                 <div className="pt-2 space-y-2">
                   <Link href="/launch" onClick={() => setMobileMenuOpen(false)} className="btn-primary w-full text-sm flex items-center justify-center gap-2">
                     <Sparkles className="w-4 h-4" />

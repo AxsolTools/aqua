@@ -8,6 +8,7 @@ import { FeeBreakdown } from "@/components/ui/fee-breakdown"
 import { useBalance, useTokenBalance } from "@/hooks/use-balance"
 import { useMultiWalletPNL, formatPnlPercent, formatTokenBalance, formatSolBalance } from "@/hooks/use-multi-wallet-pnl"
 import { cn } from "@/lib/utils"
+import { EarnShortcut } from "@/components/earn/earn-shortcut"
 
 interface TradePanelProps {
   token: Token
@@ -850,6 +851,11 @@ export function TradePanel({ token }: TradePanelProps) {
           <span className="text-[var(--text-muted)]">Price impact</span>
           <span className="text-[var(--green)]">&lt;0.01%</span>
         </div>
+      </div>
+
+      {/* PROPEL Earn Shortcut */}
+      <div className="mt-4">
+        <EarnShortcut tokenSymbol={token.symbol} />
       </div>
     </div>
   )
