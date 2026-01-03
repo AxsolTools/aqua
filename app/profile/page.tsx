@@ -435,26 +435,42 @@ export default function ProfilePage() {
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-4">
                                   <div className="relative w-12 h-12 rounded-xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] overflow-hidden">
-                                    {token.image_url ? (
-                                      <Image
-                                        src={token.image_url}
-                                        alt={token.name}
-                                        fill
-                                        className="object-cover"
-                                      />
-                                    ) : (
-                                      <div className="absolute inset-0 flex items-center justify-center">
-                                        <span className="text-[var(--ocean-deep)] font-bold">
-                                          {token.symbol.slice(0, 2)}
-                                        </span>
-                                      </div>
-                                    )}
+                                    {(() => {
+                                      // Get image URL - use Jupiter static hosting for Jupiter tokens
+                                      const imageUrl = token.image_url 
+                                        || ((token as any).pool_type === 'jupiter' ? `https://static-create.jup.ag/images/${token.mint_address}` : null)
+                                      
+                                      return imageUrl ? (
+                                        <Image
+                                          src={imageUrl}
+                                          alt={token.name}
+                                          fill
+                                          className="object-cover"
+                                        />
+                                      ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center">
+                                          <span className="text-[var(--ocean-deep)] font-bold">
+                                            {token.symbol.slice(0, 2)}
+                                          </span>
+                                        </div>
+                                      )
+                                    })()}
                                   </div>
                                   <div>
                                     <h3 className="font-semibold text-[var(--text-primary)]">{token.name}</h3>
                                     <div className="flex items-center gap-2">
                                       <p className="text-sm text-[var(--text-secondary)]">${token.symbol}</p>
                                       {/* Pool type badge */}
+                                      {(token as any).pool_type === 'jupiter' && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-green-500/20 text-green-400">
+                                          JUP
+                                        </span>
+                                      )}
+                                      {(token as any).pool_type === 'token22' && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded font-medium bg-purple-500/20 text-purple-400">
+                                          T22
+                                        </span>
+                                      )}
                                       {(token as any).pool_type === 'bonk' && (
                                         <span className={cn(
                                           "text-[9px] px-1.5 py-0.5 rounded font-medium",

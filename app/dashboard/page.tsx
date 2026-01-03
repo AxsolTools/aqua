@@ -443,13 +443,19 @@ export default function DashboardPage() {
                       <div className="flex items-center gap-3">
                         {/* Token Icon */}
                         <div className="relative w-10 h-10 rounded-lg bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20 overflow-hidden flex-shrink-0">
-                          {token.image_url ? (
-                            <Image src={token.image_url} alt={token.name} fill className="object-cover" />
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <span className="text-xs font-bold text-teal-400">{token.symbol.slice(0, 2)}</span>
-                            </div>
-                          )}
+                          {(() => {
+                            // Get image URL - use Jupiter static hosting for Jupiter tokens
+                            const imageUrl = token.image_url 
+                              || ((token as any).pool_type === 'jupiter' ? `https://static-create.jup.ag/images/${token.mint_address}` : null)
+                            
+                            return imageUrl ? (
+                              <Image src={imageUrl} alt={token.name} fill className="object-cover" />
+                            ) : (
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-xs font-bold text-teal-400">{token.symbol.slice(0, 2)}</span>
+                              </div>
+                            )
+                          })()}
                         </div>
 
                         {/* Token Name & Symbol */}
@@ -467,6 +473,16 @@ export default function DashboardPage() {
                             {token.stage === "bonding" ? "Bonding" : "DEX"}
                           </span>
                           {/* Pool type badge */}
+                          {(token as any).pool_type === 'jupiter' && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-green-500/20 text-green-400">
+                              JUP
+                            </span>
+                          )}
+                          {(token as any).pool_type === 'token22' && (
+                            <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/20 text-purple-400">
+                              T22
+                            </span>
+                          )}
                           {(token as any).pool_type === 'bonk' && (
                             <span className={cn(
                               "px-2 py-0.5 rounded text-[10px] font-medium",
