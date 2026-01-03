@@ -200,7 +200,7 @@ export function EarnShortcut({ tokenSymbol, propelBalance = 0, className }: Earn
 
           {/* Info text */}
           <p className="text-[9px] text-center text-[var(--text-muted)]">
-            Powered by Jupiter Earn • Withdraw anytime
+            Withdraw anytime • No lockups
           </p>
         </div>
       )}

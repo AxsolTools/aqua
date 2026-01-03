@@ -292,7 +292,7 @@ export function DepositModal({
 
           {/* Info Footer */}
           <p className="text-[10px] text-center text-[var(--text-muted)] pt-2">
-            Your PROPEL will be swapped to {vault.asset.symbol} and deposited into Jupiter Earn vault.
+            Your PROPEL will be swapped to {vault.asset.symbol} and deposited into a secure yield vault.
             You'll receive {vault.symbol} tokens representing your position.
           </p>
         </div>

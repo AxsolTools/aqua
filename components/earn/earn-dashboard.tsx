@@ -232,7 +232,7 @@ export function EarnDashboard() {
             PROPEL <span className="text-[var(--aqua-primary)]">Earn</span>
           </h1>
           <p className="text-[var(--text-muted)] mt-1">
-            Swap PROPEL tokens into yield-bearing positions powered by Jupiter
+            Swap PROPEL tokens into yield-bearing positions
           </p>
         </div>
         
@@ -297,7 +297,7 @@ export function EarnDashboard() {
           <h2 className="text-xl font-semibold text-[var(--text-primary)]">Available Vaults</h2>
           <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
             <div className="w-2 h-2 rounded-full bg-[var(--green)] animate-pulse" />
-            <span>Live rates from Jupiter</span>
+            <span>Live rates</span>
           </div>
         </div>
 
@@ -342,7 +342,7 @@ export function EarnDashboard() {
             <div>
               <h4 className="font-medium text-[var(--text-primary)] mb-1">Deposit & Earn</h4>
               <p className="text-sm text-[var(--text-muted)]">
-                Assets are deposited into Jupiter Earn vaults, earning yield from lending and rewards
+                Assets are deposited into secure yield vaults, earning yield from lending and rewards
               </p>
             </div>
           </div>
