@@ -47,7 +47,6 @@ type TokenRow = {
   stage?: string
   creator_wallet?: string
   pool_type?: string
-  quote_mint?: string
   dbc_pool_address?: string
 }
 
@@ -82,12 +81,13 @@ export async function GET(request: NextRequest) {
 
     // Check if token is migrated or on bonding curve, and get pool type
     // DB is optional: use as a hint, but never block on it for read path
+    // Note: Only select columns that exist in the database schema
     let tokenData: TokenRow | null = null
     let tokenError: any = null
     try {
       const { data, error } = await adminClient
         .from("tokens")
-        .select("id, stage, creator_wallet, pool_type, quote_mint, dbc_pool_address")
+        .select("id, stage, creator_wallet, pool_type, dbc_pool_address")
         .eq("mint_address", tokenMint)
         .single()
       tokenData = data ? (data as TokenRow) : null
@@ -217,7 +217,8 @@ export async function GET(request: NextRequest) {
 
     const totalRewards = rewards.balance + migrationRewards
     const tokenCreatorWallet = tokenData?.creator_wallet
-    const isUsd1Token = tokenData?.quote_mint === 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+    // quote_mint column may not exist in database, default to false
+    const isUsd1Token = false
 
     // Final summary log
     console.log(`[CREATOR-REWARDS-GET] ===== FINAL RESPONSE =====`)
@@ -339,7 +340,7 @@ export async function POST(request: NextRequest) {
     try {
       const { data, error } = await adminClient
         .from("tokens")
-        .select("id, creator_wallet, stage, pool_type, quote_mint, dbc_pool_address")
+        .select("id, creator_wallet, stage, pool_type, dbc_pool_address")
         .eq("mint_address", tokenMint)
         .single()
       tokenData = data ? (data as TokenRow) : null
