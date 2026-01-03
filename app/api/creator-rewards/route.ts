@@ -64,24 +64,25 @@ export async function GET(request: NextRequest) {
 
     // Log query result and any errors
     if (tokenError) {
-      console.error(`[CREATOR-REWARDS] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
+      console.warn(`[CREATOR-REWARDS] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
     }
     console.log(`[CREATOR-REWARDS] DB query result for ${tokenMint.slice(0, 8)}...: token=${token ? 'found' : 'null'}, error=${tokenError ? tokenError.message : 'none'}`)
 
-    const tokenData = token as { 
+    const tokenData = (token as { 
       id?: string; 
       stage?: string; 
       creator_wallet?: string; 
       pool_type?: string;
       quote_mint?: string;
       dbc_pool_address?: string;
-    } | null
-
-    if (!tokenData) {
-      return NextResponse.json(
-        { success: false, error: "Token not found in database" },
-        { status: 404 }
-      )
+    } | null) ?? {
+      // Fallback to allow on-chain rewards fetch even if DB lookup fails
+      id: undefined,
+      stage: undefined,
+      creator_wallet: creatorWallet,
+      pool_type: 'pump',
+      quote_mint: undefined,
+      dbc_pool_address: undefined,
     }
 
     // Log raw database values for debugging
