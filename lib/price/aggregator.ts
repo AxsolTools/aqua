@@ -350,61 +350,127 @@ export async function getSolPrice(): Promise<PriceResult> {
 // ============================================================================
 
 /**
- * Jupiter API disabled - requires paid API key signup
+ * Jupiter Price API v2 - uses API key for authenticated requests
  */
 async function fetchJupiterTokenPrice(mint: string): Promise<number> {
-  throw new Error('Jupiter API disabled - requires API key signup');
-}
-
-/**
- * Fetch token price using Jupiter Quote API (more reliable for new tokens)
- */
-async function fetchJupiterQuotePrice(mint: string): Promise<number> {
-  // Get token decimals (assume 9 if unknown)
-  const decimals = decimalCache.get(mint) ?? 9;
-  const inputAmount = BigInt(Math.pow(10, decimals));
+  const jupiterApiKey = process.env.JUPITER_API_KEY;
   
-  // Create timeout manually for Node.js compatibility
+  if (!jupiterApiKey) {
+    throw new Error('Jupiter API key not configured');
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 5000);
   
   try {
     const response = await fetch(
-      `https://quote-api.jup.ag/v6/quote?inputMint=${mint}&outputMint=${USDC_MINT}&amount=${inputAmount}&slippageBps=50`,
+      `https://api.jup.ag/price/v2?ids=${mint}`,
       { 
         next: { revalidate: 10 },
         signal: controller.signal,
+        headers: { 
+          'Accept': 'application/json',
+          'x-api-key': jupiterApiKey 
+        }
       }
     );
     
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      throw new Error(`Jupiter Quote API error: ${response.status}`);
+      throw new Error(`Jupiter Price API error: ${response.status}`);
     }
     
     const data = await response.json();
-    const outAmount = data.outAmount;
-    
-    if (!outAmount) {
-      throw new Error('No quote available');
-    }
-    
-    // Calculate price (USDC has 6 decimals)
-    const price = Number(outAmount) / 1_000_000;
+    const price = data.data?.[mint]?.price;
     
     if (!Number.isFinite(price) || price <= 0) {
-      throw new Error('Invalid quote price');
+      throw new Error('Invalid price from Jupiter Price API');
     }
     
     return price;
   } catch (error) {
     clearTimeout(timeoutId);
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Jupiter Quote API timeout');
+      throw new Error('Jupiter Price API timeout');
     }
     throw error;
   }
+}
+
+/**
+ * Fetch token price using Jupiter Metis Quote API with API key
+ * Fallback to v6 if API key not available
+ */
+async function fetchJupiterQuotePrice(mint: string): Promise<number> {
+  // Get token decimals (assume 9 if unknown)
+  const decimals = decimalCache.get(mint) ?? 9;
+  const inputAmount = BigInt(Math.pow(10, decimals));
+  const jupiterApiKey = process.env.JUPITER_API_KEY || '';
+  
+  // Try endpoints in order
+  const endpoints = [
+    { 
+      url: `https://api.jup.ag/swap/v1/quote?inputMint=${mint}&outputMint=${USDC_MINT}&amount=${inputAmount}&slippageBps=50`, 
+      useApiKey: true 
+    },
+    { 
+      url: `https://quote-api.jup.ag/v6/quote?inputMint=${mint}&outputMint=${USDC_MINT}&amount=${inputAmount}&slippageBps=50`, 
+      useApiKey: false 
+    }
+  ];
+  
+  let lastError: Error | null = null;
+  
+  for (const endpoint of endpoints) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    
+    try {
+      const headers: Record<string, string> = { 'Accept': 'application/json' };
+      if (endpoint.useApiKey && jupiterApiKey) {
+        headers['x-api-key'] = jupiterApiKey;
+      }
+      
+      const response = await fetch(endpoint.url, { 
+        next: { revalidate: 10 },
+        signal: controller.signal,
+        headers
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Jupiter Quote API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const outAmount = data.outAmount;
+      
+      if (!outAmount) {
+        throw new Error('No quote available');
+      }
+      
+      // Calculate price (USDC has 6 decimals)
+      const price = Number(outAmount) / 1_000_000;
+      
+      if (!Number.isFinite(price) || price <= 0) {
+        throw new Error('Invalid quote price');
+      }
+      
+      return price;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        lastError = new Error('Jupiter Quote API timeout');
+      } else {
+        lastError = error instanceof Error ? error : new Error(String(error));
+      }
+      continue;
+    }
+  }
+  
+  throw lastError || new Error('All Jupiter quote endpoints failed');
 }
 
 /**

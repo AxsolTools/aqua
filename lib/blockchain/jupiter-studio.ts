@@ -530,57 +530,89 @@ export async function createJupiterTokenWithBuy(
   connection: Connection,
   params: CreateJupiterTokenParams
 ): Promise<CreateJupiterTokenResult> {
-  const { initialBuySol = 0 } = params;
+  const { initialBuySol = 0, creatorKeypair } = params;
+  
+  console.log('[JUPITER-CREATE-WITH-BUY] ========== START ==========');
+  console.log('[JUPITER-CREATE-WITH-BUY] Config:', {
+    tokenName: params.metadata.name,
+    tokenSymbol: params.metadata.symbol,
+    initialBuySol,
+    slippageBps: params.slippageBps || 500,
+    creatorWallet: creatorKeypair.publicKey.toBase58().slice(0, 12),
+  });
   
   // First create the token
+  console.log('[JUPITER-CREATE-WITH-BUY] Step 1: Creating token...');
   const createResult = await createJupiterToken(connection, params);
   
   if (!createResult.success || !createResult.mintAddress) {
+    console.error('[JUPITER-CREATE-WITH-BUY] Token creation failed:', createResult.error);
+    console.log('[JUPITER-CREATE-WITH-BUY] ========== END (ERROR) ==========');
     return createResult;
   }
 
+  console.log('[JUPITER-CREATE-WITH-BUY] Token created successfully:', {
+    mintAddress: createResult.mintAddress,
+    txSignature: createResult.txSignature?.slice(0, 12),
+    dbcPoolAddress: createResult.dbcPoolAddress?.slice(0, 12),
+  });
+
   // If initial buy is requested, perform it after token creation
   if (initialBuySol > 0) {
-    console.log(`[JUPITER] Performing initial buy of ${initialBuySol} SOL...`);
+    console.log('[JUPITER-CREATE-WITH-BUY] Step 2: Performing initial buy...');
+    console.log(`[JUPITER-CREATE-WITH-BUY] Initial buy: ${initialBuySol} SOL from creator wallet`);
+    
+    // Wait a bit for the token to be indexed
+    console.log('[JUPITER-CREATE-WITH-BUY] Waiting 10 seconds for token indexing...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
     
     try {
       // Use Jupiter swap API for the initial buy
       const buyResult = await performJupiterBuy(
         connection,
-        params.creatorKeypair,
+        creatorKeypair,
         createResult.mintAddress,
         initialBuySol,
         params.slippageBps || 500
       );
       
       if (!buyResult.success) {
-        console.warn(`[JUPITER] Initial buy failed: ${buyResult.error}`);
+        console.warn(`[JUPITER-CREATE-WITH-BUY] Initial buy failed: ${buyResult.error}`);
+        console.log('[JUPITER-CREATE-WITH-BUY] ========== END (PARTIAL SUCCESS) ==========');
         // Token was created but buy failed - still return success with warning
         return {
           ...createResult,
-          error: `Token created but initial buy failed: ${buyResult.error}`,
+          error: `Token created successfully but initial buy failed: ${buyResult.error}`,
         };
       }
       
-      console.log(`[JUPITER] ✅ Initial buy successful: ${buyResult.txSignature}`);
+      console.log(`[JUPITER-CREATE-WITH-BUY] ✅ Initial buy successful: ${buyResult.txSignature}`);
     } catch (buyError) {
-      console.warn('[JUPITER] Initial buy error:', buyError);
+      console.warn('[JUPITER-CREATE-WITH-BUY] Initial buy error:', buyError);
+      console.log('[JUPITER-CREATE-WITH-BUY] ========== END (PARTIAL SUCCESS) ==========');
       // Token was created but buy failed
       return {
         ...createResult,
-        error: `Token created but initial buy failed: ${buyError instanceof Error ? buyError.message : 'Unknown error'}`,
+        error: `Token created successfully but initial buy failed: ${buyError instanceof Error ? buyError.message : 'Unknown error'}`,
       };
     }
+  } else {
+    console.log('[JUPITER-CREATE-WITH-BUY] No initial buy requested');
   }
 
+  console.log('[JUPITER-CREATE-WITH-BUY] ✅ Token creation complete!');
+  console.log('[JUPITER-CREATE-WITH-BUY] ========== END ==========');
   return createResult;
 }
 
 /**
- * Perform a buy on Jupiter DBC token
+ * Perform a buy on Jupiter DBC token (initial buy after token creation)
  * 
+ * Uses the Metis Swap API with API key for reliable execution.
  * Note: Newly created tokens may take a few seconds to be indexed by Jupiter.
  * This function includes retry logic with delays to handle this.
+ * 
+ * API Documentation: https://dev.jup.ag/docs/swap/get-quote
  */
 async function performJupiterBuy(
   connection: Connection,
@@ -589,67 +621,162 @@ async function performJupiterBuy(
   amountSol: number,
   slippageBps: number
 ): Promise<{ success: boolean; txSignature?: string; error?: string }> {
-  const maxRetries = 3;
-  const retryDelayMs = 5000; // 5 seconds between retries
+  const maxRetries = 5; // Increased retries for newly created tokens
+  const retryDelayMs = 8000; // 8 seconds between retries (tokens need time to be indexed)
+  
+  const SOL_MINT = 'So11111111111111111111111111111111111111112';
+  const jupiterApiKey = process.env.JUPITER_API_KEY || '';
+  
+  // Metis Swap API endpoints (with API key support)
+  const METIS_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
+  const METIS_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
+  const LEGACY_QUOTE_URL = 'https://quote-api.jup.ag/v6/quote';
+  const LEGACY_SWAP_URL = 'https://quote-api.jup.ag/v6/swap';
+
+  console.log('[JUPITER-INITIAL-BUY] ========== START ==========');
+  console.log('[JUPITER-INITIAL-BUY] Config:', {
+    mintAddress: mintAddress.slice(0, 12),
+    amountSol,
+    slippageBps,
+    hasApiKey: !!jupiterApiKey,
+    maxRetries,
+    retryDelayMs,
+  });
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       const amountLamports = Math.floor(amountSol * 1e9);
       
-      // Use Jupiter's swap API
-      const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=So11111111111111111111111111111111111111112&outputMint=${mintAddress}&amount=${amountLamports}&slippageBps=${slippageBps}`;
+      console.log(`[JUPITER-INITIAL-BUY] Attempt ${attempt}/${maxRetries}: Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 12)}...`);
       
-      console.log(`[JUPITER] Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 8)}... (attempt ${attempt}/${maxRetries})`);
-      
-      const quoteResponse = await fetch(quoteUrl, {
-        headers: { 'Accept': 'application/json' },
+      // Build quote URL with parameters
+      const quoteParams = new URLSearchParams({
+        inputMint: SOL_MINT,
+        outputMint: mintAddress,
+        amount: amountLamports.toString(),
+        slippageBps: slippageBps.toString(),
+        restrictIntermediateTokens: 'true',
       });
       
-      if (!quoteResponse.ok) {
-        const errorText = await quoteResponse.text();
-        // If no route found, token might not be indexed yet
-        if (quoteResponse.status === 400 && errorText.includes('No route')) {
-          if (attempt < maxRetries) {
-            console.log(`[JUPITER] Token not indexed yet, waiting ${retryDelayMs}ms before retry...`);
-            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-            continue;
+      let quoteData: any = null;
+      let usedEndpoint: 'metis' | 'legacy' = 'legacy';
+      
+      // Try Metis API first (if we have API key)
+      if (jupiterApiKey) {
+        const metisQuoteUrl = `${METIS_QUOTE_URL}?${quoteParams}`;
+        console.log(`[JUPITER-INITIAL-BUY] Trying Metis API...`);
+        
+        try {
+          const res = await fetch(metisQuoteUrl, {
+            headers: { 
+              'Accept': 'application/json',
+              'x-api-key': jupiterApiKey,
+            },
+            signal: AbortSignal.timeout(15000),
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data && !data.error) {
+              quoteData = data;
+              usedEndpoint = 'metis';
+              console.log(`[JUPITER-INITIAL-BUY] ✅ Quote success from Metis API`);
+            }
+          } else {
+            const errorText = await res.text();
+            console.warn(`[JUPITER-INITIAL-BUY] Metis API returned ${res.status}: ${errorText.slice(0, 100)}`);
           }
+        } catch (e: any) {
+          console.warn(`[JUPITER-INITIAL-BUY] Metis API error: ${e?.message || e}`);
         }
-        throw new Error(`Quote failed: ${quoteResponse.status} - ${errorText}`);
       }
       
-      const quoteData = await quoteResponse.json();
+      // Fallback to legacy API
+      if (!quoteData) {
+        const legacyQuoteUrl = `${LEGACY_QUOTE_URL}?${quoteParams}`;
+        console.log(`[JUPITER-INITIAL-BUY] Trying legacy v6 API...`);
+        
+        const res = await fetch(legacyQuoteUrl, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(15000),
+        });
+        
+        if (!res.ok) {
+          const errorText = await res.text();
+          // If no route found, token might not be indexed yet
+          if (res.status === 400 && (errorText.includes('No route') || errorText.includes('not found'))) {
+            if (attempt < maxRetries) {
+              console.log(`[JUPITER-INITIAL-BUY] Token not indexed yet (no route), waiting ${retryDelayMs}ms...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+              continue;
+            }
+          }
+          throw new Error(`Quote failed: ${res.status} - ${errorText.slice(0, 200)}`);
+        }
+        
+        quoteData = await res.json();
+        usedEndpoint = 'legacy';
+      }
       
       if (!quoteData || quoteData.error) {
         if (attempt < maxRetries) {
-          console.log(`[JUPITER] Quote returned error, waiting ${retryDelayMs}ms before retry...`);
+          console.log(`[JUPITER-INITIAL-BUY] Quote returned error, waiting ${retryDelayMs}ms...`);
           await new Promise(resolve => setTimeout(resolve, retryDelayMs));
           continue;
         }
         throw new Error(`Quote error: ${quoteData?.error || 'No quote data'}`);
       }
 
-      // Get swap transaction
-      const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+      console.log('[JUPITER-INITIAL-BUY] Quote received:', {
+        inAmount: quoteData.inAmount,
+        outAmount: quoteData.outAmount,
+        priceImpactPct: quoteData.priceImpactPct,
+        usedEndpoint,
+      });
+
+      // Build swap transaction
+      const swapUrl = usedEndpoint === 'metis' ? METIS_SWAP_URL : LEGACY_SWAP_URL;
+      const swapHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (usedEndpoint === 'metis' && jupiterApiKey) {
+        swapHeaders['x-api-key'] = jupiterApiKey;
+      }
+
+      const swapBody = {
+        quoteResponse: quoteData,
+        userPublicKey: buyerKeypair.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+        dynamicComputeUnitLimit: true,
+        dynamicSlippage: true,
+        prioritizationFeeLamports: {
+          priorityLevelWithMaxLamports: {
+            maxLamports: 1000000,
+            priorityLevel: 'high',
+          },
+        },
+      };
+
+      console.log(`[JUPITER-INITIAL-BUY] Requesting swap transaction from: ${swapUrl}`);
+
+      const swapResponse = await fetch(swapUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          quoteResponse: quoteData,
-          userPublicKey: buyerKeypair.publicKey.toBase58(),
-          wrapAndUnwrapSol: true,
-        }),
+        headers: swapHeaders,
+        body: JSON.stringify(swapBody),
+        signal: AbortSignal.timeout(20000),
       });
 
       if (!swapResponse.ok) {
         const swapError = await swapResponse.text();
-        throw new Error(`Swap transaction failed: ${swapResponse.status} - ${swapError}`);
+        throw new Error(`Swap request failed: ${swapResponse.status} - ${swapError.slice(0, 200)}`);
       }
 
-      const { swapTransaction } = await swapResponse.json();
+      const swapResult = await swapResponse.json();
+      const swapTransaction = swapResult.swapTransaction;
       
       if (!swapTransaction) {
         throw new Error('No swap transaction returned');
       }
+      
+      console.log('[JUPITER-INITIAL-BUY] Swap transaction received, signing...');
       
       // Deserialize and sign
       const transaction = VersionedTransaction.deserialize(
@@ -658,29 +785,38 @@ async function performJupiterBuy(
       transaction.sign([buyerKeypair]);
 
       // Send transaction
+      console.log('[JUPITER-INITIAL-BUY] Sending transaction...');
       const signature = await connection.sendRawTransaction(transaction.serialize(), {
         skipPreflight: false,
         maxRetries: 3,
       });
 
+      console.log(`[JUPITER-INITIAL-BUY] Transaction sent: ${signature}`);
+
       // Confirm
       const confirmation = await connection.confirmTransaction(signature, 'confirmed');
       if (confirmation.value.err) {
-        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+        throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
       }
 
-      console.log(`[JUPITER] ✅ Buy successful: ${signature}`);
+      console.log(`[JUPITER-INITIAL-BUY] ✅ Initial buy successful!`);
+      console.log(`[JUPITER-INITIAL-BUY] TX: ${signature}`);
+      console.log('[JUPITER-INITIAL-BUY] ========== END ==========');
+      
       return { success: true, txSignature: signature };
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Buy failed';
-      console.warn(`[JUPITER] Buy attempt ${attempt} failed: ${errorMessage}`);
+      console.warn(`[JUPITER-INITIAL-BUY] Attempt ${attempt} failed: ${errorMessage}`);
       
       if (attempt < maxRetries) {
-        console.log(`[JUPITER] Waiting ${retryDelayMs}ms before retry...`);
+        console.log(`[JUPITER-INITIAL-BUY] Waiting ${retryDelayMs}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, retryDelayMs));
         continue;
       }
+      
+      console.error('[JUPITER-INITIAL-BUY] All attempts failed');
+      console.log('[JUPITER-INITIAL-BUY] ========== END (ERROR) ==========');
       
       return {
         success: false,
@@ -689,9 +825,10 @@ async function performJupiterBuy(
     }
   }
   
+  console.log('[JUPITER-INITIAL-BUY] ========== END (MAX RETRIES) ==========');
   return {
     success: false,
-    error: 'Max retries exceeded',
+    error: 'Max retries exceeded - token may not be indexed yet',
   };
 }
 
@@ -726,17 +863,40 @@ export async function getJupiterFeeInfo(
 ): Promise<JupiterFeeInfo> {
   console.log(`[JUPITER] Fetching fee info for pool: ${poolAddress}`);
   
-  const response = await jupiterRequest<FeeInfoResponse>('/dbc/fee', {
-    method: 'POST',
-    body: JSON.stringify({ poolAddress }),
-  });
-  
-  return {
-    totalFees: response.data.totalFee || 0,
-    unclaimedFees: response.data.unclaimedFee || 0,
-    claimedFees: response.data.claimedFee || 0,
-    poolAddress,
-  };
+  try {
+    const response = await jupiterRequest<FeeInfoResponse>('/dbc/fee', {
+      method: 'POST',
+      body: JSON.stringify({ poolAddress }),
+    });
+    
+    // Safely access response data with fallbacks
+    const data = response?.data;
+    if (!data) {
+      console.warn(`[JUPITER] Fee info response missing data for pool: ${poolAddress}`);
+      return {
+        totalFees: 0,
+        unclaimedFees: 0,
+        claimedFees: 0,
+        poolAddress,
+      };
+    }
+    
+    return {
+      totalFees: data.totalFee ?? 0,
+      unclaimedFees: data.unclaimedFee ?? 0,
+      claimedFees: data.claimedFee ?? 0,
+      poolAddress,
+    };
+  } catch (error) {
+    console.error(`[JUPITER] Failed to fetch fee info for pool ${poolAddress}:`, error);
+    // Return zero fees instead of throwing - graceful degradation
+    return {
+      totalFees: 0,
+      unclaimedFees: 0,
+      claimedFees: 0,
+      poolAddress,
+    };
+  }
 }
 
 /**
@@ -870,8 +1030,12 @@ interface JupiterSwapResult {
 }
 
 /**
- * Execute a swap on Jupiter
+ * Execute a swap on Jupiter using the Metis Swap API
  * Used for trading Jupiter DBC tokens
+ * 
+ * API Documentation: https://dev.jup.ag/docs/swap/get-quote
+ * - Quote: GET https://api.jup.ag/swap/v1/quote
+ * - Swap:  POST https://api.jup.ag/swap/v1/swap
  */
 export async function executeJupiterSwap(
   connection: Connection,
@@ -880,18 +1044,27 @@ export async function executeJupiterSwap(
   const { walletKeypair, tokenMint, action, amount, slippageBps, tokenDecimals = 6 } = params;
 
   const SOL_MINT = 'So11111111111111111111111111111111111111112';
+  
+  // Get Jupiter API key from environment
+  const jupiterApiKey = process.env.JUPITER_API_KEY || '';
 
   try {
+    console.log('[JUPITER-SWAP] ========== START ==========');
+    console.log('[JUPITER-SWAP] Config:', {
+      hasApiKey: !!jupiterApiKey,
+      apiKeyPrefix: jupiterApiKey ? jupiterApiKey.slice(0, 8) + '...' : 'NONE',
+    });
+
     // -------------------------------
-    // Quote + Swap endpoints (fallbacks)
+    // Metis Swap API endpoints (new v1 API with API key)
+    // Fallback to legacy v6 if API key not available
     // -------------------------------
-    const QUOTE_ENDPOINTS = [
-      'https://quote-api.jup.ag/v6',
-      'https://jupiter-router.mngo.cloud/v6',
-      'https://quote.jup.ag/v6',
-    ];
-    const SWAP_ENDPOINT = 'https://quote-api.jup.ag/v6/swap';
-    const QUOTE_TIMEOUT_MS = 8000;
+    const METIS_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
+    const METIS_SWAP_URL = 'https://api.jup.ag/swap/v1/swap';
+    const LEGACY_QUOTE_URL = 'https://quote-api.jup.ag/v6/quote';
+    const LEGACY_SWAP_URL = 'https://quote-api.jup.ag/v6/swap';
+    
+    const QUOTE_TIMEOUT_MS = 15000; // 15 seconds
 
     let inputMint: string;
     let outputMint: string;
@@ -909,45 +1082,113 @@ export async function executeJupiterSwap(
       amountRaw = Math.floor(amount * Math.pow(10, tokenDecimals));
     }
 
-    console.log(`[JUPITER] ${action.toUpperCase()}: ${inputMint.slice(0, 8)} -> ${outputMint.slice(0, 8)}, amount: ${amountRaw}`);
+    console.log(`[JUPITER-SWAP] ${action.toUpperCase()}: ${inputMint.slice(0, 8)} -> ${outputMint.slice(0, 8)}, amount: ${amountRaw}`);
 
     // -------------------------------
-    // Fetch quote with fallbacks + timeout
+    // Fetch quote - try Metis API first, then legacy
     // -------------------------------
     const errors: string[] = [];
     let quoteData: any = null;
+    let usedEndpoint: string = '';
 
-    for (const base of QUOTE_ENDPOINTS) {
-      const quoteUrl = `${base.replace(/\/+$/, '')}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountRaw}&slippageBps=${slippageBps}`;
+    // Build quote URL with parameters
+    const quoteParams = new URLSearchParams({
+      inputMint,
+      outputMint,
+      amount: amountRaw.toString(),
+      slippageBps: slippageBps.toString(),
+      restrictIntermediateTokens: 'true',
+    });
+
+    // Try Metis API first (if we have API key)
+    if (jupiterApiKey) {
+      const metisQuoteUrl = `${METIS_QUOTE_URL}?${quoteParams}`;
+      console.log(`[JUPITER-SWAP] Trying Metis API: ${METIS_QUOTE_URL}`);
+      
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), QUOTE_TIMEOUT_MS);
+      
       try {
-        const res = await fetch(quoteUrl, {
-          headers: { Accept: 'application/json' },
+        const res = await fetch(metisQuoteUrl, {
+          headers: { 
+            'Accept': 'application/json',
+            'x-api-key': jupiterApiKey,
+          },
           signal: controller.signal,
         });
         clearTimeout(timer);
 
         if (!res.ok) {
           const text = await res.text();
-          throw new Error(`HTTP ${res.status} ${text}`);
+          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
         }
+        
         const data = await res.json();
         if (!data || data.error) {
           throw new Error(data?.error || 'No quote data');
         }
+        
         quoteData = data;
-        break;
+        usedEndpoint = 'metis';
+        console.log(`[JUPITER-SWAP] ✅ Quote success from Metis API`);
       } catch (e: any) {
         clearTimeout(timer);
-        errors.push(`[${base}] ${e?.message || e}`);
-        continue;
+        const errorMsg = e?.name === 'AbortError' ? 'timeout' : (e?.message || e);
+        errors.push(`[Metis] ${errorMsg}`);
+        console.warn(`[JUPITER-SWAP] Metis API failed: ${errorMsg}`);
+      }
+    }
+
+    // Fallback to legacy v6 API if Metis failed or no API key
+    if (!quoteData) {
+      const legacyQuoteUrl = `${LEGACY_QUOTE_URL}?${quoteParams}`;
+      console.log(`[JUPITER-SWAP] Trying legacy v6 API: ${LEGACY_QUOTE_URL}`);
+      
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), QUOTE_TIMEOUT_MS);
+      
+      try {
+        const res = await fetch(legacyQuoteUrl, {
+          headers: { 
+            'Accept': 'application/json',
+            'User-Agent': 'AQUA-Launchpad/1.0',
+          },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`);
+        }
+        
+        const data = await res.json();
+        if (!data || data.error) {
+          throw new Error(data?.error || 'No quote data');
+        }
+        
+        quoteData = data;
+        usedEndpoint = 'legacy';
+        console.log(`[JUPITER-SWAP] ✅ Quote success from legacy v6 API`);
+      } catch (e: any) {
+        clearTimeout(timer);
+        const errorMsg = e?.name === 'AbortError' ? 'timeout' : (e?.message || e);
+        errors.push(`[Legacy] ${errorMsg}`);
+        console.warn(`[JUPITER-SWAP] Legacy v6 API failed: ${errorMsg}`);
       }
     }
 
     if (!quoteData) {
+      console.error('[JUPITER-SWAP] All quote endpoints failed:', errors);
       throw new Error(`Quote failed: ${errors.join('; ')}`);
     }
+
+    console.log('[JUPITER-SWAP] Quote received:', {
+      inAmount: quoteData.inAmount,
+      outAmount: quoteData.outAmount,
+      priceImpactPct: quoteData.priceImpactPct,
+      routePlanLength: quoteData.routePlan?.length,
+    });
 
     // -------------------------------
     // Build swap transaction
@@ -956,28 +1197,46 @@ export async function executeJupiterSwap(
       quoteResponse: quoteData,
       userPublicKey: walletKeypair.publicKey.toBase58(),
       wrapAndUnwrapSol: true,
-      useSharedAccounts: true,
-      asLegacyTransaction: false,
       dynamicComputeUnitLimit: true,
-      prioritizationFeeLamports: 'auto',
+      dynamicSlippage: true,
+      prioritizationFeeLamports: {
+        priorityLevelWithMaxLamports: {
+          maxLamports: 1000000, // 0.001 SOL max
+          priorityLevel: 'high',
+        },
+      },
     };
 
-    const swapResponse = await fetch(SWAP_ENDPOINT, {
+    // Use appropriate swap endpoint
+    const swapUrl = usedEndpoint === 'metis' ? METIS_SWAP_URL : LEGACY_SWAP_URL;
+    const swapHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (usedEndpoint === 'metis' && jupiterApiKey) {
+      swapHeaders['x-api-key'] = jupiterApiKey;
+    }
+
+    console.log(`[JUPITER-SWAP] Requesting swap transaction from: ${swapUrl}`);
+
+    const swapResponse = await fetch(swapUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: swapHeaders,
       body: JSON.stringify(swapBody),
     });
 
     if (!swapResponse.ok) {
       const swapError = await swapResponse.text();
-      throw new Error(`Swap failed: ${swapResponse.status} - ${swapError}`);
+      console.error('[JUPITER-SWAP] Swap request failed:', swapError.slice(0, 500));
+      throw new Error(`Swap request failed: ${swapResponse.status} - ${swapError.slice(0, 200)}`);
     }
 
-    const { swapTransaction } = await swapResponse.json();
+    const swapResult = await swapResponse.json();
+    const swapTransaction = swapResult.swapTransaction;
 
     if (!swapTransaction) {
-      throw new Error('No swap transaction returned');
+      console.error('[JUPITER-SWAP] No swap transaction in response:', swapResult);
+      throw new Error('No swap transaction returned from Jupiter');
     }
+
+    console.log('[JUPITER-SWAP] Swap transaction received, signing...');
 
     // Deserialize and sign
     const transaction = VersionedTransaction.deserialize(
@@ -986,15 +1245,18 @@ export async function executeJupiterSwap(
     transaction.sign([walletKeypair]);
 
     // Send transaction
+    console.log('[JUPITER-SWAP] Sending transaction to network...');
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
       skipPreflight: false,
       maxRetries: 3,
     });
 
+    console.log(`[JUPITER-SWAP] Transaction sent: ${signature}`);
+
     // Confirm
     const confirmation = await connection.confirmTransaction(signature, 'confirmed');
     if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
     }
 
     // Calculate amounts from quote
@@ -1012,10 +1274,12 @@ export async function executeJupiterSwap(
       amountSol = outAmount / 1e9;
     }
 
-    const pricePerToken = amountSol / amountTokens;
+    const pricePerToken = amountTokens > 0 ? amountSol / amountTokens : 0;
 
-    console.log(`[JUPITER] ✅ Swap successful: ${signature}`);
-    console.log(`[JUPITER] Amount SOL: ${amountSol}, Tokens: ${amountTokens}, Price: ${pricePerToken}`);
+    console.log(`[JUPITER-SWAP] ✅ Swap successful!`);
+    console.log(`[JUPITER-SWAP] TX: ${signature}`);
+    console.log(`[JUPITER-SWAP] SOL: ${amountSol}, Tokens: ${amountTokens}, Price: ${pricePerToken}`);
+    console.log('[JUPITER-SWAP] ========== END ==========');
 
     return {
       success: true,
@@ -1027,7 +1291,8 @@ export async function executeJupiterSwap(
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Swap failed';
-    console.error('[JUPITER] Swap error:', errorMessage);
+    console.error('[JUPITER-SWAP] Error:', errorMessage);
+    console.log('[JUPITER-SWAP] ========== END (ERROR) ==========');
 
     return {
       success: false,

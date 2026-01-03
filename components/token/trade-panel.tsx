@@ -66,10 +66,12 @@ const ERROR_MESSAGES: Record<number, string> = {
   3001: "Trade failed on-chain - try again",
   3002: "Transaction timed out - check Solscan",
   3003: "Slippage too high - increase tolerance",
+  3004: "Jupiter quote failed - token may not be indexed yet",
   4001: "Token not found or delisted",
   4002: "Bonding curve locked",
   5001: "Trading service temporarily unavailable",
   5002: "Backup trading service also failed",
+  5003: "Jupiter API temporarily unavailable - try again",
 }
 
 export function TradePanel({ token }: TradePanelProps) {
@@ -294,6 +296,9 @@ export function TradePanel({ token }: TradePanelProps) {
     console.log('[TRADE] Executing trade:', {
       action: mode,
       token: token.mint_address?.slice(0, 8),
+      tokenSymbol: token.symbol,
+      poolType: (token as any).pool_type || 'pump',
+      isJupiterToken: (token as any).pool_type === 'jupiter',
       amount,
       slippage,
       wallet: activeWallet.public_key?.slice(0, 8),

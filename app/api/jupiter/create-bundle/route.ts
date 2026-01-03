@@ -13,7 +13,7 @@ import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
 import { executeBundle } from "@/lib/blockchain/jito-bundles"
 import { solToLamports, lamportsToSol, calculatePlatformFee } from "@/lib/precision"
-import { createJupiterToken, getJupiterPoolAddress, JUPITER_PRESETS } from "@/lib/blockchain/jupiter-studio"
+import { createJupiterToken, getJupiterPoolAddress, executeJupiterSwap, JUPITER_PRESETS } from "@/lib/blockchain/jupiter-studio"
 import { collectPlatformFee, TOKEN_CREATION_FEE_LAMPORTS, TOKEN_CREATION_FEE_SOL } from "@/lib/fees"
 import { getReferrer, addReferralEarnings } from "@/lib/referral"
 
@@ -257,16 +257,50 @@ export async function POST(request: NextRequest) {
     // STEP 3: Execute bundle buys via Jupiter swap (if bundle wallets exist)
     // =========================================================================
     const bundleSignatures: string[] = [creationSignature]
+    const bundleBuyResults: { address: string; success: boolean; signature?: string; error?: string }[] = []
     
-    // Note: For Jupiter DBC, we would need to implement buy transactions
-    // This is a placeholder - Jupiter may have a different buy mechanism
-    // For now, we log the bundle wallet configuration
     if (bundleKeypairs.size > 0) {
-      console.log(`[JUPITER-BUNDLE] Bundle wallets configured for follow-up buys:`)
-      for (const [address, { amount }] of bundleKeypairs) {
-        console.log(`  - ${address.slice(0, 8)}...: ${amount} SOL`)
+      console.log(`[JUPITER-BUNDLE] ========== BUNDLE WALLET BUYS ==========`)
+      console.log(`[JUPITER-BUNDLE] Executing ${bundleKeypairs.size} bundle wallet buys...`)
+      
+      // Wait for token to be indexed by Jupiter (newly created tokens take time)
+      console.log(`[JUPITER-BUNDLE] Waiting 15 seconds for token indexing...`)
+      await new Promise(resolve => setTimeout(resolve, 15000))
+      
+      for (const [address, { keypair, amount }] of bundleKeypairs) {
+        console.log(`[JUPITER-BUNDLE] Bundle buy: ${address.slice(0, 8)} buying ${amount} SOL worth...`)
+        
+        try {
+          const buyResult = await executeJupiterSwap(connection, {
+            walletKeypair: keypair,
+            tokenMint: createResult.mintAddress,
+            action: 'buy',
+            amount: amount,
+            slippageBps: 1000, // 10% slippage for bundle buys
+            tokenDecimals: decimals,
+          })
+          
+          if (buyResult.success && buyResult.txSignature) {
+            console.log(`[JUPITER-BUNDLE] ✅ Bundle buy success: ${address.slice(0, 8)} - ${buyResult.txSignature.slice(0, 12)}`)
+            bundleSignatures.push(buyResult.txSignature)
+            bundleBuyResults.push({ address, success: true, signature: buyResult.txSignature })
+          } else {
+            console.warn(`[JUPITER-BUNDLE] ⚠️ Bundle buy failed: ${address.slice(0, 8)} - ${buyResult.error}`)
+            bundleBuyResults.push({ address, success: false, error: buyResult.error })
+          }
+        } catch (buyError) {
+          const errorMsg = buyError instanceof Error ? buyError.message : 'Unknown error'
+          console.error(`[JUPITER-BUNDLE] ❌ Bundle buy error: ${address.slice(0, 8)} - ${errorMsg}`)
+          bundleBuyResults.push({ address, success: false, error: errorMsg })
+        }
+        
+        // Small delay between buys to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 2000))
       }
-      // TODO: Implement Jupiter DBC buy transactions when API is available
+      
+      const successCount = bundleBuyResults.filter(r => r.success).length
+      console.log(`[JUPITER-BUNDLE] Bundle buys complete: ${successCount}/${bundleKeypairs.size} successful`)
+      console.log(`[JUPITER-BUNDLE] ========== END BUNDLE WALLET BUYS ==========`)
     }
 
     // =========================================================================
@@ -440,6 +474,9 @@ export async function POST(request: NextRequest) {
     const duration = Date.now() - startTime
     console.log(`[JUPITER-BUNDLE] Complete in ${duration}ms`)
 
+    // Count successful bundle buys
+    const bundleSuccessCount = bundleBuyResults.filter(r => r.success).length
+    
     return NextResponse.json({
       success: true,
       data: {
@@ -449,6 +486,8 @@ export async function POST(request: NextRequest) {
         dbcPoolAddress,
         metadataUri: createResult.metadataUri,
         bundleWalletsProcessed: bundleKeypairs.size,
+        bundleWalletsSuccessful: bundleSuccessCount,
+        bundleBuyResults,
         signatures: bundleSignatures,
         pool: "jupiter",
         platformFee: lamportsToSol(totalFeeLamports),

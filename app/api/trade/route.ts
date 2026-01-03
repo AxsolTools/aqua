@@ -142,15 +142,23 @@ export async function POST(request: NextRequest) {
     // Get token info including pool_type for routing
     const { data: token } = await adminClient
       .from('tokens')
-      .select('id, stage, creator_wallet, pool_type, dbc_pool_address')
+      .select('id, stage, creator_wallet, pool_type, dbc_pool_address, decimals')
       .eq('mint_address', tokenMint)
       .single();
 
     // Determine if this is a Jupiter DBC token
     const isJupiterToken = (token as any)?.pool_type === 'jupiter';
     
+    // Use token decimals from DB if available, otherwise use request value
+    const effectiveDecimals = (token as any)?.decimals ?? tokenDecimals;
+    
     if (isJupiterToken) {
       console.log('[TRADE] Detected Jupiter DBC token, using Jupiter swap API');
+      console.log('[TRADE] Token info:', {
+        poolType: (token as any)?.pool_type,
+        dbcPoolAddress: (token as any)?.dbc_pool_address?.slice(0, 12),
+        decimals: effectiveDecimals,
+      });
     }
 
     // ========== BALANCE VALIDATION ==========
@@ -199,18 +207,41 @@ export async function POST(request: NextRequest) {
 
     if (isJupiterToken) {
       // Use Jupiter swap API for Jupiter DBC tokens
-      console.log('[TRADE] Using Jupiter swap API...');
+      console.log('[TRADE] ========== JUPITER SWAP START ==========');
+      console.log('[TRADE] Jupiter token detected:', {
+        tokenMint: tokenMint.slice(0, 12),
+        poolType: (token as any)?.pool_type,
+        dbcPoolAddress: (token as any)?.dbc_pool_address?.slice(0, 12),
+        action,
+        amount,
+        slippageBps,
+        tokenDecimals,
+        walletAddress: userKeypair.publicKey.toBase58().slice(0, 12),
+      });
+      
       const { executeJupiterSwap } = await import('@/lib/blockchain/jupiter-studio');
       
+      const startTime = Date.now();
       tradeResult = await executeJupiterSwap(connection, {
         walletKeypair: userKeypair,
         tokenMint,
         action,
         amount, // SOL for buy, tokens for sell
         slippageBps,
-        tokenDecimals,
+        tokenDecimals: effectiveDecimals,
       });
-      console.log('[TRADE] Jupiter swap result:', tradeResult);
+      const duration = Date.now() - startTime;
+      
+      console.log('[TRADE] Jupiter swap result:', {
+        success: tradeResult.success,
+        txSignature: tradeResult.txSignature?.slice(0, 12),
+        amountSol: tradeResult.amountSol,
+        amountTokens: tradeResult.amountTokens,
+        pricePerToken: tradeResult.pricePerToken,
+        error: tradeResult.error,
+        durationMs: duration,
+      });
+      console.log('[TRADE] ========== JUPITER SWAP END ==========');
     } else {
       // Use Pump.fun for standard bonding curve tokens
       console.log('[TRADE] Using Pump.fun bonding curve...');
@@ -241,29 +272,46 @@ export async function POST(request: NextRequest) {
       // Map error messages to user-friendly descriptions
       let userMessage = tradeResult.error || 'Trade failed';
       let errorCode = 3001;
+      const errorLower = (tradeResult.error || '').toLowerCase();
       
-      if (tradeResult.error?.includes('insufficient')) {
+      if (errorLower.includes('insufficient') || errorLower.includes('not enough')) {
         userMessage = 'Insufficient balance for this trade';
         errorCode = 2001;
-      } else if (tradeResult.error?.includes('slippage')) {
+      } else if (errorLower.includes('slippage')) {
         userMessage = 'Price moved too much. Try increasing slippage tolerance.';
         errorCode = 3002;
-      } else if (tradeResult.error?.includes('PumpPortal')) {
+      } else if (errorLower.includes('pumpportal')) {
         userMessage = 'Trading service temporarily unavailable. Please try again.';
         errorCode = 5001;
-      } else if (tradeResult.error?.includes('SDK')) {
+      } else if (errorLower.includes('sdk')) {
         userMessage = 'Backup trading service also failed. Please try again later.';
         errorCode = 5002;
-      } else if (tradeResult.error?.includes('on-chain')) {
+      } else if (errorLower.includes('on-chain') || errorLower.includes('transaction failed')) {
         userMessage = 'Transaction failed on the blockchain. Please try again.';
         errorCode = 3003;
+      } else if (errorLower.includes('quote failed') || errorLower.includes('no route')) {
+        userMessage = 'Jupiter could not find a route. Token may not be indexed yet - try again in a few seconds.';
+        errorCode = 3004;
+      } else if (errorLower.includes('timeout') || errorLower.includes('fetch failed')) {
+        userMessage = 'Jupiter API timed out. Please try again.';
+        errorCode = 5003;
+      } else if (errorLower.includes('swap request failed') || errorLower.includes('swap failed')) {
+        userMessage = 'Jupiter swap failed. Please try again with higher slippage.';
+        errorCode = 3004;
+      } else if (isJupiterToken) {
+        // For Jupiter tokens, provide more specific message
+        userMessage = `Jupiter swap failed: ${tradeResult.error}. Try again or increase slippage.`;
+        errorCode = 3004;
       }
       
       console.error('[TRADE] Trade failed:', {
         action,
-        tokenMint,
+        tokenMint: tokenMint?.slice(0, 12),
         amount,
+        isJupiterToken,
         error: tradeResult.error,
+        mappedError: userMessage,
+        errorCode,
         wallet: walletAddress?.slice(0, 8),
       });
       

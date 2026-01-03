@@ -17,8 +17,15 @@ import { QUOTE_MINTS } from './pumpfun';
 // CONFIGURATION
 // ============================================================================
 
-const JUPITER_API_BASE = process.env.JUPITER_API_BASE || 'https://quote-api.jup.ag/v6';
-const JUPITER_PRICE_API = 'https://price.jup.ag/v4';
+// Use new Metis Swap API if API key is available, otherwise fallback to v6
+const JUPITER_API_KEY = process.env.JUPITER_API_KEY || '';
+const JUPITER_API_BASE = JUPITER_API_KEY 
+  ? 'https://api.jup.ag/swap/v1' 
+  : (process.env.JUPITER_API_BASE || 'https://quote-api.jup.ag/v6');
+const JUPITER_PRICE_API = JUPITER_API_KEY 
+  ? 'https://api.jup.ag/price/v2' 
+  : 'https://price.jup.ag/v4';
+const USE_NEW_API = !!JUPITER_API_KEY;
 
 // USD1 has 6 decimals
 const USD1_DECIMALS = 6;
@@ -56,9 +63,17 @@ export interface SwapResult {
  */
 export async function getUsd1PriceInSol(): Promise<number> {
   try {
-    const response = await fetch(
-      `${JUPITER_PRICE_API}/price?ids=${QUOTE_MINTS.USD1}&vsToken=${QUOTE_MINTS.WSOL}`
-    );
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (JUPITER_API_KEY) {
+      headers['x-api-key'] = JUPITER_API_KEY;
+    }
+    
+    // New API format: /price/v2?ids=... vs old: /v4/price?ids=...
+    const url = USE_NEW_API
+      ? `${JUPITER_PRICE_API}?ids=${QUOTE_MINTS.USD1}`
+      : `${JUPITER_PRICE_API}/price?ids=${QUOTE_MINTS.USD1}&vsToken=${QUOTE_MINTS.WSOL}`;
+      
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       throw new Error(`Jupiter price API error: ${response.status}`);
@@ -119,7 +134,12 @@ export async function getSwapSolToUsd1Quote(
     
     const url = `${JUPITER_API_BASE}/quote?inputMint=${QUOTE_MINTS.WSOL}&outputMint=${QUOTE_MINTS.USD1}&amount=${lamports}&slippageBps=${slippageBps}`;
     
-    const response = await fetch(url);
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (JUPITER_API_KEY) {
+      headers['x-api-key'] = JUPITER_API_KEY;
+    }
+    
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -156,7 +176,12 @@ export async function getSwapUsd1ToSolQuote(
     
     const url = `${JUPITER_API_BASE}/quote?inputMint=${QUOTE_MINTS.USD1}&outputMint=${QUOTE_MINTS.WSOL}&amount=${usd1Units}&slippageBps=${slippageBps}`;
     
-    const response = await fetch(url);
+    const headers: Record<string, string> = { 'Accept': 'application/json' };
+    if (JUPITER_API_KEY) {
+      headers['x-api-key'] = JUPITER_API_KEY;
+    }
+    
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -210,9 +235,14 @@ export async function swapSolToUsd1(
     }
     
     // Get swap transaction
+    const swapHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (JUPITER_API_KEY) {
+      swapHeaders['x-api-key'] = JUPITER_API_KEY;
+    }
+    
     const swapResponse = await fetch(`${JUPITER_API_BASE}/swap`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: swapHeaders,
       body: JSON.stringify({
         quoteResponse: quote,
         userPublicKey: walletKeypair.publicKey.toBase58(),
@@ -243,7 +273,7 @@ export async function swapSolToUsd1(
     await connection.confirmTransaction(signature, 'confirmed');
     
     const outputAmount = parseInt(quote.outAmount) / USD1_MULTIPLIER;
-    console.log(`[JUPITER] ✅ Swapped ${solAmount} SOL -> ${outputAmount.toFixed(2)} USD1`);
+    console.log(`[JUPITER] ✅ Swapped ${solAmount} SOL -> ${outputAmount.toFixed(2)} USD1 (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
     
     return {
       success: true,
@@ -288,9 +318,14 @@ export async function swapUsd1ToSol(
     }
     
     // Get swap transaction
+    const swapHeaders2: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (JUPITER_API_KEY) {
+      swapHeaders2['x-api-key'] = JUPITER_API_KEY;
+    }
+    
     const swapResponse = await fetch(`${JUPITER_API_BASE}/swap`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: swapHeaders2,
       body: JSON.stringify({
         quoteResponse: quote,
         userPublicKey: walletKeypair.publicKey.toBase58(),
@@ -321,7 +356,7 @@ export async function swapUsd1ToSol(
     await connection.confirmTransaction(signature, 'confirmed');
     
     const outputAmount = parseInt(quote.outAmount) / LAMPORTS_PER_SOL;
-    console.log(`[JUPITER] ✅ Swapped ${usd1Amount} USD1 -> ${outputAmount.toFixed(6)} SOL`);
+    console.log(`[JUPITER] ✅ Swapped ${usd1Amount} USD1 -> ${outputAmount.toFixed(6)} SOL (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
     
     return {
       success: true,

@@ -28,59 +28,109 @@ interface PriceResult {
 }
 
 /**
- * Fetch from Jupiter Quote API (most accurate for any token)
+ * Fetch from Jupiter Metis Swap Quote API (most accurate for any token)
+ * Uses the new Metis Swap API with API key support
  */
 async function fetchFromJupiterQuote(tokenMint: string, decimals: number = 6): Promise<PriceResult> {
   const amount = BigInt(Math.pow(10, decimals))
+  const jupiterApiKey = process.env.JUPITER_API_KEY || ''
   
   const params = new URLSearchParams({
     inputMint: tokenMint,
     outputMint: USDC_MINT,
     amount: amount.toString(),
-    slippageBps: "0",
-    onlyDirectRoutes: "true"
+    slippageBps: "50",
+    restrictIntermediateTokens: "true"
   })
 
-  const response = await fetch(`https://quote-api.jup.ag/v6/quote?${params}`, {
-    headers: { "Accept": "application/json" },
-    signal: AbortSignal.timeout(3500)
-  })
+  // Try Metis API first (with API key), then fallback to legacy
+  const endpoints = [
+    { url: `https://api.jup.ag/swap/v1/quote?${params}`, useApiKey: true },
+    { url: `https://quote-api.jup.ag/v6/quote?${params}`, useApiKey: false },
+  ]
 
-  if (!response.ok) throw new Error(`Jupiter quote failed: ${response.status}`)
+  let lastError: Error | null = null
 
-  const data = await response.json()
-  const outAmount = data.outAmount || data.data?.outAmount
-  const inAmount = data.inAmount || data.data?.inAmount || amount.toString()
+  for (const endpoint of endpoints) {
+    try {
+      const headers: Record<string, string> = { "Accept": "application/json" }
+      if (endpoint.useApiKey && jupiterApiKey) {
+        headers["x-api-key"] = jupiterApiKey
+      }
 
-  if (!outAmount || !inAmount) throw new Error("Quote response missing amounts")
+      const response = await fetch(endpoint.url, {
+        headers,
+        signal: AbortSignal.timeout(5000)
+      })
 
-  const inAmountNum = BigInt(inAmount)
-  const outAmountNum = BigInt(outAmount)
-  
-  if (inAmountNum === BigInt(0) || outAmountNum === BigInt(0)) throw new Error("Zero amount in Jupiter quote")
+      if (!response.ok) {
+        throw new Error(`Jupiter quote failed: ${response.status}`)
+      }
 
-  const tokenUnits = Number(inAmountNum) / Math.pow(10, decimals)
-  const usdcUnits = Number(outAmountNum) / Math.pow(10, USDC_DECIMALS)
+      const data = await response.json()
+      const outAmount = data.outAmount || data.data?.outAmount
+      const inAmount = data.inAmount || data.data?.inAmount || amount.toString()
 
-  if (!Number.isFinite(tokenUnits) || tokenUnits <= 0 || !Number.isFinite(usdcUnits) || usdcUnits <= 0) {
-    throw new Error("Invalid amounts from Jupiter quote")
+      if (!outAmount || !inAmount) throw new Error("Quote response missing amounts")
+
+      const inAmountNum = BigInt(inAmount)
+      const outAmountNum = BigInt(outAmount)
+      
+      if (inAmountNum === BigInt(0) || outAmountNum === BigInt(0)) throw new Error("Zero amount in Jupiter quote")
+
+      const tokenUnits = Number(inAmountNum) / Math.pow(10, decimals)
+      const usdcUnits = Number(outAmountNum) / Math.pow(10, USDC_DECIMALS)
+
+      if (!Number.isFinite(tokenUnits) || tokenUnits <= 0 || !Number.isFinite(usdcUnits) || usdcUnits <= 0) {
+        throw new Error("Invalid amounts from Jupiter quote")
+      }
+
+      return {
+        price: usdcUnits / tokenUnits,
+        source: endpoint.useApiKey ? "jupiter_metis_quote" : "jupiter_quote"
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+      continue
+    }
   }
 
-  return {
-    price: usdcUnits / tokenUnits,
-    source: "jupiter_quote"
-  }
+  throw lastError || new Error("All Jupiter quote endpoints failed")
 }
 
 /**
- * Jupiter Price API disabled - requires paid API key signup
+ * Jupiter Price API v2 - uses API key for authenticated requests
  */
 async function fetchFromJupiterPriceV2(tokenMint: string): Promise<PriceResult> {
-  throw new Error("Jupiter API disabled - requires API key signup")
+  const jupiterApiKey = process.env.JUPITER_API_KEY
+  
+  if (!jupiterApiKey) {
+    throw new Error("Jupiter API key not configured")
+  }
+
+  const response = await fetch(`https://api.jup.ag/price/v2?ids=${tokenMint}`, {
+    headers: { 
+      "Accept": "application/json",
+      "x-api-key": jupiterApiKey
+    },
+    signal: AbortSignal.timeout(4000)
+  })
+
+  if (!response.ok) throw new Error(`Jupiter Price v2 failed: ${response.status}`)
+
+  const data = await response.json()
+  const tokenData = data.data?.[tokenMint]
+  const price = tokenData?.price
+
+  if (!Number.isFinite(price) || price <= 0) {
+    throw new Error("Jupiter Price v2 returned invalid price")
+  }
+
+  return { price, source: "jupiter_price_v2" }
 }
 
 /**
- * Fetch from Jupiter Price API v4 (legacy)
+ * Fetch from Jupiter Price API v4 (legacy, fallback)
  */
 async function fetchFromJupiterLegacy(tokenMint: string): Promise<PriceResult> {
   const response = await fetch(`https://price.jup.ag/v4/price?ids=${tokenMint}`, {
@@ -262,16 +312,18 @@ async function getCirculatingSupply(tokenMint: string): Promise<number> {
 
 /**
  * Resolve token price using cascade of sources
- * Order: DexScreener (reliable) -> Jupiter Quote -> Jupiter legacy
- * Jupiter Price v2 is skipped due to auth issues
+ * Order: DexScreener (reliable) -> Jupiter Quote -> Jupiter Price v2 -> Jupiter legacy
+ * Jupiter Price v2 uses API key for authenticated requests
  */
 async function resolveTokenPrice(tokenMint: string, decimals: number): Promise<PriceResult> {
   const errors: { source: string; message: string }[] = []
   
   // Ordered sources for token prices - DexScreener first (most reliable, no auth)
+  // Jupiter Quote uses Metis API with API key, then v2 price API, then legacy v4
   const sources = [
     { name: "dexscreener", fetch: () => fetchFromDexScreener(tokenMint) },
     { name: "jupiter_quote", fetch: () => fetchFromJupiterQuote(tokenMint, decimals) },
+    { name: "jupiter_price_v2", fetch: () => fetchFromJupiterPriceV2(tokenMint) },
     { name: "jupiter_price_v4", fetch: () => fetchFromJupiterLegacy(tokenMint) }
   ]
 
