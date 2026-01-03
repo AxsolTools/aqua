@@ -62,6 +62,12 @@ export async function GET(request: NextRequest) {
       .eq("mint_address", tokenMint)
       .single()
 
+    // Log query result and any errors
+    if (tokenError) {
+      console.error(`[CREATOR-REWARDS] DB query ERROR for ${tokenMint.slice(0, 8)}...:`, tokenError.message, tokenError.code)
+    }
+    console.log(`[CREATOR-REWARDS] DB query result for ${tokenMint.slice(0, 8)}...: token=${token ? 'found' : 'null'}, error=${tokenError ? tokenError.message : 'none'}`)
+
     const tokenData = token as { 
       id?: string; 
       stage?: string; 
@@ -70,6 +76,13 @@ export async function GET(request: NextRequest) {
       quote_mint?: string;
       dbc_pool_address?: string;
     } | null
+
+    if (!tokenData) {
+      return NextResponse.json(
+        { success: false, error: "Token not found in database" },
+        { status: 404 }
+      )
+    }
 
     // Log raw database values for debugging
     console.log(`[CREATOR-REWARDS] DB query for ${tokenMint.slice(0, 8)}...: pool_type='${tokenData?.pool_type}', creator_wallet='${tokenData?.creator_wallet?.slice(0, 8) || 'null'}...', dbc_pool='${tokenData?.dbc_pool_address || 'null'}'`)
@@ -90,13 +103,13 @@ export async function GET(request: NextRequest) {
     let rewards: { balance: number; vaultAddress: string; hasRewards: boolean }
     let platformName: string
 
-    // Jupiter tokens use DBC pool fees (per-token)
+    // Jupiter tokens use DBC pool fees (per-token) and must NOT fall back to Pump.fun
     if (poolType === 'jupiter') {
       if (dbcPoolAddress) {
         rewards = await getJupiterCreatorRewards(dbcPoolAddress)
         platformName = 'Jupiter'
       } else {
-        // Jupiter token without DBC pool address - try to fetch it
+        // Jupiter token without DBC pool address - try to fetch it once
         console.log(`[CREATOR-REWARDS] Jupiter token missing dbc_pool_address, attempting to fetch...`)
         try {
           const { getJupiterPoolAddress } = await import("@/lib/blockchain")
@@ -115,7 +128,8 @@ export async function GET(request: NextRequest) {
               console.warn(`[CREATOR-REWARDS] Failed to update dbc_pool_address:`, updateErr)
             }
           } else {
-            // No Jupiter pool found, return empty
+            // No Jupiter pool found, do NOT fall back to Pump.fun
+            console.warn(`[CREATOR-REWARDS] No Jupiter pool found for token ${tokenMint.slice(0,8)}...; returning zero rewards`)
             rewards = { balance: 0, vaultAddress: '', hasRewards: false }
             platformName = 'Jupiter'
           }
