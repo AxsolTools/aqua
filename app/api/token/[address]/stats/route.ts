@@ -35,12 +35,16 @@ export async function GET(
 ) {
   try {
     const { address } = await context.params
+    
+    console.log(`[TOKEN-STATS] ========== START ==========`)
+    console.log(`[TOKEN-STATS] Fetching stats for: ${address}`)
 
     // Validate address
     let mintPubkey: PublicKey
     try {
       mintPubkey = new PublicKey(address)
     } catch {
+      console.log(`[TOKEN-STATS] Invalid address: ${address}`)
       return NextResponse.json(
         { success: false, error: "Invalid token address" },
         { status: 400 }
@@ -48,12 +52,20 @@ export async function GET(
     }
 
     // Fetch all stats in parallel
+    console.log(`[TOKEN-STATS] Fetching holders, volume, bonding, dex data...`)
     const [holders, volumeData, bondingData, dexData] = await Promise.all([
       fetchHolderCount(address),
       fetchVolume24h(address),
       fetchBondingCurveProgress(address),
       fetchDexScreenerData(address),
     ])
+    
+    console.log(`[TOKEN-STATS] Raw data:`, {
+      holders,
+      volumeData,
+      bondingData,
+      dexData
+    })
 
     // For bonding tokens, use bonding curve SOL as liquidity (in USD)
     // For migrated tokens, use DexScreener liquidity
@@ -65,6 +77,15 @@ export async function GET(
     const hasDexLiquidity = dexData.liquidity > 0 && dexData.hasPairs
     const isMigrated = bondingData.isMigrated || hasDexLiquidity
     
+    console.log(`[TOKEN-STATS] Migration check:`, {
+      bondingIsMigrated: bondingData.isMigrated,
+      hasDexLiquidity,
+      finalIsMigrated: isMigrated,
+      bondingSolBalance: bondingData.solBalance,
+      dexLiquidity: dexData.liquidity,
+      dexHasPairs: dexData.hasPairs
+    })
+    
     const stats: TokenStats = {
       holders,
       volume24h: volumeData.volume24h || dexData.volume24h || 0,
@@ -74,6 +95,9 @@ export async function GET(
       bondingCurveSol: bondingData.solBalance,
       isMigrated: isMigrated,
     }
+    
+    console.log(`[TOKEN-STATS] Final stats:`, stats)
+    console.log(`[TOKEN-STATS] ========== END ==========`)
 
     // Update database with fresh values (async)
     updateDatabaseStats(address, stats)
