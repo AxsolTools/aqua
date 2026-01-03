@@ -14,6 +14,7 @@ interface TokenWithCreator extends Token {
     avatar_url: string | null
   } | null
   live_market_cap?: number // Live market cap from API
+  bonding_progress?: number // Real-time bonding curve progress from PumpPortal
 }
 
 const TOKENS_PER_PAGE = 20
@@ -24,6 +25,40 @@ export function TokenGrid() {
   const [isLoading, setIsLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+
+  // Fetch bonding curve progress from PumpPortal
+  const fetchBondingProgress = useCallback(async (tokenList: TokenWithCreator[]) => {
+    if (tokenList.length === 0) return
+
+    try {
+      // Only fetch for bonding stage tokens
+      const bondingTokens = tokenList.filter(t => t.stage === "bonding")
+      if (bondingTokens.length === 0) return
+
+      const mintAddresses = bondingTokens.map(t => t.mint_address).filter(Boolean)
+      
+      const response = await fetch('/api/pump/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mints: mintAddresses }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          setTokens(prev => prev.map(token => {
+            const progressData = data.data[token.mint_address]
+            if (progressData) {
+              return { ...token, bonding_progress: progressData.progress }
+            }
+            return token
+          }))
+        }
+      }
+    } catch (error) {
+      console.debug('[TOKEN-GRID] Failed to fetch bonding progress:', error)
+    }
+  }, [])
 
   // Fetch live market caps for all tokens
   const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithCreator[]) => {
@@ -88,11 +123,12 @@ export function TokenGrid() {
     if (tokenData) {
       const typedTokens = tokenData as TokenWithCreator[]
       setTokens(typedTokens)
-      // Fetch live market caps after initial load
+      // Fetch live market caps and bonding progress after initial load
       fetchLiveMarketCaps(typedTokens)
+      fetchBondingProgress(typedTokens)
     }
     setIsLoading(false)
-  }, [fetchLiveMarketCaps])
+  }, [fetchLiveMarketCaps, fetchBondingProgress])
 
   useEffect(() => {
     fetchTokens(currentPage)
@@ -143,6 +179,11 @@ export function TokenGrid() {
   const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
 
   const getMigrationProgress = (token: TokenWithCreator) => {
+    // Use real-time bonding progress from PumpPortal if available
+    if (token.bonding_progress !== undefined) {
+      return token.bonding_progress
+    }
+    // Fallback to market cap based calculation
     const threshold = token.migration_threshold || 69000
     const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
     return Math.min((current / threshold) * 100, 100)
@@ -288,11 +329,11 @@ export function TokenGrid() {
                         {formatMarketCap(getMarketCap(token))}
                       </span>
                       
-                      {/* Progress Bar */}
-                      <div className="flex-1 h-1.5 bg-[var(--bg-secondary)] rounded-full overflow-hidden">
+                      {/* Progress Bar - Gray track with green fill */}
+                      <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-[var(--green)] transition-all"
-                          style={{ width: `${progress}%` }}
+                          style={{ width: `${Math.max(progress, 0)}%` }}
                         />
                       </div>
                       

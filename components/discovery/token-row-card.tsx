@@ -16,6 +16,7 @@ interface TokenWithMetrics extends Omit<Token, 'volume_24h'> {
   holders_count?: number
   dev_holdings_percent?: number
   net_flow?: number
+  bonding_progress?: number // Real-time bonding curve progress from PumpPortal
 }
 
 interface TokenRowCardProps {
@@ -49,6 +50,11 @@ export function TokenRowCard({ token, showProgress = true, compact = false }: To
   const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
 
   const getProgress = () => {
+    // Use real-time bonding progress from PumpPortal if available
+    if (token.bonding_progress !== undefined) {
+      return token.bonding_progress
+    }
+    // Fallback to market cap based calculation
     const threshold = token.migration_threshold || 69000
     const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
     return Math.min((current / threshold) * 100, 100)
@@ -160,20 +166,14 @@ export function TokenRowCard({ token, showProgress = true, compact = false }: To
           <div className="flex items-center gap-2">
             {showProgress && !isMigrated && (
               <>
-                {/* Progress Bar */}
-                <div className="flex-1 h-1 bg-[var(--bg-tertiary)] rounded-full overflow-hidden">
+                {/* Progress Bar - Gray track with green fill */}
+                <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                   <div
-                    className={cn(
-                      "h-full transition-all duration-300",
-                      progress >= 80 ? "bg-[var(--warm-pink)]" : "bg-[var(--green)]"
-                    )}
-                    style={{ width: `${progress}%` }}
+                    className="h-full transition-all duration-300 bg-[var(--green)]"
+                    style={{ width: `${Math.max(progress, 0)}%` }}
                   />
                 </div>
-                <span className={cn(
-                  "text-[9px] font-bold whitespace-nowrap",
-                  progress >= 80 ? "text-[var(--warm-pink)]" : "text-[var(--text-muted)]"
-                )}>
+                <span className="text-[9px] font-bold whitespace-nowrap text-[var(--green)]">
                   {progress.toFixed(0)}%
                 </span>
               </>

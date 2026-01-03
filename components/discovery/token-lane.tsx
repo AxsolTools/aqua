@@ -18,6 +18,7 @@ interface TokenWithMetrics extends Token {
   holders_count?: number
   dev_holdings_percent?: number
   net_flow?: number
+  bonding_progress?: number // Real-time bonding curve progress from PumpPortal
 }
 
 type LaneType = "new" | "almost-bonded" | "migrated"
@@ -75,6 +76,11 @@ function getMarketCap(token: TokenWithMetrics) {
 }
 
 function getProgress(token: TokenWithMetrics) {
+  // Use real-time bonding progress from PumpPortal if available
+  if (token.bonding_progress !== undefined) {
+    return token.bonding_progress
+  }
+  // Fallback to market cap based calculation
   const threshold = token.migration_threshold || 69000
   const current = getMarketCap(token)
   return Math.min((current / threshold) * 100, 100)
@@ -86,6 +92,44 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
   const [isExpanded, setIsExpanded] = useState(true)
 
   const config = LANE_CONFIG[type]
+
+  // Fetch bonding curve progress from PumpPortal
+  const fetchBondingProgress = useCallback(async (tokenList: TokenWithMetrics[]) => {
+    if (tokenList.length === 0) return tokenList
+
+    try {
+      // Only fetch for bonding stage tokens
+      const bondingTokens = tokenList.filter(t => t.stage === "bonding")
+      if (bondingTokens.length === 0) return tokenList
+
+      const mintAddresses = bondingTokens.map(t => t.mint_address).filter(Boolean)
+      
+      const response = await fetch('/api/pump/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mints: mintAddresses }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && data.data) {
+          return tokenList.map(token => {
+            const progressData = data.data[token.mint_address]
+            if (progressData) {
+              return { 
+                ...token, 
+                bonding_progress: progressData.progress,
+              }
+            }
+            return token
+          })
+        }
+      }
+    } catch (error) {
+      console.debug('[TOKEN-LANE] Failed to fetch bonding progress:', error)
+    }
+    return tokenList
+  }, [])
 
   // Fetch live market caps for tokens
   const fetchLiveMarketCaps = useCallback(async (tokenList: TokenWithMetrics[]) => {
@@ -154,6 +198,9 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
       // Fetch live market caps
       typedTokens = await fetchLiveMarketCaps(typedTokens)
       
+      // Fetch bonding curve progress from PumpPortal
+      typedTokens = await fetchBondingProgress(typedTokens)
+      
       // Filter and sort based on lane type
       const filteredTokens = typedTokens
         .filter(config.filter)
@@ -165,7 +212,7 @@ export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: To
       setTokens(filteredTokens)
     }
     setIsLoading(false)
-  }, [config, maxTokens, fetchLiveMarketCaps, type])
+  }, [config, maxTokens, fetchLiveMarketCaps, fetchBondingProgress, type])
 
   useEffect(() => {
     fetchTokens()
