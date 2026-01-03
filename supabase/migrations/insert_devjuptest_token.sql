@@ -4,13 +4,16 @@
 -- Instructions:
 -- 1. First run: add_jupiter_columns.sql (to add the new columns)
 -- 2. Then run this file to insert the token
+--
+-- NOTE: Replace 'YOUR_CREATOR_WALLET_ADDRESS' with your actual wallet address
 
--- Check if token already exists, if so update it, otherwise insert
 INSERT INTO tokens (
   mint_address,
   name,
   symbol,
   description,
+  creator_wallet,
+  total_supply,
   pool_type,
   is_platform_token,
   stage,
@@ -20,9 +23,11 @@ INSERT INTO tokens (
   'DEVJUPTEST',
   'DEVJUPTEST',
   'Jupiter DBC test token created on PROPEL platform',
+  'AbiN8j5FpLBoVDpvg2vWP5caFdSVU9bqGUGGbQPRvdsR',
+  1000000000,
   'jupiter',
   TRUE,
-  'active',
+  'bonding',
   NOW()
 )
 ON CONFLICT (mint_address) 

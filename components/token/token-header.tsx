@@ -144,15 +144,16 @@ export function TokenHeader({ token, creator }: TokenHeaderProps) {
         {/* Token Identity */}
         <div className="flex items-center gap-4">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[var(--aqua-primary)] to-[var(--warm-pink)] flex items-center justify-center overflow-hidden">
-            {token.image_url ? (
-              <img
-                src={token.image_url}
-                alt={token.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="text-2xl font-bold text-[var(--ocean-deep)]">{token.symbol?.charAt(0)}</span>
-            )}
+            <img
+              src={token.image_url || `https://dd.dexscreener.com/ds-data/tokens/solana/${token.mint_address}.png`}
+              alt={token.name}
+              className="w-full h-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                target.parentElement!.innerHTML = `<span class="text-2xl font-bold text-[var(--ocean-deep)]">${token.symbol?.charAt(0) || '?'}</span>`;
+              }}
+            />
           </div>
           <div>
             <div className="flex items-center gap-3 mb-1">
