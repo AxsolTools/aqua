@@ -107,20 +107,28 @@ export default function DashboardPage() {
               // Use DB volume as fallback
             }
             
-            // Fetch creator rewards from on-chain (Pump.fun/Bonk.fun vault)
+            // Fetch creator rewards from on-chain
+            // NOTE: Pump.fun/Bonk.fun use a per-CREATOR vault (shared across all tokens)
+            // Jupiter uses per-TOKEN DBC pools
             try {
               const rewardsResponse = await fetch(`/api/creator-rewards?tokenMint=${token.mint_address}&creatorWallet=${mainWallet.public_key}`)
               if (rewardsResponse.ok) {
                 const rewardsData = await rewardsResponse.json()
                 if (rewardsData.success && rewardsData.data) {
                   const balance = rewardsData.data.balance || 0
-                  rewards += balance
+                  const poolType = rewardsData.data.poolType || 'pump'
+                  
+                  // For Jupiter tokens, rewards are per-token so add to total
+                  // For Pump/Bonk tokens, the vault is shared - we'll deduplicate below
                   harvest = { 
                     total_accumulated: balance, 
                     total_claimed: 0,
                     vault_address: rewardsData.data.vaultAddress,
                     hasRewards: rewardsData.data.hasRewards,
-                    canClaimViaPumpPortal: rewardsData.data.canClaimViaPumpPortal
+                    canClaimViaPumpPortal: rewardsData.data.canClaimViaPumpPortal,
+                    canClaimViaJupiter: rewardsData.data.canClaimViaJupiter,
+                    poolType,
+                    platformName: rewardsData.data.platformName,
                   }
                 }
               }
@@ -141,8 +149,35 @@ export default function DashboardPage() {
           }),
         )
 
+        // Calculate total rewards properly:
+        // - Jupiter tokens: per-token fees (sum all)
+        // - Pump/Bonk tokens: per-creator vault (only count once)
+        let totalRewardsCalc = 0
+        let pumpVaultCounted = false
+        let bonkVaultCounted = false
+        
+        tokensWithHarvest.forEach((token) => {
+          if (token.harvest && token.harvest.total_accumulated > 0) {
+            const poolType = token.harvest.poolType || token.pool_type || 'pump'
+            
+            if (poolType === 'jupiter') {
+              // Jupiter fees are per-token, add them all
+              totalRewardsCalc += token.harvest.total_accumulated
+            } else if (poolType === 'pump' && !pumpVaultCounted) {
+              // Pump.fun vault is per-creator, only count once
+              totalRewardsCalc += token.harvest.total_accumulated
+              pumpVaultCounted = true
+            } else if (poolType === 'bonk' && !bonkVaultCounted) {
+              // Bonk.fun vault is per-creator, only count once
+              totalRewardsCalc += token.harvest.total_accumulated
+              bonkVaultCounted = true
+            }
+            // For subsequent pump/bonk tokens, don't add to total (already counted)
+          }
+        })
+        
         setCreatedTokens(tokensWithHarvest)
-        setTotalRewards(rewards)
+        setTotalRewards(totalRewardsCalc)
       }
     } catch (err) {
       console.error("Failed to fetch creator data:", err)
@@ -529,8 +564,16 @@ export default function DashboardPage() {
                         {token.harvest && token.harvest.total_accumulated > 0 && (
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <div className="p-2 rounded bg-amber-500/5 border border-amber-500/20">
-                              <p className="text-[9px] text-zinc-500">Rewards</p>
+                              <p className="text-[9px] text-zinc-500">
+                                {token.harvest.poolType === 'jupiter' ? 'Rewards' : 'Rewards'}
+                              </p>
                               <p className="text-sm font-bold text-amber-400">{formatNumber(token.harvest.total_accumulated)} SOL</p>
+                              {/* Show indicator for shared vault (pump/bonk) */}
+                              {token.harvest.poolType !== 'jupiter' && (
+                                <p className="text-[8px] text-zinc-600" title="Pump.fun and Bonk.fun rewards are pooled across all your tokens">
+                                  (shared vault)
+                                </p>
+                              )}
                             </div>
                             <div className="flex flex-col items-start gap-1">
                               <button 
