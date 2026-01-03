@@ -71,15 +71,16 @@ export function Header() {
             {/* Center Nav */}
             <nav className="hidden md:flex items-center gap-1">
               {navItems.map((item) => {
-                const colorClass = 'color' in item 
+                const hasColor = 'color' in item
+                const colorClass = hasColor 
                   ? item.color === "amber" 
-                    ? "text-amber-400 hover:text-amber-300" 
+                    ? "!text-amber-400 hover:!text-amber-300" 
                     : item.color === "aqua"
-                      ? "text-[#00D9FF] hover:text-[#00F0FF]"
+                      ? "!text-[#00D9FF] hover:!text-[#00F0FF]"
                       : item.color === "orange"
-                        ? "text-orange-400 hover:text-orange-300"
+                        ? "!text-orange-400 hover:!text-orange-300"
                         : item.color === "pump"
-                          ? "text-[#00E676] hover:text-[#69F0AE]"
+                          ? "!text-[#00E676] hover:!text-[#69F0AE]"
                           : ""
                   : ""
                 
@@ -89,8 +90,8 @@ export function Header() {
                     href={item.href}
                     className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors flex items-center gap-1.5 ${
                       pathname === item.href
-                        ? `text-[var(--text-primary)] bg-[var(--bg-secondary)] ${colorClass}`
-                        : `text-[var(--text-muted)] hover:text-[var(--text-secondary)] ${colorClass}`
+                        ? `bg-[var(--bg-secondary)] ${hasColor ? colorClass : 'text-[var(--text-primary)]'}`
+                        : `${hasColor ? colorClass : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`
                     }`}
                   >
                     {item.icon && <item.icon className="w-4 h-4" />}
@@ -207,15 +208,16 @@ export function Header() {
             >
               <nav className="p-3 space-y-1">
                 {navItems.map((item) => {
-                  const colorClass = 'color' in item 
+                  const hasColor = 'color' in item
+                  const colorClass = hasColor 
                     ? item.color === "amber" 
-                      ? "text-amber-400 hover:text-amber-300" 
+                      ? "!text-amber-400 hover:!text-amber-300" 
                       : item.color === "aqua"
-                        ? "text-[#00D9FF] hover:text-[#00F0FF]"
+                        ? "!text-[#00D9FF] hover:!text-[#00F0FF]"
                         : item.color === "orange"
-                          ? "text-orange-400 hover:text-orange-300"
+                          ? "!text-orange-400 hover:!text-orange-300"
                           : item.color === "pump"
-                            ? "text-[#00E676] hover:text-[#69F0AE]"
+                            ? "!text-[#00E676] hover:!text-[#69F0AE]"
                             : ""
                     : ""
                   
@@ -226,8 +228,8 @@ export function Header() {
                       onClick={() => setMobileMenuOpen(false)}
                       className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                         pathname === item.href
-                          ? `text-[var(--text-primary)] bg-[var(--bg-secondary)] ${colorClass}`
-                          : `text-[var(--text-muted)] hover:text-[var(--text-secondary)] ${colorClass}`
+                          ? `bg-[var(--bg-secondary)] ${hasColor ? colorClass : 'text-[var(--text-primary)]'}`
+                          : `${hasColor ? colorClass : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'}`
                       }`}
                     >
                       {item.icon && <item.icon className="w-4 h-4" />}
