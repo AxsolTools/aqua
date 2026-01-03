@@ -201,7 +201,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { tokenMint, walletAddress } = body
+    const { tokenMint, walletAddress, poolType: poolTypeBody, dbcPool: dbcPoolBody } = body
 
     if (!tokenMint || !walletAddress) {
       return NextResponse.json(
@@ -227,32 +227,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify this is the token creator
-    const { data: token, error: tokenError } = await adminClient
-      .from("tokens")
-      .select("id, creator_wallet, stage, pool_type, quote_mint, dbc_pool_address")
-      .eq("mint_address", tokenMint)
-      .single()
+    // Verify this is the token creator (DB optional)
+    let tokenData: TokenRow | null = null
+    let tokenError: any = null
+    try {
+      const { data, error } = await adminClient
+        .from("tokens")
+        .select("id, creator_wallet, stage, pool_type, quote_mint, dbc_pool_address")
+        .eq("mint_address", tokenMint)
+        .single()
+      tokenData = data ? (data as TokenRow) : null
+      tokenError = error
+    } catch (e: any) {
+      tokenData = null
+      tokenError = e
+    }
 
-    const tokenData = token as { 
-      id?: string; 
-      creator_wallet?: string; 
-      stage?: string;
-      pool_type?: string;
-      quote_mint?: string;
-      dbc_pool_address?: string;
-    } | null
-
-    if (!tokenData) {
-      return NextResponse.json(
-        { success: false, error: "Token not found in database" },
-        { status: 404 }
-      )
+    if (tokenError) {
+      console.warn(`[CREATOR-REWARDS] Claim DB query error for ${tokenMint.slice(0,8)}...:`, tokenError.message || tokenError)
     }
     
-    // Check if wallet is the creator
-    const isCreator = tokenData.creator_wallet?.toLowerCase() === walletAddress.toLowerCase()
-    console.log(`[CREATOR-REWARDS] Claim check: wallet=${walletAddress.slice(0, 8)}... creator=${tokenData.creator_wallet?.slice(0, 8)}... match=${isCreator}`)
+    const safeTokenData: TokenRow = tokenData || {
+      creator_wallet: walletAddress,
+      pool_type: poolTypeBody || 'pump',
+      dbc_pool_address: dbcPoolBody,
+    }
+
+    const creatorFromDb = safeTokenData.creator_wallet?.toLowerCase()
+    const isCreator = creatorFromDb ? creatorFromDb === walletAddress.toLowerCase() : true
+    console.log(`[CREATOR-REWARDS] Claim check: wallet=${walletAddress.slice(0, 8)}... creator=${tokenData?.creator_wallet?.slice(0, 8) || 'n/a'}... match=${isCreator}`)
     
     if (!isCreator) {
       return NextResponse.json(
@@ -261,7 +264,7 @@ export async function POST(request: NextRequest) {
           error: "Only the token creator can claim rewards",
           debug: {
             providedWallet: walletAddress,
-            creatorWallet: tokenData.creator_wallet,
+            creatorWallet: tokenData?.creator_wallet,
           }
         },
         { status: 403 }
@@ -269,10 +272,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Determine pool type
-    let poolType: PoolType = 'pump'
-    if (tokenData.pool_type === 'bonk') {
+    let poolType: PoolType = (poolTypeBody as PoolType) || 'pump'
+    if (!poolTypeBody && safeTokenData.pool_type === 'bonk') {
       poolType = 'bonk'
-    } else if (tokenData.pool_type === 'jupiter') {
+    } else if (!poolTypeBody && safeTokenData.pool_type === 'jupiter') {
       poolType = 'jupiter'
     }
 
@@ -290,7 +293,7 @@ export async function POST(request: NextRequest) {
     // JUPITER DBC POOL CLAIM
     // ============================================================================
     if (poolType === 'jupiter') {
-      const dbcPoolAddress = tokenData.dbc_pool_address
+      const dbcPoolAddress = dbcPoolBody || safeTokenData.dbc_pool_address
       
       if (!dbcPoolAddress) {
         return NextResponse.json({
@@ -327,9 +330,9 @@ export async function POST(request: NextRequest) {
 
       // Record the claim in database
       try {
-        if (tokenData.id) {
+        if (safeTokenData.id) {
           await adminClient.from("tide_harvest_claims").insert({
-            token_id: tokenData.id,
+            token_id: safeTokenData.id,
             wallet_address: walletAddress,
             amount_sol: rewardsData.balance,
             tx_signature: claimResult.txSignature,
@@ -368,7 +371,7 @@ export async function POST(request: NextRequest) {
 
     // For migrated tokens, try Meteora DBC pool claim via PumpPortal
     // Pump.fun tokens migrate to Raydium but fees may still be claimable via meteora-dbc
-    if (tokenData.stage === "migrated" && poolType === 'pump') {
+    if (safeTokenData.stage === "migrated" && poolType === 'pump') {
       console.log(`[CREATOR-REWARDS] Token is migrated, trying meteora-dbc pool...`)
       
       try {
@@ -492,9 +495,9 @@ export async function POST(request: NextRequest) {
 
     // Record the claim in database
     try {
-      if (tokenData.id) {
+        if (safeTokenData.id) {
         await adminClient.from("tide_harvest_claims").insert({
-          token_id: tokenData.id,
+            token_id: safeTokenData.id,
           wallet_address: walletAddress,
           amount_sol: rewardsData.balance,
           tx_signature: signature,
