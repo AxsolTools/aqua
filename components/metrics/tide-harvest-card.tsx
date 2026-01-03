@@ -70,7 +70,7 @@ export function TideHarvestCard({
       console.log(`[TIDE-HARVEST-MONITOR] Fetching: ${apiUrl}`)
       
       const response = await fetch(apiUrl)
-      const data = await response.json()
+        const data = await response.json()
       
       console.log(`[TIDE-HARVEST-MONITOR] Response:`, {
         success: data.success,
@@ -83,8 +83,8 @@ export function TideHarvestCard({
         vaultAddress: data.data?.vaultAddress?.slice(0, 16) + '...',
       })
       
-      if (data.success && data.data) {
-        setRewards(data.data)
+        if (data.success && data.data) {
+          setRewards(data.data)
       }
     } catch (error) {
       console.error("[TIDE-HARVEST-MONITOR] ❌ Failed to fetch rewards:", error)

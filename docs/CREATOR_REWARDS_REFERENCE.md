@@ -199,6 +199,45 @@ const pdaPatterns = [
 
 ---
 
+## Automated Background Engines
+
+### Cron Job Schedule (pg_cron)
+
+| Engine | Interval | Purpose |
+|--------|----------|---------|
+| **Tide Harvest** | Every 30 min | Auto-claim creator rewards to destination wallet |
+| **Pour Rate** | Every 15 min | Auto-add liquidity from treasury/fees |
+| **Evaporation** | Every 1 hour | Auto-burn tokens from dev wallet buys |
+| **Token22 Liquidity** | Every 15 min | Harvest Token22 transfer fees |
+| **Price Updater** | Every 5 min | Update token prices |
+| **Metrics Updater** | Every 10 min | Update market cap, volume, etc. |
+
+### Token Parameters Required for Automation
+
+For **Tide Harvest** (auto-claim):
+- `auto_claim_enabled = true`
+- `claim_threshold_sol` (minimum to trigger claim)
+- `claim_interval_seconds` (time between claims)
+- `claim_destination_wallet` (where to send claimed SOL)
+- `dev_wallet_address` (the creator wallet that owns the vault)
+- `market_cap >= 5000` (to save API credits for dead tokens)
+
+For **Pour Rate** (auto-liquidity):
+- `pour_enabled = true`
+- `pour_rate_percent` (% of treasury to pour per interval)
+- `pour_interval_seconds`
+- `pour_source` ('fees', 'treasury', or 'both')
+- `treasury_balance_sol > pour_min_trigger_sol`
+- `dev_wallet_address`
+
+For **Evaporation** (auto-burn):
+- `evaporation_enabled = true`
+- `evaporation_rate_percent` (% of bought tokens to burn)
+- `dev_wallet_auto_enabled = true`
+- Linked to pour_rate_logs (burns tokens from dev buys)
+
+---
+
 ## Debugging Checklist
 
 When debugging creator rewards issues, verify:

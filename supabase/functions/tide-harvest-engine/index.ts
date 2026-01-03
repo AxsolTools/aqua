@@ -249,18 +249,19 @@ async function getAccountBalance(address: string): Promise<number> {
 }
 
 async function deriveCreatorVaultPDA(mint: string, creator: string): Promise<string> {
-  // Creator vault PDA: ['creator-vault', mint, creator]
+  // Creator vault PDA: ['creator-vault', creator]
+  // NOTE: Pump.fun uses PER-CREATOR vault, NOT per-token!
+  // The mint parameter is kept for backwards compatibility but not used in derivation
+  // Reference: https://deepwiki.com/pump-fun/pump-public-docs/2-creator-fee-update
   const programId = base58Decode(PUMP_PROGRAM_ID);
-  const mintBytes = base58Decode(mint);
   const creatorBytes = base58Decode(creator);
   
   // For finding PDAs, we need to use the RPC simulation
   // Since Deno doesn't have the full Solana SDK, we'll compute it manually
   
-  // Seed format for PDA derivation
+  // Seed format for PDA derivation - PER-CREATOR only
   const seeds = [
     new TextEncoder().encode('creator-vault'),
-    mintBytes,
     creatorBytes,
   ];
   
