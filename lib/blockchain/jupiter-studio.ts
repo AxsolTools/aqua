@@ -878,14 +878,25 @@ export async function executeJupiterSwap(
   params: JupiterSwapParams
 ): Promise<JupiterSwapResult> {
   const { walletKeypair, tokenMint, action, amount, slippageBps, tokenDecimals = 6 } = params;
-  
+
   const SOL_MINT = 'So11111111111111111111111111111111111111112';
-  
+
   try {
+    // -------------------------------
+    // Quote + Swap endpoints (fallbacks)
+    // -------------------------------
+    const QUOTE_ENDPOINTS = [
+      'https://quote-api.jup.ag/v6',
+      'https://jupiter-router.mngo.cloud/v6',
+      'https://quote.jup.ag/v6',
+    ];
+    const SWAP_ENDPOINT = 'https://quote-api.jup.ag/v6/swap';
+    const QUOTE_TIMEOUT_MS = 8000;
+
     let inputMint: string;
     let outputMint: string;
     let amountRaw: number;
-    
+
     if (action === 'buy') {
       // Buy: SOL -> Token
       inputMint = SOL_MINT;
@@ -897,74 +908,102 @@ export async function executeJupiterSwap(
       outputMint = SOL_MINT;
       amountRaw = Math.floor(amount * Math.pow(10, tokenDecimals));
     }
-    
+
     console.log(`[JUPITER] ${action.toUpperCase()}: ${inputMint.slice(0, 8)} -> ${outputMint.slice(0, 8)}, amount: ${amountRaw}`);
-    
-    // Get quote
-    const quoteUrl = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountRaw}&slippageBps=${slippageBps}`;
-    
-    const quoteResponse = await fetch(quoteUrl, {
-      headers: { 'Accept': 'application/json' },
-    });
-    
-    if (!quoteResponse.ok) {
-      const errorText = await quoteResponse.text();
-      throw new Error(`Quote failed: ${quoteResponse.status} - ${errorText}`);
+
+    // -------------------------------
+    // Fetch quote with fallbacks + timeout
+    // -------------------------------
+    const errors: string[] = [];
+    let quoteData: any = null;
+
+    for (const base of QUOTE_ENDPOINTS) {
+      const quoteUrl = `${base.replace(/\/+$/, '')}/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${amountRaw}&slippageBps=${slippageBps}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), QUOTE_TIMEOUT_MS);
+      try {
+        const res = await fetch(quoteUrl, {
+          headers: { Accept: 'application/json' },
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`HTTP ${res.status} ${text}`);
+        }
+        const data = await res.json();
+        if (!data || data.error) {
+          throw new Error(data?.error || 'No quote data');
+        }
+        quoteData = data;
+        break;
+      } catch (e: any) {
+        clearTimeout(timer);
+        errors.push(`[${base}] ${e?.message || e}`);
+        continue;
+      }
     }
-    
-    const quoteData = await quoteResponse.json();
-    
-    if (!quoteData || quoteData.error) {
-      throw new Error(`Quote error: ${quoteData?.error || 'No quote data'}`);
+
+    if (!quoteData) {
+      throw new Error(`Quote failed: ${errors.join('; ')}`);
     }
-    
-    // Get swap transaction
-    const swapResponse = await fetch('https://quote-api.jup.ag/v6/swap', {
+
+    // -------------------------------
+    // Build swap transaction
+    // -------------------------------
+    const swapBody = {
+      quoteResponse: quoteData,
+      userPublicKey: walletKeypair.publicKey.toBase58(),
+      wrapAndUnwrapSol: true,
+      useSharedAccounts: true,
+      asLegacyTransaction: false,
+      dynamicComputeUnitLimit: true,
+      prioritizationFeeLamports: 'auto',
+    };
+
+    const swapResponse = await fetch(SWAP_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        quoteResponse: quoteData,
-        userPublicKey: walletKeypair.publicKey.toBase58(),
-        wrapAndUnwrapSol: true,
-      }),
+      body: JSON.stringify(swapBody),
     });
-    
+
     if (!swapResponse.ok) {
       const swapError = await swapResponse.text();
       throw new Error(`Swap failed: ${swapResponse.status} - ${swapError}`);
     }
-    
+
     const { swapTransaction } = await swapResponse.json();
-    
+
     if (!swapTransaction) {
       throw new Error('No swap transaction returned');
     }
-    
+
     // Deserialize and sign
     const transaction = VersionedTransaction.deserialize(
       Buffer.from(swapTransaction, 'base64')
     );
     transaction.sign([walletKeypair]);
-    
+
     // Send transaction
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
       skipPreflight: false,
       maxRetries: 3,
     });
-    
+
     // Confirm
     const confirmation = await connection.confirmTransaction(signature, 'confirmed');
     if (confirmation.value.err) {
       throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
     }
-    
+
     // Calculate amounts from quote
     const inAmount = Number(quoteData.inAmount);
     const outAmount = Number(quoteData.outAmount);
-    
+
     let amountSol: number;
     let amountTokens: number;
-    
+
     if (action === 'buy') {
       amountSol = inAmount / 1e9;
       amountTokens = outAmount / Math.pow(10, tokenDecimals);
@@ -972,12 +1011,12 @@ export async function executeJupiterSwap(
       amountTokens = inAmount / Math.pow(10, tokenDecimals);
       amountSol = outAmount / 1e9;
     }
-    
+
     const pricePerToken = amountSol / amountTokens;
-    
+
     console.log(`[JUPITER] ✅ Swap successful: ${signature}`);
     console.log(`[JUPITER] Amount SOL: ${amountSol}, Tokens: ${amountTokens}, Price: ${pricePerToken}`);
-    
+
     return {
       success: true,
       txSignature: signature,
@@ -985,11 +1024,11 @@ export async function executeJupiterSwap(
       amountTokens,
       pricePerToken,
     };
-    
+
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Swap failed';
     console.error('[JUPITER] Swap error:', errorMessage);
-    
+
     return {
       success: false,
       error: errorMessage,
