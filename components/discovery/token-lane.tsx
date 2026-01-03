@@ -80,12 +80,10 @@ function getProgress(token: TokenWithMetrics) {
   if (token.bonding_progress !== undefined) {
     return token.bonding_progress
   }
-  // For migrated tokens, show 100%
-  if (token.stage === 'migrated') {
-    return 100
-  }
-  // No bonding data available - show 0% rather than incorrect market cap calculation
-  return 0
+  // Fallback to market cap based calculation
+  const threshold = token.migration_threshold || 69000
+  const current = getMarketCap(token)
+  return Math.min((current / threshold) * 100, 100)
 }
 
 export function TokenLane({ type, title, icon, accentColor, maxTokens = 20 }: TokenLaneProps) {

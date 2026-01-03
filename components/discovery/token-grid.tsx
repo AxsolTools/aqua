@@ -183,12 +183,10 @@ export function TokenGrid() {
     if (token.bonding_progress !== undefined) {
       return token.bonding_progress
     }
-    // For migrated tokens, show 100%
-    if (token.stage === 'migrated') {
-      return 100
-    }
-    // No bonding data available - show 0% rather than incorrect market cap calculation
-    return 0
+    // Fallback to market cap based calculation
+    const threshold = token.migration_threshold || 69000
+    const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
+    return Math.min((current / threshold) * 100, 100)
   }
 
   const getMarketCap = (token: TokenWithCreator) => {
