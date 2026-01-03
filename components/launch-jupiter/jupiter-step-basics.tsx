@@ -30,25 +30,43 @@ export function JupiterStepBasics({ formData, updateFormData, onNext, creatorWal
   // Fetch wallet balance
   useEffect(() => {
     const fetchBalance = async () => {
-      const wallet = activeWallet || mainWallet
-      if (!wallet?.public_key) return
+      const walletAddress = creatorWallet || activeWallet?.public_key || mainWallet?.public_key
+      if (!walletAddress) {
+        setIsLoadingBalance(false)
+        return
+      }
 
       try {
         setIsLoadingBalance(true)
-        const response = await fetch(`/api/wallet/balance?address=${wallet.public_key}`)
+        const response = await fetch(`/api/wallet/balance?address=${walletAddress}`)
         if (response.ok) {
           const data = await response.json()
-          setWalletBalance(data.balance || 0)
+          // API returns { success: true, data: { balanceSol: number } }
+          if (data.success && data.data) {
+            setWalletBalance(data.data.balanceSol || 0)
+          } else if (data.balance !== undefined) {
+            // Fallback for legacy format
+            setWalletBalance(data.balance || 0)
+          } else {
+            setWalletBalance(0)
+          }
+        } else {
+          console.error("Balance API returned error:", response.status)
+          setWalletBalance(0)
         }
       } catch (error) {
         console.error("Failed to fetch balance:", error)
+        setWalletBalance(0)
       } finally {
         setIsLoadingBalance(false)
       }
     }
 
     fetchBalance()
-  }, [activeWallet, mainWallet])
+    // Refresh balance every 15 seconds
+    const interval = setInterval(fetchBalance, 15000)
+    return () => clearInterval(interval)
+  }, [creatorWallet, activeWallet, mainWallet])
 
   const handleImageChange = (file: File | null, preview: string | null) => {
     updateFormData({
