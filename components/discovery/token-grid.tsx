@@ -154,14 +154,16 @@ export function TokenGrid() {
   const formatAddress = (addr: string) => `${addr.slice(0, 4)}...${addr.slice(-4)}`
 
   const getMigrationProgress = (token: TokenWithCreator) => {
-    // Use real-time bonding progress from PumpPortal if available
+    // Use bonding progress if available (from WebSocket or stats API)
     if (token.bonding_progress !== undefined) {
       return token.bonding_progress
     }
-    // Fallback to market cap based calculation
-    const threshold = token.migration_threshold || 69000
-    const current = token.live_market_cap || token.market_cap_usd || token.market_cap || 0
-    return Math.min((current / threshold) * 100, 100)
+    // For migrated tokens, show 100%
+    if (token.stage === 'migrated') {
+      return 100
+    }
+    // No data yet - return undefined to indicate loading
+    return undefined
   }
 
   const getMarketCap = (token: TokenWithCreator) => {
@@ -319,7 +321,7 @@ export function TokenGrid() {
                       <div className="flex-1 h-1.5 bg-gray-700 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-[var(--green)] transition-all"
-                          style={{ width: `${Math.max(progress, 0)}%` }}
+                          style={{ width: `${progress !== undefined ? Math.max(progress, 0) : 0}%` }}
                         />
                       </div>
                       

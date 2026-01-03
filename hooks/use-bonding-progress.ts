@@ -11,8 +11,7 @@ interface BondingProgressData {
 
 /**
  * Hook to get real-time bonding curve progress for Pump.fun tokens
- * Uses PumpPortal WebSocket to subscribe to token trades and track vSolInBondingCurve
- * Also fetches initial state from pump.fun API
+ * Uses our stats API for initial data (same as token page), then PumpPortal WebSocket for real-time updates
  */
 export function useBondingProgress(mintAddresses: string[]) {
   const [progressMap, setProgressMap] = useState<Record<string, BondingProgressData>>({})
@@ -37,36 +36,41 @@ export function useBondingProgress(mintAddresses: string[]) {
     }
   }, [])
 
-  // Fetch initial bonding curve state from pump.fun API
+  // Fetch initial bonding curve state from our stats API (same source as token page)
   const fetchInitialProgress = useCallback(async (mints: string[]) => {
     const mintsToFetch = mints.filter(m => !fetchedInitialRef.current.has(m))
     if (mintsToFetch.length === 0) return
 
-    for (const mint of mintsToFetch) {
-      try {
-        const response = await fetch(`https://frontend-api.pump.fun/coins/${mint}`)
-        if (response.ok) {
-          const coin = await response.json()
-          if (coin && coin.virtual_sol_reserves !== undefined) {
-            const vSol = coin.virtual_sol_reserves || 0
-            const migrationThreshold = 85
-            const progress = Math.min((vSol / migrationThreshold) * 100, 100)
-            
-            setProgressMap(prev => ({
-              ...prev,
-              [mint]: {
-                progress,
-                vSolInBondingCurve: vSol,
-                lastUpdated: Date.now(),
-              }
-            }))
+    // Fetch in parallel but limit concurrency
+    const batchSize = 5
+    for (let i = 0; i < mintsToFetch.length; i += batchSize) {
+      const batch = mintsToFetch.slice(i, i + batchSize)
+      
+      await Promise.all(batch.map(async (mint) => {
+        try {
+          // Use the same stats API that the token page uses
+          const response = await fetch(`/api/token/${mint}/stats`)
+          if (response.ok) {
+            const result = await response.json()
+            if (result.success && result.data) {
+              const { bondingCurveProgress, bondingCurveSol } = result.data
+              
+              setProgressMap(prev => ({
+                ...prev,
+                [mint]: {
+                  progress: bondingCurveProgress || 0,
+                  vSolInBondingCurve: bondingCurveSol || 0,
+                  lastUpdated: Date.now(),
+                }
+              }))
+            }
           }
+          fetchedInitialRef.current.add(mint)
+        } catch (error) {
+          console.debug(`[BONDING-PROGRESS] Failed to fetch stats for ${mint}:`, error)
+          fetchedInitialRef.current.add(mint)
         }
-        fetchedInitialRef.current.add(mint)
-      } catch (error) {
-        console.debug(`[BONDING-PROGRESS] Failed to fetch initial state for ${mint}:`, error)
-        fetchedInitialRef.current.add(mint) // Mark as fetched to avoid retrying
-      }
+      }))
     }
   }, [])
 
@@ -77,10 +81,10 @@ export function useBondingProgress(mintAddresses: string[]) {
     const validMints = mintAddresses.filter(m => m && m.length > 0)
     if (validMints.length === 0) return
 
-    // Fetch initial progress from pump.fun API
+    // Fetch initial progress from our stats API
     fetchInitialProgress(validMints)
 
-    // Get or create monitor instance
+    // Get or create monitor instance for real-time updates
     if (!monitorRef.current) {
       monitorRef.current = getPumpPortalMonitor()
     }
@@ -91,7 +95,7 @@ export function useBondingProgress(mintAddresses: string[]) {
       monitor.connect()
     }
 
-    // Register trade handler
+    // Register trade handler for real-time updates
     const unsubscribeTrade = monitor.onTrade(handleTrade)
 
     // Find new mints to subscribe to
