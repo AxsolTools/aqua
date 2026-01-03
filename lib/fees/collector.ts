@@ -65,11 +65,21 @@ export type OperationType =
   | 'token_sell' 
   | 'add_liquidity' 
   | 'remove_liquidity' 
-  | 'claim_rewards';
+  | 'claim_rewards'
+  | 'jupiter_create'
+  | 'pumpfun_create'
+  | 'bonk_create';
 
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
+
+/**
+ * Fixed platform fee for token creation (0.1 SOL)
+ * This is charged on successful token creation for all platforms
+ */
+export const TOKEN_CREATION_FEE_SOL = 0.1;
+export const TOKEN_CREATION_FEE_LAMPORTS = BigInt(Math.floor(TOKEN_CREATION_FEE_SOL * 1e9));
 
 /**
  * Get the developer fee wallet from environment
@@ -216,9 +226,10 @@ export async function revalidateBalance(
  * 
  * @param connection - Solana RPC connection
  * @param userKeypair - User's keypair for signing
- * @param transactionLamports - The transaction amount to calculate fee from
+ * @param transactionLamports - The transaction amount to calculate fee from (2% of this)
  * @param referrerWallet - Optional referrer wallet for split
  * @param priorityFee - Priority fee in microlamports per CU
+ * @param fixedFeeLamports - Optional fixed fee to add (e.g., 0.1 SOL creation fee)
  * @returns Collection result
  */
 export async function collectPlatformFee(
@@ -226,7 +237,8 @@ export async function collectPlatformFee(
   userKeypair: Keypair,
   transactionLamports: bigint,
   referrerWallet?: PublicKey,
-  priorityFee: number = 5000
+  priorityFee: number = 5000,
+  fixedFeeLamports: bigint = 0n
 ): Promise<FeeCollectionResult> {
   const developerWallet = getDeveloperWallet();
   
@@ -235,11 +247,15 @@ export async function collectPlatformFee(
     return { success: true, feeAmount: 0n };
   }
   
-  const platformFee = calculatePlatformFee(transactionLamports);
+  // Calculate 2% transaction fee + any fixed fee
+  const percentageFee = calculatePlatformFee(transactionLamports);
+  const platformFee = percentageFee + fixedFeeLamports;
   
   if (platformFee <= 0n) {
     return { success: true, feeAmount: 0n };
   }
+  
+  console.log(`[FEES] Collecting: ${formatSol(lamportsToSol(percentageFee))} SOL (2%) + ${formatSol(lamportsToSol(fixedFeeLamports))} SOL (fixed) = ${formatSol(lamportsToSol(platformFee))} SOL total`);
   
   try {
     const transaction = new Transaction();

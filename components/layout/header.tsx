@@ -7,16 +7,26 @@ import { usePathname } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useAuth } from "@/components/providers/auth-provider"
 import { WalletSidebar } from "@/components/wallet/wallet-sidebar"
-import { ChevronDown, Sparkles, Coins, Dice6, BarChart3, Zap, DollarSign } from "lucide-react"
+import { ChevronDown, Sparkles, Coins, Dice6, BarChart3, DollarSign, Activity } from "lucide-react"
+
+// Custom Jupiter icon (planet with rings)
+const JupiterIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="7" />
+    <ellipse cx="12" cy="12" rx="11" ry="3" />
+    <path d="M5 12h14" strokeWidth="1.5" />
+  </svg>
+)
 
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/aggregator", label: "Token Aggregator", icon: BarChart3 },
   { href: "/launch", label: "Launch" },
+  { href: "/launch-jupiter", label: "JUP", icon: JupiterIcon, color: "orange" },
   { href: "/launch22", label: "TOKEN22" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
   { href: "/launch-bonk", label: "USD1", icon: DollarSign, color: "amber" },
-  { href: "/volume-bot", label: "Volume Bot", icon: Zap },
+  { href: "/volume-bot", label: "Volume Bot", icon: Activity },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
 ]
@@ -67,6 +77,18 @@ export function Header() {
                   <ChevronDown className="w-3 h-3" />
                 </button>
                 <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                  <Link
+                    href="/launch-jupiter"
+                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors border-b border-zinc-800"
+                  >
+                    <div className="p-1.5 rounded-md bg-gradient-to-br from-orange-500/20 to-yellow-500/20">
+                      <JupiterIcon className="w-4 h-4 text-orange-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-orange-400">Jupiter DBC</p>
+                      <p className="text-xs text-zinc-500">Dynamic bonding curve</p>
+                    </div>
+                  </Link>
                   <Link
                     href="/launch"
                     className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors"

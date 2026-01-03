@@ -78,6 +78,15 @@ function LaunchBonkContent() {
             {/* Switch Protocol */}
             <div className="flex items-center gap-2">
               <Link
+                href="/launch-jupiter"
+                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r from-orange-500/10 to-yellow-500/10 border border-orange-500/30 hover:border-orange-500/50 transition-all text-sm text-orange-400 hover:text-orange-300 font-medium"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <span>JUP</span>
+              </Link>
+              <Link
                 href="/launch"
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] hover:border-[var(--aqua-border)] transition-all text-sm text-[var(--text-secondary)] hover:text-[var(--aqua-primary)]"
               >

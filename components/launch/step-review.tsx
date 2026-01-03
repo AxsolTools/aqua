@@ -162,6 +162,55 @@ export function StepReview({
         </div>
       )}
 
+      {/* Cost Breakdown */}
+      <div className="p-5 rounded-xl bg-white/5 border border-white/10">
+        <h3 className="text-sm font-medium text-white mb-4">Cost Breakdown</h3>
+        <div className="space-y-2 text-sm">
+          <div className="flex justify-between">
+            <span className="text-white/50">Account Rent</span>
+            <span className="text-white">~0.02 SOL</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-white/50">Creation Fee</span>
+            <span className="text-[var(--aqua-primary)]">0.1 SOL</span>
+          </div>
+          {parseFloat(formData.initialBuySol) > 0 && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-white/50">Initial Buy</span>
+                <span className="text-white">{formData.initialBuySol} SOL</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/50">Transaction Fee (2%)</span>
+                <span className="text-white">~{(parseFloat(formData.initialBuySol) * 0.02).toFixed(4)} SOL</span>
+              </div>
+            </>
+          )}
+          {formData.launchWithBundle && formData.bundleWallets.length > 0 && (
+            <>
+              <div className="flex justify-between">
+                <span className="text-white/50">Bundle Buys</span>
+                <span className="text-white">{formData.bundleWallets.reduce((sum, w) => sum + w.buyAmount, 0).toFixed(4)} SOL</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/50">Bundle Fee (2%)</span>
+                <span className="text-white">~{(formData.bundleWallets.reduce((sum, w) => sum + w.buyAmount, 0) * 0.02).toFixed(4)} SOL</span>
+              </div>
+            </>
+          )}
+          <div className="flex justify-between pt-2 border-t border-white/10">
+            <span className="font-semibold text-white">Total Estimated</span>
+            <span className="font-semibold text-[var(--aqua-primary)]">
+              ~{(
+                0.02 + 0.1 + 
+                (parseFloat(formData.initialBuySol) || 0) * 1.02 +
+                (formData.launchWithBundle ? formData.bundleWallets.reduce((sum, w) => sum + w.buyAmount, 0) * 1.02 : 0)
+              ).toFixed(4)} SOL
+            </span>
+          </div>
+        </div>
+      </div>
+
       {/* Deploying Wallet */}
       <div className="p-5 rounded-xl bg-white/5 border border-white/10">
         <div className="flex items-center justify-between">
@@ -172,10 +221,6 @@ export function StepReview({
                 ? `${activeWallet.public_key.slice(0, 8)}...${activeWallet.public_key.slice(-8)}`
                 : "No wallet connected"}
             </p>
-          </div>
-          <div className="text-right">
-            <p className="text-xs text-white/40 mb-1">Network fee</p>
-            <p className="text-sm font-medium text-white">~0.02 SOL</p>
           </div>
         </div>
       </div>

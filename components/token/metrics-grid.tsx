@@ -10,9 +10,10 @@ import { ConstellationGauge } from "@/components/metrics/constellation-gauge"
 import { PourRateVisualizer } from "@/components/metrics/pour-rate-visualizer"
 import { TideHarvestCard } from "@/components/metrics/tide-harvest-card"
 import { Token22FeeHarvestCard } from "@/components/metrics/token22-fee-harvest-card"
+import { JupiterFeeHarvestCard } from "@/components/metrics/jupiter-fee-harvest-card"
 
 interface MetricsGridProps {
-  token: Token
+  token: Token & { pool_type?: string; dbc_pool_address?: string }
   isToken22?: boolean
 }
 
@@ -190,7 +191,7 @@ export function MetricsGrid({ token, isToken22 = false }: MetricsGridProps) {
           </GlassPanel>
         </motion.div>
 
-        {/* Tide Harvest / Token22 Fee Harvest */}
+        {/* Tide Harvest / Token22 Fee Harvest / Jupiter Fee Harvest */}
         <motion.div variants={itemVariants}>
           {isToken22 ? (
             <GlassPanel className="p-3 h-full" glow="purple">
@@ -218,6 +219,32 @@ export function MetricsGrid({ token, isToken22 = false }: MetricsGridProps) {
                 decimals={token.decimals}
               />
             </GlassPanel>
+          ) : token.pool_type === 'jupiter' ? (
+            <GlassPanel className="p-3 h-full" glow="orange">
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <h3 className="text-xs font-semibold text-[var(--text-primary)]">Jupiter Fees</h3>
+                  <p className="text-[9px] uppercase tracking-wider text-[var(--text-muted)]">DBC Rewards</p>
+                </div>
+                <div className="w-6 h-6 rounded-md bg-orange-500/10 flex items-center justify-center">
+                  <svg className="w-3 h-3 text-orange-400" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <JupiterFeeHarvestCard 
+                tokenId={token.id} 
+                tokenAddress={token.mint_address} 
+                creatorWallet={token.creator_wallet || ""}
+                dbcPoolAddress={token.dbc_pool_address}
+              />
+            </GlassPanel>
           ) : (
             <GlassPanel className="p-3 h-full" glow="aqua">
               <div className="flex items-center justify-between mb-2">
@@ -236,7 +263,7 @@ export function MetricsGrid({ token, isToken22 = false }: MetricsGridProps) {
                   </svg>
                 </div>
               </div>
-              <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} tokenAddress={token.mint_address} />
+              <TideHarvestCard tokenId={token.id} creatorId={token.creator_id} tokenAddress={token.mint_address} creatorWallet={token.creator_wallet || ""} />
             </GlassPanel>
           )}
         </motion.div>

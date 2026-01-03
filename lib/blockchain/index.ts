@@ -124,3 +124,27 @@ export {
   completeTransferFeeWithdrawal,
   getWithheldFeesInfo,
 } from './transfer-fees';
+
+// Jupiter Studio integration (Dynamic Bonding Curve)
+export {
+  // Types
+  type JupiterTokenMetadata,
+  type CreateJupiterTokenParams,
+  type CreateJupiterTokenResult,
+  type JupiterPoolInfo,
+  type JupiterFeeInfo,
+  type ClaimFeesResult,
+  
+  // Token creation
+  createJupiterToken,
+  validateJupiterTokenParams,
+  
+  // Pool & fee management
+  getJupiterPoolAddress,
+  getJupiterFeeInfo,
+  claimJupiterFees,
+  
+  // Constants
+  JUPITER_API_BASE,
+  JUPITER_STUDIO_API,
+} from './jupiter-studio';

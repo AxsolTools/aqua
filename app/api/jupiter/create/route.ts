@@ -1,12 +1,11 @@
 /**
- * AQUA Launchpad - Token Creation API
+ * AQUA Launchpad - Jupiter Token Creation API
  * 
- * Creates a new token on Pump.fun or Bonk.fun via PumpPortal
+ * Creates a new token on Jupiter's Dynamic Bonding Curve (DBC)
  * Includes:
- * - IPFS metadata upload (pump.fun or bonk.fun)
- * - Token creation on bonding curve
+ * - Metadata upload via Jupiter presigned URLs
+ * - Token creation on DBC pool
  * - Optional initial buy
- * - Auto SOL->USD1 conversion for Bonk USD1 pairs
  * - Fee collection
  * - Database record creation
  */
@@ -14,22 +13,11 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
-import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
 import { validateBalanceForTransaction, collectPlatformFee, TOKEN_CREATION_FEE_LAMPORTS, TOKEN_CREATION_FEE_SOL } from '@/lib/fees';
 import { solToLamports, lamportsToSol, calculatePlatformFee } from '@/lib/precision';
-import { 
-  createToken, 
-  uploadToIPFS, 
-  type TokenMetadata,
-  type PoolType,
-  type QuoteMint,
-  POOL_TYPES,
-  QUOTE_MINTS,
-  swapSolToUsd1,
-  solToUsd1Amount,
-} from '@/lib/blockchain';
+import { createJupiterToken, validateJupiterTokenParams, getJupiterPoolAddress } from '@/lib/blockchain/jupiter-studio';
 import { getReferrer, addReferralEarnings } from '@/lib/referral';
 
 // ============================================================================
@@ -111,24 +99,28 @@ export async function POST(request: NextRequest) {
       // Pre-generated mint keypair from frontend
       mintSecretKey,
       mintAddress: preGeneratedMintAddress,
-      
-      // Pool selection (pump or bonk)
-      pool = 'pump',
-      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools
-      autoConvertToUsd1 = false, // Auto-swap SOL to USD1 before creation
     } = body;
 
-    // Validate required fields
-    if (!name || !symbol || !description) {
+    // ========== VALIDATION ==========
+    const validation = validateJupiterTokenParams({ name, symbol, decimals });
+    
+    if (!validation.valid) {
       return NextResponse.json(
-        { success: false, error: { code: 4002, message: 'Name, symbol, and description are required' } },
+        { 
+          success: false, 
+          error: { 
+            code: 4002, 
+            message: 'Validation failed', 
+            details: validation.errors 
+          } 
+        },
         { status: 400 }
       );
     }
 
-    if (symbol.length > 10) {
+    if (!description) {
       return NextResponse.json(
-        { success: false, error: { code: 4002, message: 'Symbol must be 10 characters or less' } },
+        { success: false, error: { code: 4002, message: 'Description is required' } },
         { status: 400 }
       );
     }
@@ -158,24 +150,24 @@ export async function POST(request: NextRequest) {
     const operationLamports = solToLamports(estimatedCostSol);
     const priorityFeeLamports = solToLamports(0.001);
 
-    const validation = await validateBalanceForTransaction(
+    const balanceValidation = await validateBalanceForTransaction(
       connection,
       walletAddress,
       operationLamports,
       priorityFeeLamports
     );
 
-    if (!validation.sufficient) {
+    if (!balanceValidation.sufficient) {
       return NextResponse.json(
         {
           success: false,
           error: {
             code: 2001,
-            message: validation.error || 'Insufficient balance',
+            message: balanceValidation.error || 'Insufficient balance',
             breakdown: {
-              currentBalance: lamportsToSol(validation.currentBalance).toFixed(9),
-              required: lamportsToSol(validation.requiredTotal).toFixed(9),
-              shortfall: validation.shortfall ? lamportsToSol(validation.shortfall).toFixed(9) : undefined,
+              currentBalance: lamportsToSol(balanceValidation.currentBalance).toFixed(9),
+              required: lamportsToSol(balanceValidation.requiredTotal).toFixed(9),
+              shortfall: balanceValidation.shortfall ? lamportsToSol(balanceValidation.shortfall).toFixed(9) : undefined,
             },
           },
         },
@@ -183,79 +175,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ========== CREATE TOKEN ON CHAIN ==========
-    const poolType = (pool === 'bonk' ? POOL_TYPES.BONK : POOL_TYPES.PUMP) as PoolType;
-    const quoteType = (quoteMint === QUOTE_MINTS.USD1 ? QUOTE_MINTS.USD1 : QUOTE_MINTS.WSOL) as QuoteMint;
-    
-    console.log(`[TOKEN] Creating token: ${name} (${symbol}) on ${poolType} pool${poolType === 'bonk' ? ` (quote: ${quoteType === QUOTE_MINTS.USD1 ? 'USD1' : 'SOL'})` : ''}`);
+    // ========== CREATE TOKEN ON JUPITER ==========
+    console.log(`[JUPITER] Creating token: ${name} (${symbol})`);
 
     // Decode pre-generated mint keypair from frontend if provided
     let mintKeypair: Keypair | undefined;
     if (mintSecretKey) {
       try {
         mintKeypair = Keypair.fromSecretKey(bs58.decode(mintSecretKey));
-        console.log(`[TOKEN] Using pre-generated mint: ${mintKeypair.publicKey.toBase58()}`);
+        console.log(`[JUPITER] Using pre-generated mint: ${mintKeypair.publicKey.toBase58()}`);
         
         // Verify it matches the claimed address
         if (preGeneratedMintAddress && mintKeypair.publicKey.toBase58() !== preGeneratedMintAddress) {
-          console.warn(`[TOKEN] Mint address mismatch! Frontend: ${preGeneratedMintAddress}, Decoded: ${mintKeypair.publicKey.toBase58()}`);
+          console.warn(`[JUPITER] Mint address mismatch! Frontend: ${preGeneratedMintAddress}, Decoded: ${mintKeypair.publicKey.toBase58()}`);
         }
       } catch (decodeError) {
-        console.warn('[TOKEN] Failed to decode mint keypair, will generate new one');
+        console.warn('[JUPITER] Failed to decode mint keypair, will generate new one');
         mintKeypair = undefined;
       }
     }
 
-    // ========== AUTO-SWAP SOL TO USD1 (for Bonk USD1 pairs) ==========
-    let actualInitialBuy = initialBuySol;
-    let swapTxSignature: string | undefined;
-    
-    if (poolType === POOL_TYPES.BONK && quoteType === QUOTE_MINTS.USD1 && autoConvertToUsd1 && initialBuySol > 0) {
-      console.log(`[TOKEN] Auto-converting ${initialBuySol} SOL to USD1 for initial buy...`);
-      
-      const swapResult = await swapSolToUsd1(connection, creatorKeypair, initialBuySol);
-      
-      if (!swapResult.success) {
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: { 
-              code: 4001, 
-              message: `SOL to USD1 conversion failed: ${swapResult.error}` 
-            } 
-          },
-          { status: 500 }
-        );
-      }
-      
-      // For USD1 pairs, the initial buy amount is in USD1 terms
-      actualInitialBuy = swapResult.outputAmount;
-      swapTxSignature = swapResult.txSignature;
-      console.log(`[TOKEN] ✅ Converted to ${actualInitialBuy.toFixed(2)} USD1`);
-    }
-
-    // Prepare metadata
-    const metadata: TokenMetadata = {
-      name,
-      symbol,
-      description,
-      image: image || 'https://aqua.launchpad/placeholder.png',
-      website,
-      twitter,
-      telegram,
-      showName: true,
-    };
-
-    // Create token via PumpPortal (supports pump and bonk pools)
-    const createResult = await createToken(connection, {
-      metadata,
+    // Create token via Jupiter Studio API
+    const createResult = await createJupiterToken(connection, {
+      metadata: {
+        name,
+        symbol,
+        description,
+        image: image || 'https://aqua.launchpad/placeholder.png',
+        website,
+        twitter,
+        telegram,
+        discord,
+      },
       creatorKeypair,
-      initialBuySol: actualInitialBuy,
+      initialBuySol,
       slippageBps,
-      priorityFee: 0.001,
       mintKeypair,
-      pool: poolType,
-      quoteMint: quoteType,
     });
 
     if (!createResult.success || !createResult.mintAddress) {
@@ -264,7 +219,7 @@ export async function POST(request: NextRequest) {
           success: false, 
           error: { 
             code: 4000, 
-            message: createResult.error || 'Token creation failed on chain' 
+            message: createResult.error || 'Jupiter token creation failed' 
           } 
         },
         { status: 500 }
@@ -279,7 +234,7 @@ export async function POST(request: NextRequest) {
     const percentageFeeLamports = calculatePlatformFee(solToLamports(feeBaseSol));
     const totalFeeLamports = percentageFeeLamports + TOKEN_CREATION_FEE_LAMPORTS;
 
-    console.log(`[TOKEN] Collecting fees: ${TOKEN_CREATION_FEE_SOL} SOL (creation) + ${lamportsToSol(percentageFeeLamports)} SOL (2% of ${feeBaseSol} SOL) = ${lamportsToSol(totalFeeLamports)} SOL total`);
+    console.log(`[JUPITER] Collecting fees: ${TOKEN_CREATION_FEE_SOL} SOL (creation) + ${lamportsToSol(percentageFeeLamports)} SOL (2% of ${feeBaseSol} SOL) = ${lamportsToSol(totalFeeLamports)} SOL total`);
 
     // Check for referrer
     const referrerUserId = userId ? await getReferrer(userId) : null;
@@ -313,16 +268,15 @@ export async function POST(request: NextRequest) {
         referrerUserId,
         lamportsToSol(feeResult.referralShare),
         userId || 'anonymous',
-        'token_create'
+        'jupiter_create'
       );
     }
 
     // ========== CREATE DATABASE RECORDS ==========
     
-    // Ensure user exists in users table (upsert by wallet address)
+    // Ensure user exists in users table
     let finalUserId = userId;
     if (userId) {
-      // First check if user exists by ID
       const { data: existingUserById } = await adminClient
         .from('users')
         .select('id')
@@ -332,7 +286,6 @@ export async function POST(request: NextRequest) {
       if (existingUserById) {
         finalUserId = existingUserById.id;
       } else {
-        // User doesn't exist by ID, check by wallet address
         const { data: existingUserByWallet } = await adminClient
           .from('users')
           .select('id')
@@ -340,10 +293,8 @@ export async function POST(request: NextRequest) {
           .single();
         
         if (existingUserByWallet) {
-          // User exists with this wallet, use that ID
           finalUserId = existingUserByWallet.id;
         } else {
-          // Create new user with the provided userId
           const { data: newUser, error: userError } = await adminClient
             .from('users')
             .insert({
@@ -354,7 +305,6 @@ export async function POST(request: NextRequest) {
             .single();
           
           if (userError || !newUser) {
-            // If insert fails (e.g., duplicate wallet), try to get existing user
             const { data: existingUser } = await adminClient
               .from('users')
               .select('id')
@@ -364,8 +314,8 @@ export async function POST(request: NextRequest) {
             if (existingUser) {
               finalUserId = existingUser.id;
             } else {
-              console.warn('[TOKEN] Failed to create/find user record, proceeding with NULL creator_id:', userError);
-              finalUserId = null; // Set to null if user creation fails
+              console.warn('[JUPITER] Failed to create/find user record, proceeding with NULL creator_id:', userError);
+              finalUserId = null;
             }
           } else {
             finalUserId = newUser.id;
@@ -380,14 +330,14 @@ export async function POST(request: NextRequest) {
     const { data: token, error: insertError } = await adminClient
       .from('tokens')
       .insert({
-        creator_id: finalUserId, // Use finalUserId which may be null
+        creator_id: finalUserId,
         creator_wallet: walletAddress,
         mint_address: createResult.mintAddress,
         name,
         symbol,
         description,
-        image_url: metadata.image,
-        metadata_uri: createResult.metadataUri,
+        image_url: image || '',
+        metadata_uri: createResult.metadataUri || '',
         total_supply: totalSupply,
         decimals,
         stage: 'bonding',
@@ -407,29 +357,30 @@ export async function POST(request: NextRequest) {
         holders: 1,
         water_level: 50,
         constellation_strength: 50,
-        // Pool type (pump or bonk)
-        pool_type: poolType,
-        quote_mint: quoteType,
+        // Jupiter specific
+        pool_type: 'jupiter',
+        dbc_pool_address: createResult.dbcPoolAddress || null,
       })
       .select('id')
       .single();
 
     if (insertError || !token) {
-      console.error('[TOKEN] Database insert error:', insertError);
+      console.error('[JUPITER] Database insert error:', insertError);
       // Token was created on chain but DB insert failed - log for recovery
       return NextResponse.json({
         success: true,
         data: {
           mintAddress: createResult.mintAddress,
           txSignature: createResult.txSignature,
+          dbcPoolAddress: createResult.dbcPoolAddress,
           warning: 'Token created on chain but database record may need recovery',
         },
       });
     }
 
     // Convert intervals to seconds
-    const pourIntervalSeconds = pourInterval === 'hourly' ? 3600 : 86400; // 1 hour or 1 day
-    const claimIntervalSeconds = claimInterval === 'hourly' ? 3600 : claimInterval === 'daily' ? 86400 : 604800; // 1 hour, 1 day, or 1 week
+    const pourIntervalSeconds = pourInterval === 'hourly' ? 3600 : 86400;
+    const claimIntervalSeconds = claimInterval === 'hourly' ? 3600 : claimInterval === 'daily' ? 86400 : 604800;
 
     // Create token parameters with AQUA settings
     await adminClient.from('token_parameters').insert({
@@ -481,7 +432,7 @@ export async function POST(request: NextRequest) {
       user_id: userId,
       wallet_address: walletAddress,
       source_tx_signature: createResult.txSignature,
-      operation_type: 'token_create',
+      operation_type: 'jupiter_create',
       transaction_amount_lamports: Number(solToLamports(feeBaseSol)),
       fee_amount_lamports: Number(platformFeeLamports),
       fee_percentage: 2,
@@ -492,7 +443,7 @@ export async function POST(request: NextRequest) {
       status: feeResult.success ? 'collected' : 'pending',
     });
 
-    console.log(`[TOKEN] Created successfully: ${createResult.mintAddress} (pool: ${poolType})`);
+    console.log(`[JUPITER] Created successfully: ${createResult.mintAddress}`);
 
     return NextResponse.json({
       success: true,
@@ -501,24 +452,20 @@ export async function POST(request: NextRequest) {
         mintAddress: createResult.mintAddress,
         metadataUri: createResult.metadataUri,
         txSignature: createResult.txSignature,
+        dbcPoolAddress: createResult.dbcPoolAddress,
         platformFee: lamportsToSol(platformFeeLamports),
-        // Pool info
-        pool: poolType,
-        quoteMint: quoteType,
-        // Swap info (for USD1 conversions)
-        ...(swapTxSignature && { swapTxSignature }),
-        ...(autoConvertToUsd1 && { convertedUsd1Amount: actualInitialBuy }),
+        pool: 'jupiter',
       },
     });
 
   } catch (error) {
-    console.error('[TOKEN] Create error:', error);
+    console.error('[JUPITER] Create error:', error);
     return NextResponse.json(
       {
         success: false,
         error: {
           code: 4000,
-          message: 'Token creation failed',
+          message: 'Jupiter token creation failed',
           details: error instanceof Error ? error.message : 'Unknown error',
         },
       },
@@ -526,3 +473,4 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
