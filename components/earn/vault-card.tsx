@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import Image from "next/image"
 import { cn } from "@/lib/utils"
 
 interface VaultCardProps {
@@ -96,11 +95,10 @@ export function VaultCard({ vault, onDeposit, isSelected }: VaultCardProps) {
             {/* Asset Logo */}
             {logoUrl && !imageError ? (
               <div className="relative w-12 h-12 rounded-full overflow-hidden shadow-lg">
-                <Image
+                <img
                   src={logoUrl}
                   alt={vault.asset.symbol}
-                  fill
-                  className="object-cover"
+                  className="w-full h-full object-cover"
                   onError={() => setImageError(true)}
                 />
               </div>
