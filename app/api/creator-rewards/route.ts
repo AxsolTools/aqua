@@ -435,13 +435,13 @@ async function getJupiterCreatorRewards(
 }
 
 /**
- * Fetch creator rewards from on-chain vault (Pump.fun or Bonk.fun)
+ * Fetch creator rewards using PumpPortal preview (most accurate method)
  * 
- * The creator vault is a System Account PDA with seeds: ["creator-vault", creator_pubkey]
- * This vault accumulates all creator fees from ALL tokens created by the creator (not per-token)
+ * This method calls PumpPortal API with collectCreatorFee action to get a preview
+ * transaction, then parses it to extract the actual claimable amount.
  * 
- * IMPORTANT: This returns the TOTAL rewards across ALL pump.fun/bonk.fun tokens by this creator,
- * not per-token rewards. The dashboard should display this as a combined total.
+ * For Pump.fun: Uses per-token fee account PDA ["creator_fee", creator, mint]
+ * For Bonk.fun: Similar structure
  */
 async function getCreatorRewards(
   tokenMint: string, 
@@ -454,74 +454,189 @@ async function getCreatorRewards(
 }> {
   try {
     const creatorPubkey = new PublicKey(creatorWallet)
+    const mintPubkey = new PublicKey(tokenMint)
     const programId = poolType === 'bonk' ? BONK_PROGRAM_ID : PUMP_PROGRAM_ID
     const platformName = poolType === 'bonk' ? 'Bonk.fun' : 'Pump.fun'
 
-    // ============================================================================
-    // CREATOR VAULT PDA - Direct on-chain balance query
-    // Based on official implementation: PDA seeds are ["creator-vault", creator_pubkey]
-    // This is a System Account that holds SOL directly
-    // The vault is per-creator (not per-token), accumulating fees from all tokens
-    // ============================================================================
-    let vaultBalance = 0
-    let foundVault = ""
+    let claimableBalance = 0
+    let feeAccountAddress = ""
 
+    // ============================================================================
+    // METHOD 1: PumpPortal Preview (Most Accurate)
+    // Call the API with collectCreatorFee to get a preview of claimable amount
+    // ============================================================================
     try {
-      const [creatorVaultPda] = PublicKey.findProgramAddressSync(
-        [
-          Buffer.from("creator-vault"),
-          creatorPubkey.toBuffer()
-        ],
-        programId
-      )
-        
-      const vaultInfo = await connection.getAccountInfo(creatorVaultPda)
-        
-      if (vaultInfo && vaultInfo.lamports > 0) {
-        vaultBalance = vaultInfo.lamports
-        foundVault = creatorVaultPda.toBase58()
-        const solAmount = vaultBalance / LAMPORTS_PER_SOL
-        console.log(`[CREATOR-REWARDS] ✅ ${platformName} creator vault balance: ${solAmount.toFixed(6)} SOL (${creatorVaultPda.toBase58().substring(0, 8)}...)`)
-      } else {
-        console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} creator vault is empty or does not exist yet`)
-      }
-    } catch (vaultError) {
-      console.warn(`[CREATOR-REWARDS] Failed to query ${platformName} creator vault:`, 
-        vaultError instanceof Error ? vaultError.message : "Unknown error")
-    }
-
-    // Fallback: Try platform API to get creator balance (if available)
-    try {
-      const apiUrl = poolType === 'bonk'
-        ? `https://api.bonk.fun/coins/${tokenMint}`
-        : `https://frontend-api.pump.fun/coins/${tokenMint}`
+      console.log(`[CREATOR-REWARDS] Previewing ${platformName} fees for token ${tokenMint.slice(0, 8)}...`)
       
-      const response = await fetch(apiUrl, {
-        headers: { "Accept": "application/json" }
+      const previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          publicKey: creatorWallet,
+          action: "collectCreatorFee",
+          mint: tokenMint,
+          priorityFee: 0.00001,
+          pool: poolType,
+        }),
       })
-      if (response.ok) {
-        const data = await response.json()
-        if (data.creator_balance_sol) {
-          const creatorBal = parseFloat(data.creator_balance_sol)
-          // Use API value if it's higher (more accurate) or if on-chain query failed
-          if (creatorBal > vaultBalance / LAMPORTS_PER_SOL || vaultBalance === 0) {
-            vaultBalance = creatorBal * LAMPORTS_PER_SOL
-            console.log(`[CREATOR-REWARDS] Using ${platformName} API balance: ${creatorBal.toFixed(6)} SOL`)
+
+      if (previewResponse.ok) {
+        const txBytes = new Uint8Array(await previewResponse.arrayBuffer())
+        
+        if (txBytes.length > 0) {
+          // Parse the transaction to extract transfer amount
+          const tx = VersionedTransaction.deserialize(txBytes)
+          const lamports = extractTransferAmount(tx, creatorPubkey)
+          
+          if (lamports > 0) {
+            claimableBalance = lamports
+            console.log(`[CREATOR-REWARDS] ✅ ${platformName} preview: ${(lamports / LAMPORTS_PER_SOL).toFixed(6)} SOL claimable`)
+          } else {
+            console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} preview: No claimable fees in transaction`)
           }
+        } else {
+          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} returned empty response (no fees)`)
+        }
+      } else {
+        const errorText = await previewResponse.text()
+        // Check for known "no fees" responses
+        if (errorText.includes("no fees") || errorText.includes("nothing to claim") || errorText.includes("not found")) {
+          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName}: No fees to claim for this token`)
+        } else {
+          console.warn(`[CREATOR-REWARDS] ${platformName} preview failed:`, errorText.slice(0, 100))
         }
       }
-    } catch (e) {
-      console.debug(`[CREATOR-REWARDS] ${platformName} API unavailable:`, e)
+    } catch (previewError) {
+      console.warn(`[CREATOR-REWARDS] ${platformName} preview error:`, 
+        previewError instanceof Error ? previewError.message : "Unknown error")
+    }
+
+    // ============================================================================
+    // METHOD 2: On-chain fee account check (fallback/diagnostic)
+    // Fee account PDA: ["creator_fee", creator_pubkey, mint]
+    // ============================================================================
+    if (claimableBalance === 0) {
+      try {
+        const [feeAccountPda] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("creator_fee"),
+            creatorPubkey.toBuffer(),
+            mintPubkey.toBuffer()
+          ],
+          programId
+        )
+        
+        feeAccountAddress = feeAccountPda.toBase58()
+        const accountInfo = await connection.getAccountInfo(feeAccountPda)
+        
+        if (accountInfo && accountInfo.lamports > 0) {
+          // Fee account has balance - but this might not all be claimable
+          // The PumpPortal preview is more accurate
+          const solAmount = accountInfo.lamports / LAMPORTS_PER_SOL
+          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} fee account has ${solAmount.toFixed(6)} SOL (on-chain check)`)
+          
+          // Only use this if preview failed completely
+          if (claimableBalance === 0) {
+            claimableBalance = accountInfo.lamports
+          }
+        } else {
+          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} fee account not found or empty`)
+        }
+      } catch (onChainError) {
+        console.debug(`[CREATOR-REWARDS] On-chain check failed:`, onChainError)
+      }
+    }
+
+    // ============================================================================
+    // METHOD 3: Platform API fallback
+    // ============================================================================
+    if (claimableBalance === 0) {
+      try {
+        const apiUrl = poolType === 'bonk'
+          ? `https://api.bonk.fun/coins/${tokenMint}`
+          : `https://frontend-api.pump.fun/coins/${tokenMint}`
+        
+        const response = await fetch(apiUrl, {
+          headers: { "Accept": "application/json" },
+          signal: AbortSignal.timeout(5000)
+        })
+        
+        if (response.ok) {
+          const data = await response.json()
+          // Check if this creator matches and has balance
+          if (data.creator === creatorWallet && data.creator_balance_sol) {
+            const creatorBal = parseFloat(data.creator_balance_sol)
+            if (creatorBal > 0) {
+              claimableBalance = creatorBal * LAMPORTS_PER_SOL
+              console.log(`[CREATOR-REWARDS] Using ${platformName} API: ${creatorBal.toFixed(6)} SOL`)
+            }
+          }
+        }
+      } catch (e) {
+        console.debug(`[CREATOR-REWARDS] ${platformName} API unavailable`)
+      }
     }
 
     return {
-      balance: vaultBalance / LAMPORTS_PER_SOL,
-      vaultAddress: foundVault,
-      hasRewards: vaultBalance > 0,
+      balance: claimableBalance / LAMPORTS_PER_SOL,
+      vaultAddress: feeAccountAddress,
+      hasRewards: claimableBalance > 0,
     }
   } catch (error) {
     console.error(`[CREATOR-REWARDS] ${poolType} fetch error:`, error)
     return { balance: 0, vaultAddress: "", hasRewards: false }
+  }
+}
+
+/**
+ * Extract transfer amount from a VersionedTransaction
+ * Looks for SystemProgram transfers to the destination
+ */
+function extractTransferAmount(tx: VersionedTransaction, destination: PublicKey): number {
+  try {
+    const message = tx.message
+    const accountKeys = message.staticAccountKeys
+    
+    // Find destination account index
+    const destIndex = accountKeys.findIndex(key => key.equals(destination))
+    if (destIndex === -1) return 0
+    
+    let totalLamports = 0
+    
+    // Parse compiled instructions
+    for (const ix of message.compiledInstructions) {
+      // Check if this is a SystemProgram instruction (program index 0 is usually system)
+      const programKey = accountKeys[ix.programIdIndex]
+      if (!programKey) continue
+      
+      // SystemProgram ID
+      const SYSTEM_PROGRAM = new PublicKey("11111111111111111111111111111111")
+      if (!programKey.equals(SYSTEM_PROGRAM)) continue
+      
+      // SystemProgram Transfer instruction has discriminator 2
+      const data = ix.data
+      if (data.length >= 12 && data[0] === 2) {
+        // Transfer instruction: [discriminator(4), lamports(8)]
+        // Read as little-endian u64
+        const lamportsBuffer = data.slice(4, 12)
+        const dataView = new DataView(new Uint8Array(lamportsBuffer).buffer)
+        // Read as two 32-bit values and combine (for compatibility)
+        const low = dataView.getUint32(0, true)
+        const high = dataView.getUint32(4, true)
+        const lamports = low + (high * 4294967296) // 2^32
+        
+        // Check if destination is in the accounts for this instruction
+        const destAccountIdx = ix.accountKeyIndexes.indexOf(destIndex)
+        if (destAccountIdx === 1) { // Transfer: [from, to]
+          totalLamports += lamports
+        }
+      }
+    }
+    
+    return totalLamports
+  } catch (error) {
+    console.error("[CREATOR-REWARDS] Error extracting transfer amount:", error)
+    return 0
   }
 }
 
