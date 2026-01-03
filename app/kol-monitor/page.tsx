@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { Header } from "@/components/layout/header"
 import { GlobalPourEffect } from "@/components/visuals/global-pour-effect"
 import { TokenAggregator } from "@/components/kol/token-aggregator"
@@ -7,6 +8,9 @@ import { DexAlertsTicker } from "@/components/kol/dex-alerts-ticker"
 import { BarChart3, Activity } from "lucide-react"
 
 export default function TokenAggregatorPage() {
+  useEffect(() => {
+    document.title = "Aggregator"
+  }, [])
   return (
     <main className="min-h-screen bg-[var(--bg-primary)]">
       <GlobalPourEffect />
