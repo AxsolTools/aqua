@@ -795,6 +795,11 @@ export async function sellOnBondingCurve(
 
 /**
  * Get creator vault balance for a token
+ * 
+ * Pump.fun uses a per-CREATOR vault PDA with seeds: ["creator-vault", creator_pubkey]
+ * This vault accumulates fees from ALL tokens created by this creator.
+ * 
+ * Note: The vault is NOT per-token, it's per-creator!
  */
 export async function getCreatorVaultBalance(
   connection: Connection,
@@ -805,17 +810,23 @@ export async function getCreatorVaultBalance(
   vaultAddress: string;
 }> {
   try {
-    // Derive creator vault PDA
+    const creatorPubkey = new PublicKey(creatorWallet);
+    
+    // Derive creator vault PDA - uses "creator-vault" seed with creator pubkey only
+    // This is a per-creator vault, NOT per-token
     const [vaultPda] = PublicKey.findProgramAddressSync(
       [
         Buffer.from('creator-vault'),
-        new PublicKey(tokenMint).toBuffer(),
-        new PublicKey(creatorWallet).toBuffer(),
+        creatorPubkey.toBuffer(),
       ],
       PUMP_PROGRAM_ID
     );
 
     const balance = await connection.getBalance(vaultPda);
+    
+    if (balance > 0) {
+      console.log(`[PUMP] Creator vault ${vaultPda.toBase58().slice(0, 8)}... has ${lamportsToSol(BigInt(balance)).toFixed(6)} SOL`);
+    }
 
     return {
       balance: lamportsToSol(BigInt(balance)),

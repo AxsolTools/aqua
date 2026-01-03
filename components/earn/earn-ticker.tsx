@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
-import { motion, AnimatePresence } from "framer-motion"
 
 interface EarnStats {
   totalTvlUsd: number
@@ -18,10 +17,40 @@ interface EarnStats {
 
 interface TickerItem {
   id: string
-  icon: string
+  symbol: string
   label: string
   value: string
+  change?: number // For showing up/down indicator
   color: string
+}
+
+// Bloomberg-style mini chart SVG (static sparkline)
+function MiniChart({ trend = "up" }: { trend?: "up" | "down" | "flat" }) {
+  const paths = {
+    up: "M0 8 L3 6 L6 7 L9 4 L12 5 L15 2 L18 3 L21 1",
+    down: "M0 2 L3 3 L6 1 L9 4 L12 3 L15 6 L18 5 L21 8",
+    flat: "M0 4 L3 5 L6 4 L9 5 L12 4 L15 5 L18 4 L21 5",
+  }
+  const color = trend === "up" ? "#22c55e" : trend === "down" ? "#ef4444" : "#6b7280"
+  
+  return (
+    <svg width="24" height="10" viewBox="0 0 24 10" fill="none" className="opacity-60">
+      <path d={paths[trend]} stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+// Fintech-style status indicator (like Bloomberg terminal)
+function StatusDot({ status = "live" }: { status?: "live" | "delayed" | "offline" }) {
+  const colors = {
+    live: "bg-emerald-500",
+    delayed: "bg-amber-500", 
+    offline: "bg-red-500",
+  }
+  
+  return (
+    <span className={cn("w-1.5 h-1.5 rounded-full", colors[status], status === "live" && "animate-pulse")} />
+  )
 }
 
 export function EarnTicker() {
@@ -54,7 +83,7 @@ export function EarnTicker() {
     return () => clearInterval(interval)
   }, [])
 
-  // Format numbers
+  // Format numbers - Bloomberg style (compact, precise)
   const formatUsd = (num: number) => {
     if (num >= 1_000_000) return `$${(num / 1_000_000).toFixed(2)}M`
     if (num >= 1_000) return `$${(num / 1_000).toFixed(2)}K`
@@ -63,60 +92,62 @@ export function EarnTicker() {
 
   const formatNumber = (num: number) => {
     if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`
-    if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`
+    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`
     return num.toLocaleString()
   }
 
-  // Build ticker items
+  // Build ticker items with Bloomberg-style abbreviations
   const tickerItems: TickerItem[] = stats ? [
     {
       id: 'tvl',
-      icon: '🔒',
-      label: 'TVL',
+      symbol: 'TVL',
+      label: 'Total Value Locked',
       value: formatUsd(stats.totalTvlUsd),
-      color: 'text-[var(--aqua-primary)]',
+      color: 'text-cyan-400',
     },
     {
       id: 'apy',
-      icon: '📈',
-      label: 'Avg APY',
+      symbol: 'APY',
+      label: 'Avg Annual Yield',
       value: `${stats.avgApy.toFixed(2)}%`,
-      color: 'text-[var(--green)]',
+      change: stats.avgApy,
+      color: stats.avgApy > 0 ? 'text-emerald-400' : 'text-zinc-400',
     },
     {
       id: 'propel',
-      icon: '🚀',
-      label: 'PROPEL Deposited',
+      symbol: 'PROPEL',
+      label: 'Deposited',
       value: formatNumber(stats.totalPropelDeposited),
-      color: 'text-[var(--warm-pink)]',
+      color: 'text-fuchsia-400',
     },
     {
       id: 'positions',
-      icon: '⚡',
+      symbol: 'POS',
       label: 'Active Positions',
       value: stats.activePositions.toLocaleString(),
       color: 'text-amber-400',
     },
     {
       id: 'earned',
-      icon: '✨',
+      symbol: 'YIELD',
       label: 'Total Earned',
       value: formatUsd(stats.totalYieldEarnedUsd),
-      color: 'text-[var(--green)]',
+      change: stats.totalYieldEarnedUsd,
+      color: 'text-emerald-400',
     },
     {
       id: 'volume',
-      icon: '💰',
+      symbol: 'VOL24',
       label: '24h Volume',
       value: formatUsd(stats.volume24hUsd),
-      color: 'text-purple-400',
+      color: 'text-violet-400',
     },
     {
       id: 'users',
-      icon: '👥',
-      label: 'Users',
+      symbol: 'USR',
+      label: 'Unique Users',
       value: stats.totalUniqueUsers.toLocaleString(),
-      color: 'text-blue-400',
+      color: 'text-sky-400',
     },
   ] : []
 
@@ -125,10 +156,10 @@ export function EarnTicker() {
 
   if (isLoading) {
     return (
-      <div className="h-10 bg-[var(--bg-card)]/50 border-b border-[var(--border-subtle)] flex items-center justify-center">
-        <div className="flex items-center gap-2 text-[var(--text-muted)] text-xs">
-          <div className="w-3 h-3 border-2 border-[var(--aqua-primary)] border-t-transparent rounded-full animate-spin" />
-          <span>Loading stats...</span>
+      <div className="h-8 bg-zinc-950 border-b border-zinc-800/50 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-zinc-500 text-[10px] font-mono">
+          <div className="w-2 h-2 border border-zinc-600 border-t-transparent rounded-full animate-spin" />
+          <span>CONNECTING...</span>
         </div>
       </div>
     )
@@ -140,25 +171,25 @@ export function EarnTicker() {
 
   return (
     <div 
-      className="relative h-10 bg-gradient-to-r from-[var(--bg-card)] via-[var(--bg-elevated)] to-[var(--bg-card)] border-b border-[var(--border-subtle)] overflow-hidden"
+      className="relative h-8 bg-zinc-950 border-b border-zinc-800/50 overflow-hidden font-mono"
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
       {/* Gradient overlays for fade effect */}
-      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-[var(--bg-card)] to-transparent z-10 pointer-events-none" />
-      <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[var(--bg-card)] to-transparent z-10 pointer-events-none" />
+      <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-zinc-950 to-transparent z-10 pointer-events-none" />
+      <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-zinc-950 to-transparent z-10 pointer-events-none" />
       
-      {/* Live indicator */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[var(--green)]/10 border border-[var(--green)]/20">
-        <div className="w-1.5 h-1.5 rounded-full bg-[var(--green)] animate-pulse" />
-        <span className="text-[9px] font-medium text-[var(--green)] uppercase tracking-wider">Live</span>
+      {/* Live indicator - Bloomberg style */}
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 z-20 flex items-center gap-1.5">
+        <StatusDot status="live" />
+        <span className="text-[9px] font-medium text-emerald-500 uppercase tracking-widest">LIVE</span>
       </div>
       
       {/* Scrolling ticker */}
       <div 
         ref={tickerRef}
         className={cn(
-          "flex items-center h-full pl-24",
+          "flex items-center h-full pl-20",
           !isPaused && "animate-ticker"
         )}
         style={{
@@ -168,14 +199,22 @@ export function EarnTicker() {
         {duplicatedItems.map((item, index) => (
           <div
             key={`${item.id}-${index}`}
-            className="flex items-center gap-2 px-6 whitespace-nowrap"
+            className="flex items-center gap-1.5 px-4 whitespace-nowrap border-r border-zinc-800/30 last:border-r-0"
           >
-            <span className="text-sm">{item.icon}</span>
-            <span className="text-xs text-[var(--text-muted)]">{item.label}:</span>
-            <span className={cn("text-sm font-semibold tabular-nums", item.color)}>
+            {/* Symbol badge */}
+            <span className="text-[9px] font-semibold text-zinc-500 bg-zinc-800/50 px-1.5 py-0.5 rounded">
+              {item.symbol}
+            </span>
+            
+            {/* Value */}
+            <span className={cn("text-[11px] font-semibold tabular-nums tracking-tight", item.color)}>
               {item.value}
             </span>
-            <span className="text-[var(--border-subtle)] mx-2">•</span>
+            
+            {/* Mini trend chart for APY and Yield */}
+            {item.change !== undefined && (
+              <MiniChart trend={item.change > 0 ? "up" : item.change < 0 ? "down" : "flat"} />
+            )}
           </div>
         ))}
       </div>
@@ -191,7 +230,7 @@ export function EarnTicker() {
           }
         }
         .animate-ticker {
-          animation: ticker 40s linear infinite;
+          animation: ticker 45s linear infinite;
         }
       `}</style>
     </div>

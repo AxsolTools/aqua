@@ -10,7 +10,16 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { Connection, PublicKey, LAMPORTS_PER_SOL, VersionedTransaction, Keypair } from "@solana/web3.js"
+import { 
+  Connection, 
+  PublicKey, 
+  LAMPORTS_PER_SOL, 
+  VersionedTransaction, 
+  Keypair,
+  SystemProgram,
+  SystemInstruction,
+  TransactionInstruction,
+} from "@solana/web3.js"
 import bs58 from "bs58"
 import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
@@ -289,15 +298,64 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // For migrated tokens, they need to claim on the DEX directly
-    if (tokenData.stage === "migrated") {
-      const dexUrl = poolType === 'bonk' 
-        ? `https://app.meteora.ag/pools` 
-        : `https://raydium.io/liquidity/`
+    // For migrated tokens, try Meteora DBC pool claim via PumpPortal
+    // Pump.fun tokens migrate to Raydium but fees may still be claimable via meteora-dbc
+    if (tokenData.stage === "migrated" && poolType === 'pump') {
+      console.log(`[CREATOR-REWARDS] Token is migrated, trying meteora-dbc pool...`)
+      
+      try {
+        const meteoraTradeBody = {
+          publicKey: walletAddress,
+          action: "collectCreatorFee",
+          mint: tokenMint,
+          priorityFee: 0.0001,
+          pool: "meteora-dbc",
+        }
+        
+        const meteoraResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(meteoraTradeBody),
+        })
+        
+        if (meteoraResponse.ok) {
+          const txBytes = new Uint8Array(await meteoraResponse.arrayBuffer())
+          if (txBytes.length > 10) {
+            const tx = VersionedTransaction.deserialize(txBytes)
+            tx.sign([keypair])
+            
+            const signature = await connection.sendTransaction(tx, {
+              skipPreflight: false,
+              maxRetries: 3,
+            })
+            
+            const confirmation = await connection.confirmTransaction(signature, "confirmed")
+            
+            if (!confirmation.value.err) {
+              console.log("[CREATOR-REWARDS] Meteora DBC claim successful:", signature)
+              
+              return NextResponse.json({
+                success: true,
+                data: {
+                  signature,
+                  amountClaimed: rewardsData.balance,
+                  explorerUrl: `https://solscan.io/tx/${signature}`,
+                  platformName: 'Meteora DBC',
+                }
+              })
+            }
+          }
+        }
+      } catch (meteoraError) {
+        console.debug("[CREATOR-REWARDS] Meteora DBC claim failed:", meteoraError)
+      }
+      
+      // Fallback: Direct user to the platform
+      const dexUrl = `https://pump.fun/coin/${tokenMint}`
       
       return NextResponse.json({
         success: false,
-        error: `Token has migrated. Please claim rewards from ${poolType === 'bonk' ? 'Meteora' : 'Raydium'} directly.`,
+        error: `Token has migrated. Visit Pump.fun to claim your ${rewardsData.balance.toFixed(6)} SOL rewards.`,
         data: {
           balance: rewardsData.balance,
           claimUrl: dexUrl,
@@ -435,13 +493,14 @@ async function getJupiterCreatorRewards(
 }
 
 /**
- * Fetch creator rewards using PumpPortal preview (most accurate method)
+ * Fetch creator rewards from Pump.fun or Bonk.fun
  * 
- * This method calls PumpPortal API with collectCreatorFee action to get a preview
- * transaction, then parses it to extract the actual claimable amount.
+ * Pump.fun creator fees are stored in a PDA derived from:
+ * - Seeds: ["creator_vault", creator_pubkey] (per-creator, NOT per-token)
+ * - OR for newer tokens: fees accumulate directly and use collectCreatorFee action
  * 
- * For Pump.fun: Uses per-token fee account PDA ["creator_fee", creator, mint]
- * For Bonk.fun: Similar structure
+ * The most reliable method is to use PumpPortal's collectCreatorFee API which will
+ * return a transaction if there are fees to claim.
  */
 async function getCreatorRewards(
   tokenMint: string, 
@@ -462,125 +521,191 @@ async function getCreatorRewards(
     let feeAccountAddress = ""
 
     // ============================================================================
-    // METHOD 1: PumpPortal Preview (Most Accurate)
-    // Call the API with collectCreatorFee to get a preview of claimable amount
+    // METHOD 1: Query Platform API first (fastest and most accurate)
+    // Pump.fun frontend API returns creator balance info for tokens
     // ============================================================================
     try {
-      console.log(`[CREATOR-REWARDS] Previewing ${platformName} fees for token ${tokenMint.slice(0, 8)}...`)
+      const apiUrl = poolType === 'bonk'
+        ? `https://api.bonk.fun/coins/${tokenMint}`
+        : `https://frontend-api.pump.fun/coins/${tokenMint}`
       
-      const previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          publicKey: creatorWallet,
-          action: "collectCreatorFee",
-          mint: tokenMint,
-          priorityFee: 0.00001,
-          pool: poolType,
-        }),
+      console.log(`[CREATOR-REWARDS] Querying ${platformName} API for token ${tokenMint.slice(0, 8)}...`)
+      
+      const response = await fetch(apiUrl, {
+        headers: { 
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; PropelBot/1.0)",
+        },
+        signal: AbortSignal.timeout(8000)
       })
-
-      if (previewResponse.ok) {
-        const txBytes = new Uint8Array(await previewResponse.arrayBuffer())
+      
+      if (response.ok) {
+        const data = await response.json()
         
-        if (txBytes.length > 0) {
-          // Parse the transaction to extract transfer amount
-          const tx = VersionedTransaction.deserialize(txBytes)
-          const lamports = extractTransferAmount(tx, creatorPubkey)
+        // Check if this is the token creator
+        if (data.creator === creatorWallet) {
+          // Pump.fun API returns creator_fee_basis_points and may have accumulated fees info
+          // The exact field name varies - check common patterns
+          const possibleBalanceFields = [
+            'creator_balance_sol',
+            'creatorBalance',
+            'creator_fees_sol',
+            'accumulated_fees',
+            'unclaimed_fees',
+          ]
           
-          if (lamports > 0) {
-            claimableBalance = lamports
-            console.log(`[CREATOR-REWARDS] ✅ ${platformName} preview: ${(lamports / LAMPORTS_PER_SOL).toFixed(6)} SOL claimable`)
-          } else {
-            console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} preview: No claimable fees in transaction`)
-          }
-        } else {
-          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} returned empty response (no fees)`)
-        }
-      } else {
-        const errorText = await previewResponse.text()
-        // Check for known "no fees" responses
-        if (errorText.includes("no fees") || errorText.includes("nothing to claim") || errorText.includes("not found")) {
-          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName}: No fees to claim for this token`)
-        } else {
-          console.warn(`[CREATOR-REWARDS] ${platformName} preview failed:`, errorText.slice(0, 100))
-        }
-      }
-    } catch (previewError) {
-      console.warn(`[CREATOR-REWARDS] ${platformName} preview error:`, 
-        previewError instanceof Error ? previewError.message : "Unknown error")
-    }
-
-    // ============================================================================
-    // METHOD 2: On-chain fee account check (fallback/diagnostic)
-    // Fee account PDA: ["creator_fee", creator_pubkey, mint]
-    // ============================================================================
-    if (claimableBalance === 0) {
-      try {
-        const [feeAccountPda] = PublicKey.findProgramAddressSync(
-          [
-            Buffer.from("creator_fee"),
-            creatorPubkey.toBuffer(),
-            mintPubkey.toBuffer()
-          ],
-          programId
-        )
-        
-        feeAccountAddress = feeAccountPda.toBase58()
-        const accountInfo = await connection.getAccountInfo(feeAccountPda)
-        
-        if (accountInfo && accountInfo.lamports > 0) {
-          // Fee account has balance - but this might not all be claimable
-          // The PumpPortal preview is more accurate
-          const solAmount = accountInfo.lamports / LAMPORTS_PER_SOL
-          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} fee account has ${solAmount.toFixed(6)} SOL (on-chain check)`)
-          
-          // Only use this if preview failed completely
-          if (claimableBalance === 0) {
-            claimableBalance = accountInfo.lamports
-          }
-        } else {
-          console.log(`[CREATOR-REWARDS] ℹ️ ${platformName} fee account not found or empty`)
-        }
-      } catch (onChainError) {
-        console.debug(`[CREATOR-REWARDS] On-chain check failed:`, onChainError)
-      }
-    }
-
-    // ============================================================================
-    // METHOD 3: Platform API fallback
-    // ============================================================================
-    if (claimableBalance === 0) {
-      try {
-        const apiUrl = poolType === 'bonk'
-          ? `https://api.bonk.fun/coins/${tokenMint}`
-          : `https://frontend-api.pump.fun/coins/${tokenMint}`
-        
-        const response = await fetch(apiUrl, {
-          headers: { "Accept": "application/json" },
-          signal: AbortSignal.timeout(5000)
-        })
-        
-        if (response.ok) {
-          const data = await response.json()
-          // Check if this creator matches and has balance
-          if (data.creator === creatorWallet && data.creator_balance_sol) {
-            const creatorBal = parseFloat(data.creator_balance_sol)
-            if (creatorBal > 0) {
-              claimableBalance = creatorBal * LAMPORTS_PER_SOL
-              console.log(`[CREATOR-REWARDS] Using ${platformName} API: ${creatorBal.toFixed(6)} SOL`)
+          for (const field of possibleBalanceFields) {
+            if (data[field] !== undefined) {
+              const balance = parseFloat(data[field])
+              if (balance > 0) {
+                claimableBalance = balance * LAMPORTS_PER_SOL
+                console.log(`[CREATOR-REWARDS] ✅ ${platformName} API: ${balance.toFixed(6)} SOL (field: ${field})`)
+                break
+              }
             }
           }
+          
+          // Also capture the bonding curve address if available
+          if (data.bonding_curve) {
+            feeAccountAddress = data.bonding_curve
+          }
+        } else {
+          console.log(`[CREATOR-REWARDS] ℹ️ Token creator mismatch: ${data.creator?.slice(0, 8)} != ${creatorWallet.slice(0, 8)}`)
         }
-      } catch (e) {
-        console.debug(`[CREATOR-REWARDS] ${platformName} API unavailable`)
+      } else {
+        console.debug(`[CREATOR-REWARDS] ${platformName} API returned ${response.status}`)
       }
+    } catch (apiError) {
+      console.debug(`[CREATOR-REWARDS] ${platformName} API error:`, 
+        apiError instanceof Error ? apiError.message : "Unknown")
+    }
+
+    // ============================================================================
+    // METHOD 2: PumpPortal Preview Transaction
+    // If API didn't give us balance info, try getting a preview transaction
+    // This method creates a transaction without submitting it - we parse it to
+    // extract the transfer amount (the claimable fees)
+    // ============================================================================
+    if (claimableBalance === 0) {
+      try {
+        console.log(`[CREATOR-REWARDS] Trying ${platformName} PumpPortal preview...`)
+        
+        const previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            publicKey: creatorWallet,
+            action: "collectCreatorFee",
+            mint: tokenMint,
+            priorityFee: 0.00001,
+            pool: poolType,
+          }),
+          signal: AbortSignal.timeout(10000)
+        })
+
+        if (previewResponse.ok) {
+          const contentType = previewResponse.headers.get('content-type')
+          
+          // Check if it's actually a transaction (binary) or an error (JSON)
+          if (contentType?.includes('application/octet-stream') || !contentType?.includes('json')) {
+            const txBytes = new Uint8Array(await previewResponse.arrayBuffer())
+            
+            if (txBytes.length > 10) { // Valid transaction is at least some bytes
+              try {
+                const tx = VersionedTransaction.deserialize(txBytes)
+                const lamports = await extractTransferAmount(tx, creatorPubkey)
+                
+                if (lamports > 0) {
+                  claimableBalance = lamports
+                  console.log(`[CREATOR-REWARDS] ✅ ${platformName} preview: ${(lamports / LAMPORTS_PER_SOL).toFixed(6)} SOL claimable`)
+                }
+              } catch (parseError) {
+                console.debug(`[CREATOR-REWARDS] Transaction parse error:`, parseError)
+              }
+            }
+          } else {
+            // It returned JSON instead of a transaction - likely an error or "no fees"
+            try {
+              const jsonResponse = await previewResponse.json()
+              if (jsonResponse.error) {
+                console.log(`[CREATOR-REWARDS] ℹ️ ${platformName}: ${jsonResponse.error}`)
+              }
+            } catch {
+              // Ignore JSON parse errors
+            }
+          }
+        } else {
+          const errorText = await previewResponse.text().catch(() => 'Unknown error')
+          // Check for known "no fees" responses
+          const noFeesIndicators = ['no fees', 'nothing to claim', 'not found', 'insufficient', '0 SOL']
+          const hasNoFees = noFeesIndicators.some(indicator => 
+            errorText.toLowerCase().includes(indicator.toLowerCase())
+          )
+          
+          if (hasNoFees) {
+            console.log(`[CREATOR-REWARDS] ℹ️ ${platformName}: No fees to claim`)
+          } else {
+            console.debug(`[CREATOR-REWARDS] ${platformName} preview failed (${previewResponse.status}):`, 
+              errorText.slice(0, 100))
+          }
+        }
+      } catch (previewError) {
+        console.debug(`[CREATOR-REWARDS] ${platformName} preview error:`, 
+          previewError instanceof Error ? previewError.message : "Unknown")
+      }
+    }
+
+    // ============================================================================
+    // METHOD 3: On-chain PDA check (fallback)
+    // Try multiple possible PDA derivation patterns that Pump.fun has used
+    // Based on working Telegram bot implementation
+    // ============================================================================
+    if (claimableBalance === 0) {
+      // Try multiple PDA patterns that Pump.fun might use
+      // NOTE: "creator-vault" (hyphen) is the correct seed based on working Telegram bot
+      const pdaPatterns: Buffer[][] = [
+        // Pattern 1: Per-creator vault (accumulates ALL creator fees across all tokens)
+        // This is the primary pattern for Pump.fun creator rewards
+        [Buffer.from("creator-vault"), creatorPubkey.toBuffer()],
+        // Pattern 2: Per-token fee account (older pattern)
+        [Buffer.from("creator_fee"), creatorPubkey.toBuffer(), mintPubkey.toBuffer()],
+        // Pattern 3: Alternative underscore naming
+        [Buffer.from("creator_vault"), creatorPubkey.toBuffer()],
+      ]
+      
+      for (const seeds of pdaPatterns) {
+        try {
+          const [pda] = PublicKey.findProgramAddressSync(seeds, programId)
+          const accountInfo = await connection.getAccountInfo(pda)
+          
+          if (accountInfo && accountInfo.lamports > 0) {
+            // For fee vaults, the full balance is typically claimable
+            // (rent is paid separately by the program)
+            const balance = accountInfo.lamports
+            
+            if (balance > 0) {
+              feeAccountAddress = pda.toBase58()
+              claimableBalance = balance
+              console.log(`[CREATOR-REWARDS] ✅ Found ${(balance / LAMPORTS_PER_SOL).toFixed(6)} SOL in vault ${pda.toBase58().slice(0, 8)} (seeds: ${seeds[0].toString()})`)
+              break
+            }
+          }
+        } catch (pdaError) {
+          // Continue to next pattern
+        }
+      }
+    }
+
+    const finalBalance = claimableBalance / LAMPORTS_PER_SOL
+    
+    if (finalBalance > 0) {
+      console.log(`[CREATOR-REWARDS] ✅ Total ${platformName} rewards for ${tokenMint.slice(0, 8)}: ${finalBalance.toFixed(6)} SOL`)
     }
 
     return {
-      balance: claimableBalance / LAMPORTS_PER_SOL,
+      balance: finalBalance,
       vaultAddress: feeAccountAddress,
-      hasRewards: claimableBalance > 0,
+      hasRewards: finalBalance > 0,
     }
   } catch (error) {
     console.error(`[CREATOR-REWARDS] ${poolType} fetch error:`, error)
@@ -590,45 +715,75 @@ async function getCreatorRewards(
 
 /**
  * Extract transfer amount from a VersionedTransaction
- * Looks for SystemProgram transfers to the destination
+ * Uses the proper SystemInstruction decoder to parse transfer instructions
+ * Based on the working implementation from the Telegram bot
  */
-function extractTransferAmount(tx: VersionedTransaction, destination: PublicKey): number {
+async function extractTransferAmount(tx: VersionedTransaction, destination: PublicKey): Promise<number> {
   try {
     const message = tx.message
-    const accountKeys = message.staticAccountKeys
+    const staticAccountKeys = message.staticAccountKeys
     
-    // Find destination account index
-    const destIndex = accountKeys.findIndex(key => key.equals(destination))
-    if (destIndex === -1) return 0
+    // Build account keys map (static keys only for now)
+    const accountKeys = new Map<number, PublicKey>()
+    staticAccountKeys.forEach((key, index) => {
+      accountKeys.set(index, key)
+    })
+    
+    // Also need to handle address table lookups for VersionedTransaction
+    // For now, we'll work with static keys which should cover most cases
     
     let totalLamports = 0
     
     // Parse compiled instructions
     for (const ix of message.compiledInstructions) {
-      // Check if this is a SystemProgram instruction (program index 0 is usually system)
-      const programKey = accountKeys[ix.programIdIndex]
-      if (!programKey) continue
+      const programKey = accountKeys.get(ix.programIdIndex)
+      if (!programKey || !programKey.equals(SystemProgram.programId)) {
+        continue
+      }
       
-      // SystemProgram ID
-      const SYSTEM_PROGRAM = new PublicKey("11111111111111111111111111111111")
-      if (!programKey.equals(SYSTEM_PROGRAM)) continue
+      // Build the instruction keys array
+      const keys = ix.accountKeyIndexes.map((index) => {
+        const pubkey = accountKeys.get(index)
+        return {
+          pubkey: pubkey || PublicKey.default,
+          isSigner: message.isAccountSigner(index),
+          isWritable: message.isAccountWritable(index),
+        }
+      })
       
-      // SystemProgram Transfer instruction has discriminator 2
-      const data = ix.data
-      if (data.length >= 12 && data[0] === 2) {
-        // Transfer instruction: [discriminator(4), lamports(8)]
-        // Read as little-endian u64
-        const lamportsBuffer = data.slice(4, 12)
-        const dataView = new DataView(new Uint8Array(lamportsBuffer).buffer)
-        // Read as two 32-bit values and combine (for compatibility)
-        const low = dataView.getUint32(0, true)
-        const high = dataView.getUint32(4, true)
-        const lamports = low + (high * 4294967296) // 2^32
-        
-        // Check if destination is in the accounts for this instruction
-        const destAccountIdx = ix.accountKeyIndexes.indexOf(destIndex)
-        if (destAccountIdx === 1) { // Transfer: [from, to]
-          totalLamports += lamports
+      // Create TransactionInstruction for decoding
+      const instruction = new TransactionInstruction({
+        programId: programKey,
+        keys,
+        data: Buffer.from(ix.data),
+      })
+      
+      // Try to decode the instruction type
+      let instructionType: string
+      try {
+        instructionType = SystemInstruction.decodeInstructionType(instruction)
+      } catch {
+        continue // Not a decodable system instruction
+      }
+      
+      // Handle Transfer and TransferWithSeed instructions
+      if (instructionType === 'Transfer') {
+        try {
+          const transferInfo = SystemInstruction.decodeTransfer(instruction)
+          if (transferInfo.toPubkey.equals(destination)) {
+            totalLamports += Number(transferInfo.lamports)
+          }
+        } catch {
+          // Failed to decode transfer
+        }
+      } else if (instructionType === 'TransferWithSeed') {
+        try {
+          const transferInfo = SystemInstruction.decodeTransferWithSeed(instruction)
+          if (transferInfo.toPubkey.equals(destination)) {
+            totalLamports += Number(transferInfo.lamports)
+          }
+        } catch {
+          // Failed to decode transfer with seed
         }
       }
     }

@@ -13,6 +13,7 @@ import Image from "next/image"
 import { motion } from "framer-motion"
 import { ReferralPanel } from "@/components/profile/referral-panel"
 import { PnLPanel } from "@/components/profile/pnl-panel"
+import { CreatorRewardsPanel } from "@/components/profile/creator-rewards-panel"
 import { 
   User, 
   Wallet, 
@@ -22,10 +23,11 @@ import {
   Plus, 
   Copy,
   TrendingUp,
-  TrendingDown
+  TrendingDown,
+  Gift
 } from "lucide-react"
 
-type TabType = "portfolio" | "pnl" | "created" | "activity" | "referrals" | "settings"
+type TabType = "portfolio" | "pnl" | "created" | "rewards" | "activity" | "referrals" | "settings"
 
 export default function ProfilePage() {
   const { isAuthenticated, isLoading, wallets, mainWallet, activeWallet, setIsOnboarding } = useAuth()
@@ -303,7 +305,7 @@ export default function ProfilePage() {
                   transition={{ delay: 0.05 }}
                   className="flex gap-1 mb-3 flex-wrap"
                 >
-                  {(["portfolio", "pnl", "created", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
+                  {(["portfolio", "pnl", "created", "rewards", "activity", "referrals", "settings"] as TabType[]).map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setActiveTab(tab)}
@@ -312,9 +314,12 @@ export default function ProfilePage() {
                         activeTab === tab
                           ? "bg-[var(--aqua-primary)] text-[var(--ocean-deep)]"
                           : "bg-[var(--ocean-surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]",
+                        tab === "rewards" && "!bg-amber-500/20 !text-amber-400 hover:!bg-amber-500/30"
                       )}
                     >
-                      {tab === "pnl" ? "P&L" : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                      {tab === "pnl" ? "P&L" : 
+                       tab === "rewards" ? "💰 Rewards" :
+                       tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
                 </motion.div>
@@ -406,6 +411,10 @@ export default function ProfilePage() {
                         </div>
                       </GlassPanel>
                     </div>
+                  )}
+
+                  {activeTab === "rewards" && (
+                    <CreatorRewardsPanel />
                   )}
 
                   {activeTab === "created" && (
