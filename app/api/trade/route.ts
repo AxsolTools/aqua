@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
         .select('public_key')
         .eq('session_id', sessionId);
       
-      console.log('[TRADE] Wallets for this session:', allWallets?.map(w => w.public_key?.slice(0, 8)) || 'none');
+      console.log('[TRADE] Wallets for this session:', allWallets?.map((w: any) => w.public_key?.slice(0, 8)) || 'none');
       
       return NextResponse.json(
         { success: false, error: { code: 1003, message: 'Wallet not found. Please reconnect your wallet.' } },
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     let userKeypair: Keypair;
     try {
       const serviceSalt = await getOrCreateServiceSalt(adminClient);
-      const privateKeyBase58 = decryptPrivateKey(wallet.encrypted_private_key, sessionId, serviceSalt);
+      const privateKeyBase58 = decryptPrivateKey((wallet as any).encrypted_private_key, sessionId, serviceSalt);
       userKeypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
       console.log('[TRADE] Private key decrypted successfully for wallet:', userKeypair.publicKey.toBase58().slice(0, 8));
     } catch (decryptError) {
@@ -147,14 +147,14 @@ export async function POST(request: NextRequest) {
       .single();
 
     // Determine if this is a Jupiter DBC token
-    const isJupiterToken = token?.pool_type === 'jupiter';
+    const isJupiterToken = (token as any)?.pool_type === 'jupiter';
     
     if (isJupiterToken) {
       console.log('[TRADE] Detected Jupiter DBC token, using Jupiter swap API');
     }
 
     // ========== BALANCE VALIDATION ==========
-    const operationLamports = action === 'buy' ? solToLamports(amount) : 0n;
+    const operationLamports = action === 'buy' ? solToLamports(amount) : BigInt(0);
     const priorityFeeLamports = solToLamports(0.0001); // Small priority fee
 
     if (action === 'buy') {
@@ -279,8 +279,8 @@ export async function POST(request: NextRequest) {
         .eq('id', referrerUserId)
         .single();
 
-      if (referrerData?.main_wallet_address) {
-        referrerWallet = new PublicKey(referrerData.main_wallet_address);
+      if ((referrerData as any)?.main_wallet_address) {
+        referrerWallet = new PublicKey((referrerData as any).main_wallet_address);
       }
     }
 
@@ -305,7 +305,7 @@ export async function POST(request: NextRequest) {
     // ========== LOG TRADE ==========
     if (token) {
       await adminClient.from('trades').insert({
-        token_id: token.id,
+        token_id: (token as any).id,
         user_id: userId,
         wallet_address: walletAddress,
         trade_type: action,
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
         platform_fee_lamports: Number(platformFeeLamports),
         tx_signature: tradeResult.txSignature,
         status: 'confirmed',
-      });
+      } as any);
     }
 
     // Log platform fee
@@ -332,7 +332,7 @@ export async function POST(request: NextRequest) {
       fee_tx_signature: feeResult.signature,
       fee_collected_at: feeResult.success ? new Date().toISOString() : null,
       status: feeResult.success ? 'collected' : 'failed',
-    });
+    } as any);
 
     return NextResponse.json({
       success: true,
