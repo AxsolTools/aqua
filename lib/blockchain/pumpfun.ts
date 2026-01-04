@@ -472,6 +472,10 @@ export async function createToken(
       }
 
       console.log(`${logPrefix} Using Lightning API (server-signed)...`);
+      console.log(`${logPrefix} Request params:`, JSON.stringify({
+        ...createParams,
+        mint: '[SECRET_KEY_HIDDEN]', // Don't log the secret key
+      }, null, 2));
       
       const response = await fetch(`${PUMP_PORTAL_API}/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
         method: 'POST',
