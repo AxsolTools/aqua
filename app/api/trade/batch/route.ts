@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
         walletActualAmounts.set(address, actualAmount)
 
         // Build trade request for PumpPortal
-        const tradeBody = {
+        const tradeBody: Record<string, unknown> = {
           publicKey: address,
           action,
           mint: tokenMint,
@@ -239,6 +239,14 @@ export async function POST(request: NextRequest) {
           slippage: slippageBps / 100, // Convert to percentage
           priorityFee: transactions.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays tip
           pool: "pump",
+        }
+        
+        // For sells, include tokenAccount (same as single wallet sell does)
+        if (action === "sell") {
+          const tokenMintPubkey = new PublicKey(tokenMint)
+          const walletPubkey = new PublicKey(address)
+          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey)
+          tradeBody.tokenAccount = ata.toBase58()
         }
 
         console.log(`[BATCH-TRADE] Requesting tx for ${address.slice(0, 8)}...`)
