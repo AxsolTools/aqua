@@ -1220,16 +1220,18 @@ export async function executeJupiterSwap(
     // -------------------------------
     // Build swap transaction
     // -------------------------------
+    // NOTE: dynamicSlippage is DEPRECATED per Jupiter docs
+    // Use explicit slippage from quote instead for reliable execution
     const swapBody = {
       quoteResponse: quoteData,
       userPublicKey: walletKeypair.publicKey.toBase58(),
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
-      dynamicSlippage: true,
+      // dynamicSlippage: true, // REMOVED - deprecated and overrides our explicit slippage
       prioritizationFeeLamports: {
         priorityLevelWithMaxLamports: {
-          maxLamports: 1000000, // 0.001 SOL max
-          priorityLevel: 'high',
+          maxLamports: 2000000, // 0.002 SOL max for better landing
+          priorityLevel: 'veryHigh', // Upgraded from 'high'
         },
       },
     };
