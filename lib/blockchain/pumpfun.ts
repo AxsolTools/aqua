@@ -321,14 +321,21 @@ export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
 
     // Step 2: Upload metadata to Bonk IPFS using native fetch
     console.log('[BONK-IPFS] Uploading metadata...');
-    const metadataPayload = {
+    
+    // Build metadata payload - only include optional URL fields if they have valid values
+    // Bonk IPFS validates URL format, so empty strings will fail
+    const metadataPayload: Record<string, string> = {
       createdOn: 'https://bonk.fun',
       description: metadata.description || '',
       image: imageUri,
       name: metadata.name,
       symbol: metadata.symbol,
-      website: metadata.website || '',
     };
+    
+    // Only add website if it's a valid URL
+    if (metadata.website && metadata.website.startsWith('http')) {
+      metadataPayload.website = metadata.website;
+    }
 
     let metadataUri: string;
     try {
