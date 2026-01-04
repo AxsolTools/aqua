@@ -22,6 +22,7 @@ import {
   sendAndConfirmTransaction,
   SystemProgram,
 } from '@solana/web3.js';
+import bs58 from 'bs58';
 import { solToLamports, lamportsToSol } from '@/lib/precision';
 import FormDataLib from 'form-data';
 import axios from 'axios';
@@ -32,6 +33,7 @@ import { buyViaSDK, sellViaSDK, isSDKAvailable } from './pumpfun-sdk';
 // ============================================================================
 
 const PUMP_PORTAL_API = 'https://pumpportal.fun/api';
+const PUMP_PORTAL_API_KEY = process.env.PUMPPORTAL_API_KEY || '';
 const PUMP_IPFS_API = 'https://pump.fun/api/ipfs';
 const PUMP_PORTAL_IPFS = 'https://pumpportal.fun/api/ipfs';
 
@@ -438,71 +440,133 @@ export async function createToken(
     // Step 3: Request create transaction from PumpPortal
     console.log(`${logPrefix} Requesting create transaction (pool: ${pool}, quoteMint: ${quoteMint === QUOTE_MINTS.USD1 ? 'USD1' : 'SOL'})...`);
     
-    const createParams: Record<string, any> = {
-      publicKey: creatorKeypair.publicKey.toBase58(),
-      action: 'create',
-      tokenMetadata: {
-        name: metadata.name,
-        symbol: metadata.symbol,
-        uri: ipfsResult.metadataUri,
-      },
-      mint: mintKeypair.publicKey.toBase58(),
-      denominatedInSol: 'true',
-      slippage: slippageBps,
-      priorityFee: priorityFee,
-      pool: pool,
-    };
+    // Convert slippage from basis points to percentage
+    const slippagePercent = slippageBps / 100;
 
-    // Add quoteMint for bonk pool (USD1 or SOL pairing)
+    // Bonk pool requires Lightning API with API key (server-side signing)
+    // Pump pool uses trade-local (client-side signing)
     if (pool === POOL_TYPES.BONK) {
-      createParams.quoteMint = quoteMint;
+      // ========== BONK POOL: Use Lightning API ==========
+      if (!PUMP_PORTAL_API_KEY) {
+        throw new Error('PUMPPORTAL_API_KEY environment variable is required for Bonk pool token creation');
+      }
+
+      const createParams: Record<string, any> = {
+        action: 'create',
+        tokenMetadata: {
+          name: metadata.name,
+          symbol: metadata.symbol,
+          uri: ipfsResult.metadataUri,
+        },
+        mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
+        denominatedInSol: 'true',
+        slippage: slippagePercent,
+        priorityFee: priorityFee,
+        pool: 'bonk',
+        quoteMint: quoteMint, // USD1 or WSOL
+      };
+
+      // Add initial buy if specified
+      if (initialBuySol > 0) {
+        createParams.amount = initialBuySol;
+      }
+
+      console.log(`${logPrefix} Using Lightning API (server-signed)...`);
+      
+      const response = await fetch(`${PUMP_PORTAL_API}/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createParams),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
+      }
+
+      // Lightning API returns JSON with signature (already sent)
+      const result = await response.json();
+      const signature = result.signature;
+
+      if (!signature) {
+        throw new Error('PumpPortal did not return a transaction signature');
+      }
+
+      console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
+      console.log(`${logPrefix} Transaction: ${signature}`);
+
+      return {
+        success: true,
+        mintAddress: mintKeypair.publicKey.toBase58(),
+        metadataUri: ipfsResult.metadataUri,
+        txSignature: signature,
+        pool,
+        quoteMint,
+      };
+
+    } else {
+      // ========== PUMP POOL: Use trade-local API ==========
+      const createParams: Record<string, any> = {
+        publicKey: creatorKeypair.publicKey.toBase58(),
+        action: 'create',
+        tokenMetadata: {
+          name: metadata.name,
+          symbol: metadata.symbol,
+          uri: ipfsResult.metadataUri,
+        },
+        mint: mintKeypair.publicKey.toBase58(),
+        denominatedInSol: 'true',
+        slippage: slippagePercent,
+        priorityFee: priorityFee,
+        pool: 'pump',
+      };
+
+      // Add initial buy if specified
+      if (initialBuySol > 0) {
+        createParams.amount = initialBuySol;
+      }
+
+      const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createParams),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
+      }
+
+      // Step 4: Sign and send transaction
+      const txData = await response.arrayBuffer();
+      const tx = VersionedTransaction.deserialize(new Uint8Array(txData));
+      
+      tx.sign([creatorKeypair, mintKeypair]);
+
+      const signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      // Step 5: Confirm transaction
+      console.log(`${logPrefix} Confirming transaction: ${signature}`);
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
+
+      return {
+        success: true,
+        mintAddress: mintKeypair.publicKey.toBase58(),
+        metadataUri: ipfsResult.metadataUri,
+        txSignature: signature,
+        pool,
+        quoteMint,
+      };
     }
-
-    // Add initial buy if specified
-    if (initialBuySol > 0) {
-      createParams.amount = initialBuySol;
-    }
-
-    const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(createParams),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
-    }
-
-    // Step 4: Sign and send transaction
-    const txData = await response.arrayBuffer();
-    const tx = VersionedTransaction.deserialize(new Uint8Array(txData));
-    
-    tx.sign([creatorKeypair, mintKeypair]);
-
-    const signature = await connection.sendTransaction(tx, {
-      skipPreflight: false,
-      maxRetries: 3,
-    });
-
-    // Step 5: Confirm transaction
-    console.log(`${logPrefix} Confirming transaction: ${signature}`);
-    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
-
-    if (confirmation.value.err) {
-      throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
-    }
-
-    console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
-
-    return {
-      success: true,
-      mintAddress: mintKeypair.publicKey.toBase58(),
-      metadataUri: ipfsResult.metadataUri,
-      txSignature: signature,
-      pool,
-      quoteMint,
-    };
 
   } catch (error) {
     console.error('[CREATE] Create token error:', error);
