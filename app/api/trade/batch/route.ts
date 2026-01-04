@@ -6,7 +6,8 @@
  */
 
 import { NextRequest, NextResponse } from "next/server"
-import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js"
+import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js"
+import { getAssociatedTokenAddress } from "@solana/spl-token"
 import bs58 from "bs58"
 import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
@@ -160,19 +161,64 @@ export async function POST(request: NextRequest) {
 
     console.log(`[BATCH-TRADE] Loaded ${walletKeypairs.size} wallets`)
 
+    // For sells, we need to get each wallet's actual token balance
+    // because the client sends the TOTAL amount across all wallets
+    const walletTokenBalances: Map<string, number> = new Map()
+    
+    if (action === "sell") {
+      console.log("[BATCH-TRADE] Fetching individual token balances for sell...")
+      const tokenMintPubkey = new PublicKey(tokenMint)
+      
+      for (const [address] of walletKeypairs) {
+        try {
+          const walletPubkey = new PublicKey(address)
+          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey)
+          const balance = await connection.getTokenAccountBalance(ata)
+          const tokenAmount = balance.value.uiAmount || 0
+          walletTokenBalances.set(address, tokenAmount)
+          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens`)
+        } catch (error) {
+          console.warn(`[BATCH-TRADE] Could not fetch balance for ${address.slice(0, 8)}:`, error)
+          walletTokenBalances.set(address, 0)
+        }
+      }
+    }
+
     // Build transactions for each wallet via PumpPortal
     const transactions: VersionedTransaction[] = []
     const walletToTxIndex: Map<string, number> = new Map()
+    const walletActualAmounts: Map<string, number> = new Map()
 
     for (const [address, keypair] of walletKeypairs) {
       try {
+        // For sells, use actual wallet balance. For buys, use the requested amount.
+        let actualAmount = amountPerWallet
+        
+        if (action === "sell") {
+          const walletBalance = walletTokenBalances.get(address) || 0
+          if (walletBalance <= 0) {
+            console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
+            walletErrors.push({
+              walletAddress: address,
+              success: false,
+              error: "No tokens to sell",
+            })
+            continue
+          }
+          // Use the wallet's actual balance for sells
+          actualAmount = walletBalance
+          console.log(`[BATCH-TRADE] Will sell ${actualAmount.toFixed(2)} tokens from ${address.slice(0, 8)}`)
+        }
+        
+        walletActualAmounts.set(address, actualAmount)
+
         // Build trade request for PumpPortal
         const tradeBody = {
           publicKey: address,
           action,
           mint: tokenMint,
           denominatedInSol: action === "buy" ? "true" : "false",
-          amount: amountPerWallet,
+          amount: actualAmount,
           slippage: slippageBps / 100, // Convert to percentage
           priorityFee: transactions.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays tip
           pool: "pump",
@@ -295,12 +341,13 @@ export async function POST(request: NextRequest) {
     // Record trades in database
     for (const result of results.filter((r) => r.success)) {
       try {
+        const actualAmount = walletActualAmounts.get(result.walletAddress) || amountPerWallet
         await adminClient.from("trades").insert({
           wallet_address: result.walletAddress,
           token_address: tokenMint,
           trade_type: action,
-          amount_sol: action === "buy" ? amountPerWallet : 0,
-          token_amount: action === "sell" ? amountPerWallet : 0,
+          amount_sol: action === "buy" ? actualAmount : 0,
+          token_amount: action === "sell" ? actualAmount : 0,
           tx_signature: result.txSignature,
           status: "confirmed",
           source: "batch_trade",
