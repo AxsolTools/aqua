@@ -441,7 +441,11 @@ export async function createToken(
     console.log(`${logPrefix} Requesting create transaction (pool: ${pool}, quoteMint: ${quoteMint === QUOTE_MINTS.USD1 ? 'USD1' : 'SOL'})...`);
     
     // Convert slippage from basis points to percentage
-    const slippagePercent = slippageBps / 100;
+    // Use higher slippage for Bonk pools (more volatile) - minimum 10%
+    let slippagePercent = slippageBps / 100;
+    if (pool === POOL_TYPES.BONK && slippagePercent < 10) {
+      slippagePercent = 10;
+    }
 
     // Bonk pool requires Lightning API with API key (server-side signing)
     // Pump pool uses trade-local (client-side signing)
