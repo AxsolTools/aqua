@@ -335,76 +335,120 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ========== COLLECT PLATFORM FEE ==========
+    // ========== PREPARE RESPONSE DATA ==========
     const tradedSol = tradeResult.amountSol || amount;
     const platformFeeLamports = calculatePlatformFee(solToLamports(tradedSol));
-    
-    // Check if user was referred
-    const referrerUserId = userId ? await getReferrer(userId) : null;
-    let referrerWallet: PublicKey | undefined;
 
-    if (referrerUserId) {
-      const { data: referrerData } = await adminClient
-        .from('users')
-        .select('main_wallet_address')
-        .eq('id', referrerUserId)
-        .single();
+    // ========== ASYNC FEE COLLECTION (non-blocking) ==========
+    // Run fee collection and logging in background - don't make user wait
+    // This saves 2-5 seconds per trade while still collecting all fees
+    const collectFeesAsync = async () => {
+      try {
+        // Check if user was referred
+        const referrerUserId = userId ? await getReferrer(userId) : null;
+        let referrerWallet: PublicKey | undefined;
 
-      if ((referrerData as any)?.main_wallet_address) {
-        referrerWallet = new PublicKey((referrerData as any).main_wallet_address);
+        if (referrerUserId) {
+          const { data: referrerData } = await adminClient
+            .from('users')
+            .select('main_wallet_address')
+            .eq('id', referrerUserId)
+            .single();
+
+          if ((referrerData as any)?.main_wallet_address) {
+            referrerWallet = new PublicKey((referrerData as any).main_wallet_address);
+          }
+        }
+
+        // Collect fee (this is the slow part - another on-chain transaction)
+        const feeResult = await collectPlatformFee(
+          connection,
+          userKeypair,
+          solToLamports(tradedSol),
+          referrerWallet
+        );
+
+        console.log('[TRADE] Async fee collection:', {
+          success: feeResult.success,
+          signature: feeResult.signature?.slice(0, 12),
+          tradeSol: tradedSol.toFixed(4),
+        });
+
+        // Add referral earnings if applicable
+        if (feeResult.success && referrerUserId && feeResult.referralShare) {
+          await addReferralEarnings(
+            referrerUserId,
+            lamportsToSol(feeResult.referralShare),
+            userId || 'anonymous',
+            `token_${action}`
+          );
+        }
+
+        // Log platform fee to database
+        await adminClient.from('platform_fees').insert({
+          user_id: userId,
+          wallet_address: walletAddress,
+          source_tx_signature: tradeResult.txSignature,
+          operation_type: `token_${action}`,
+          transaction_amount_lamports: Number(solToLamports(tradedSol)),
+          fee_amount_lamports: Number(platformFeeLamports),
+          fee_percentage: 2,
+          referral_split_lamports: feeResult.referralShare ? Number(feeResult.referralShare) : 0,
+          referrer_id: referrerUserId,
+          fee_tx_signature: feeResult.signature,
+          fee_collected_at: feeResult.success ? new Date().toISOString() : null,
+          status: feeResult.success ? 'collected' : 'failed',
+        } as any);
+
+      } catch (error) {
+        console.error('[TRADE] Async fee collection error:', error);
+        // Fee collection failed but user trade succeeded - log for manual review
+        try {
+          await adminClient.from('platform_fees').insert({
+            user_id: userId,
+            wallet_address: walletAddress,
+            source_tx_signature: tradeResult.txSignature,
+            operation_type: `token_${action}`,
+            transaction_amount_lamports: Number(solToLamports(tradedSol)),
+            fee_amount_lamports: Number(platformFeeLamports),
+            fee_percentage: 2,
+            status: 'pending', // Mark as pending for retry
+            error_message: error instanceof Error ? error.message : 'Unknown error',
+          } as any);
+        } catch {
+          // Ignore DB errors in error handler
+        }
       }
-    }
+    };
 
-    // Collect fee
-    const feeResult = await collectPlatformFee(
-      connection,
-      userKeypair,
-      solToLamports(tradedSol),
-      referrerWallet
-    );
+    // Start async fee collection (don't await - runs in background)
+    collectFeesAsync();
 
-    // Add referral earnings if applicable
-    if (feeResult.success && referrerUserId && feeResult.referralShare) {
-      await addReferralEarnings(
-        referrerUserId,
-        lamportsToSol(feeResult.referralShare),
-        userId || 'anonymous',
-        `token_${action}`
-      );
-    }
-
-    // ========== LOG TRADE ==========
+    // ========== LOG TRADE (async but fast - just DB insert) ==========
     if (token) {
-      await adminClient.from('trades').insert({
-        token_id: (token as any).id,
-        user_id: userId,
-        wallet_address: walletAddress,
-        trade_type: action,
-        amount_sol: tradedSol,
-        amount_tokens: tradeResult.amountTokens || amount,
-        price_per_token_sol: tradeResult.pricePerToken || 0,
-        platform_fee_lamports: Number(platformFeeLamports),
-        tx_signature: tradeResult.txSignature,
-        status: 'confirmed',
-      } as any);
+      // This is fast (~50ms) - run async but don't block response
+      (async () => {
+        try {
+          await adminClient.from('trades').insert({
+            token_id: (token as any).id,
+            user_id: userId,
+            wallet_address: walletAddress,
+            trade_type: action,
+            amount_sol: tradedSol,
+            amount_tokens: tradeResult.amountTokens || amount,
+            price_per_token_sol: tradeResult.pricePerToken || 0,
+            platform_fee_lamports: Number(platformFeeLamports),
+            tx_signature: tradeResult.txSignature,
+            status: 'confirmed',
+          } as any);
+        } catch (err) {
+          console.error('[TRADE] Failed to log trade:', err);
+        }
+      })();
     }
 
-    // Log platform fee
-    await adminClient.from('platform_fees').insert({
-      user_id: userId,
-      wallet_address: walletAddress,
-      source_tx_signature: tradeResult.txSignature,
-      operation_type: `token_${action}`,
-      transaction_amount_lamports: Number(solToLamports(tradedSol)),
-      fee_amount_lamports: Number(platformFeeLamports),
-      fee_percentage: 2,
-      referral_split_lamports: feeResult.referralShare ? Number(feeResult.referralShare) : 0,
-      referrer_id: referrerUserId,
-      fee_tx_signature: feeResult.signature,
-      fee_collected_at: feeResult.success ? new Date().toISOString() : null,
-      status: feeResult.success ? 'collected' : 'failed',
-    } as any);
-
+    // ========== RETURN SUCCESS IMMEDIATELY ==========
+    // User doesn't need to wait for fee collection (saves 2-5 seconds)
     return NextResponse.json({
       success: true,
       data: {
@@ -414,7 +458,7 @@ export async function POST(request: NextRequest) {
         amountTokens: tradeResult.amountTokens,
         txSignature: tradeResult.txSignature,
         platformFee: lamportsToSol(platformFeeLamports),
-        feeTxSignature: feeResult.signature,
+        // feeTxSignature not available yet - collected async
       },
     });
 
