@@ -214,6 +214,28 @@ export async function POST(request: NextRequest) {
       const minSlippageForJupiter = action === 'sell' ? 1000 : 300; // 10% for sells, 3% for buys
       const effectiveSlippageBps = Math.max(slippageBps, minSlippageForJupiter);
       
+      // DEBUG: Detailed logging for Jupiter trades
+      console.log('[TRADE] ===== JUPITER DEBUG START =====');
+      console.log('[TRADE] Action:', action);
+      console.log('[TRADE] Token mint:', tokenMint);
+      console.log('[TRADE] Amount (raw from request):', amount);
+      console.log('[TRADE] Amount type:', typeof amount);
+      console.log('[TRADE] Token decimals from request:', tokenDecimals);
+      console.log('[TRADE] Token decimals from DB:', (token as any)?.decimals);
+      console.log('[TRADE] Effective decimals:', effectiveDecimals);
+      console.log('[TRADE] Slippage from request:', slippageBps);
+      console.log('[TRADE] Effective slippage:', effectiveSlippageBps);
+      console.log('[TRADE] Pool type:', (token as any)?.pool_type);
+      console.log('[TRADE] DBC pool address:', (token as any)?.dbc_pool_address);
+      console.log('[TRADE] Wallet:', userKeypair.publicKey.toBase58());
+      
+      if (action === 'sell') {
+        const expectedRawAmount = Math.floor(amount * Math.pow(10, effectiveDecimals));
+        console.log('[TRADE] SELL - Expected raw amount to Jupiter:', expectedRawAmount);
+        console.log('[TRADE] SELL - Calculation: ', amount, '*', Math.pow(10, effectiveDecimals), '=', expectedRawAmount);
+      }
+      console.log('[TRADE] ===== JUPITER DEBUG END =====');
+      
       console.log('[TRADE] Jupiter token detected:', {
         tokenMint: tokenMint.slice(0, 12),
         poolType: (token as any)?.pool_type,

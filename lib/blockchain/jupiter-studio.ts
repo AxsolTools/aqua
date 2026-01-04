@@ -1050,10 +1050,18 @@ export async function executeJupiterSwap(
 
   try {
     console.log('[JUPITER-SWAP] ========== START ==========');
-    console.log('[JUPITER-SWAP] Config:', {
-      hasApiKey: !!jupiterApiKey,
-      apiKeyPrefix: jupiterApiKey ? jupiterApiKey.slice(0, 8) + '...' : 'NONE',
-    });
+    
+    // DEBUG: Log all incoming parameters
+    console.log('[JUPITER-SWAP] ===== PARAMS DEBUG =====');
+    console.log('[JUPITER-SWAP] tokenMint:', tokenMint);
+    console.log('[JUPITER-SWAP] action:', action);
+    console.log('[JUPITER-SWAP] amount:', amount);
+    console.log('[JUPITER-SWAP] amount type:', typeof amount);
+    console.log('[JUPITER-SWAP] slippageBps:', slippageBps);
+    console.log('[JUPITER-SWAP] tokenDecimals:', tokenDecimals);
+    console.log('[JUPITER-SWAP] wallet:', walletKeypair.publicKey.toBase58());
+    console.log('[JUPITER-SWAP] hasApiKey:', !!jupiterApiKey);
+    console.log('[JUPITER-SWAP] ===== END PARAMS DEBUG =====');
 
     // -------------------------------
     // Metis Swap API endpoints (new v1 API with API key)
@@ -1075,13 +1083,21 @@ export async function executeJupiterSwap(
       inputMint = SOL_MINT;
       outputMint = tokenMint;
       amountRaw = Math.floor(amount * 1e9); // SOL has 9 decimals
+      console.log('[JUPITER-SWAP] BUY calculation:', amount, '* 1e9 =', amountRaw);
     } else {
       // Sell: Token -> SOL
       inputMint = tokenMint;
       outputMint = SOL_MINT;
       amountRaw = Math.floor(amount * Math.pow(10, tokenDecimals));
+      console.log('[JUPITER-SWAP] SELL calculation:', amount, '*', Math.pow(10, tokenDecimals), '=', amountRaw);
     }
 
+    console.log('[JUPITER-SWAP] Final quote params:', {
+      inputMint,
+      outputMint,
+      amountRaw,
+      slippageBps,
+    });
     console.log(`[JUPITER-SWAP] ${action.toUpperCase()}: ${inputMint.slice(0, 8)} -> ${outputMint.slice(0, 8)}, amount: ${amountRaw}`);
 
     // -------------------------------
@@ -1180,9 +1196,20 @@ export async function executeJupiterSwap(
 
     if (!quoteData) {
       console.error('[JUPITER-SWAP] All quote endpoints failed:', errors);
+      console.error('[JUPITER-SWAP] Quote request was:', {
+        inputMint,
+        outputMint,
+        amountRaw,
+        slippageBps,
+      });
       throw new Error(`Quote failed: ${errors.join('; ')}`);
     }
 
+    // DEBUG: Full quote response
+    console.log('[JUPITER-SWAP] ===== QUOTE DEBUG =====');
+    console.log('[JUPITER-SWAP] Full quote response:', JSON.stringify(quoteData, null, 2));
+    console.log('[JUPITER-SWAP] ===== END QUOTE DEBUG =====');
+    
     console.log('[JUPITER-SWAP] Quote received:', {
       inAmount: quoteData.inAmount,
       outAmount: quoteData.outAmount,
@@ -1224,11 +1251,16 @@ export async function executeJupiterSwap(
 
     if (!swapResponse.ok) {
       const swapError = await swapResponse.text();
-      console.error('[JUPITER-SWAP] Swap request failed:', swapError.slice(0, 500));
+      console.error('[JUPITER-SWAP] ===== SWAP ERROR DEBUG =====');
+      console.error('[JUPITER-SWAP] Swap request failed with status:', swapResponse.status);
+      console.error('[JUPITER-SWAP] Full error response:', swapError);
+      console.error('[JUPITER-SWAP] Request body was:', JSON.stringify(swapBody, null, 2));
+      console.error('[JUPITER-SWAP] ===== END SWAP ERROR DEBUG =====');
       throw new Error(`Swap request failed: ${swapResponse.status} - ${swapError.slice(0, 200)}`);
     }
 
     const swapResult = await swapResponse.json();
+    console.log('[JUPITER-SWAP] Swap response received:', JSON.stringify(swapResult, null, 2).slice(0, 500));
     const swapTransaction = swapResult.swapTransaction;
 
     if (!swapTransaction) {
@@ -1269,6 +1301,14 @@ export async function executeJupiterSwap(
     const confirmation = await Promise.race([confirmPromise, timeoutPromise]);
     
     if (confirmation.value.err) {
+      // DEBUG: Log full transaction error
+      console.error('[JUPITER-SWAP] ===== ON-CHAIN ERROR DEBUG =====');
+      console.error('[JUPITER-SWAP] Transaction signature:', signature);
+      console.error('[JUPITER-SWAP] Full error object:', JSON.stringify(confirmation.value.err, null, 2));
+      console.error('[JUPITER-SWAP] Action was:', action);
+      console.error('[JUPITER-SWAP] Amount was:', amount, '(raw:', amountRaw, ')');
+      console.error('[JUPITER-SWAP] ===== END ON-CHAIN ERROR DEBUG =====');
+      
       // Check for slippage error
       const errStr = JSON.stringify(confirmation.value.err);
       if (errStr.includes('0x1788') || errStr.includes('6024')) {
