@@ -563,21 +563,21 @@ export function TradePanel({ token }: TradePanelProps) {
                             </svg>
                           )}
                         </div>
-                        <span className="text-[10px] font-medium text-[var(--text-primary)] truncate max-w-[52px]">
+                        <span className="text-[10px] font-bold text-[var(--text-primary)] truncate max-w-[52px]">
                           {wallet.label}
                         </span>
                       </div>
                       {/* SOL Balance */}
-                      <div className="text-[9px] font-mono text-[var(--aqua-primary)] mb-0.5">
+                      <div className="text-[10px] font-bold font-mono text-[var(--aqua-primary)] mb-0.5">
                         {formatSolBalance(wallet.solBalance)} SOL
                       </div>
                       {/* Token Balance */}
-                      <div className="text-[10px] font-mono text-[var(--text-muted)]">
+                      <div className="text-[10px] font-semibold font-mono text-[var(--text-muted)]">
                         {formatTokenBalance(wallet.tokenBalance)} {token.symbol?.slice(0, 4)}
                       </div>
                       {/* PNL */}
                       <div className={cn(
-                        "text-[10px] font-semibold",
+                        "text-[10px] font-bold",
                         pnl.color === "green" ? "text-[var(--green)]" : 
                         pnl.color === "red" ? "text-[var(--red)]" : "text-[var(--text-muted)]"
                       )}>
@@ -590,10 +590,10 @@ export function TradePanel({ token }: TradePanelProps) {
               
               {/* Summary */}
               <div className="mt-2 flex items-center justify-between text-xs">
-                <span className="text-[var(--text-muted)]">
+                <span className="text-[var(--text-muted)] font-semibold">
                   {toggledWallets.size} wallet{toggledWallets.size !== 1 ? 's' : ''} • {formatSolBalance(totalSolBalance)} SOL
                 </span>
-                <span className="text-[var(--text-primary)] font-medium">
+                <span className="text-[var(--text-primary)] font-bold">
                   {formatTokenBalance(totalTokenBalance)} {token.symbol}
                 </span>
               </div>
