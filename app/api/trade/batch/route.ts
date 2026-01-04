@@ -257,11 +257,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (transactions.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: { code: 3002, message: "No transactions could be built" },
-        results: walletErrors,
-      })
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 3002, message: "No transactions could be built" },
+          data: {
+            totalWallets: walletAddresses.length,
+            successCount: 0,
+            failureCount: walletErrors.length,
+            results: walletErrors,
+            duration: Date.now() - startTime,
+          },
+        },
+        { status: 400 }
+      )
     }
 
     console.log(`[BATCH-TRADE] Built ${transactions.length} transactions`)

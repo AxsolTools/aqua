@@ -278,8 +278,13 @@ export function TradePanel({ token }: TradePanelProps) {
         const data = await response.json()
         console.log('[BATCH-TRADE] Response:', data)
 
-        if (!response.ok) {
+        if (!response.ok || !data.success) {
           throw new Error(data.error?.message || "Batch trade failed")
+        }
+
+        // Safety check for data structure
+        if (!data.data) {
+          throw new Error("Invalid response from batch trade API")
         }
 
         const { successCount, failureCount, results } = data.data
