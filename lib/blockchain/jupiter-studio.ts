@@ -1116,12 +1116,10 @@ export async function executeJupiterSwap(
       swapMode: 'ExactIn', // We always use ExactIn mode
     });
 
-    // Let sells explore more routes; keep buys constrained
-    if (action === 'sell') {
-      quoteParams.set('restrictIntermediateTokens', 'false');
-    } else {
-      quoteParams.set('restrictIntermediateTokens', 'true');
-    }
+    // Per Jupiter docs: restrictIntermediateTokens=true reduces failures
+    // Routes through random intermediate tokens fail more frequently
+    // Keep true for both buy and sell for stability
+    quoteParams.set('restrictIntermediateTokens', 'true');
 
     console.log('[JUPITER-SWAP] Quote params:', Object.fromEntries(quoteParams));
 
@@ -1240,26 +1238,35 @@ export async function executeJupiterSwap(
     // -------------------------------
     // Build swap transaction
     // -------------------------------
-    // NOTE: dynamicSlippage is DEPRECATED per Jupiter docs
-    // Use explicit slippage from quote instead for reliable execution
-    const swapBody = {
+    // Build swap transaction per Jupiter docs
+    // NOTE: dynamicSlippage is deprecated but still functional for Metis API
+    // For low-liquidity tokens (Jupiter DBC), we need to handle this carefully
+    const swapBody: Record<string, unknown> = {
       quoteResponse: quoteData,
       userPublicKey: walletKeypair.publicKey.toBase58(),
       wrapAndUnwrapSol: true,
       dynamicComputeUnitLimit: true,
-      // dynamicSlippage: true, // REMOVED - deprecated and overrides our explicit slippage
       prioritizationFeeLamports: {
         priorityLevelWithMaxLamports: {
           maxLamports: 2000000, // 0.002 SOL max for better landing
-          priorityLevel: 'veryHigh', // Upgraded from 'high'
+          priorityLevel: 'veryHigh',
+          global: false, // Use local fee market for accurate estimation per Jupiter docs
         },
       },
     };
+    
+    // For sell operations, disable shared accounts routing
+    // Per Jupiter API docs: "shared accounts route will fail on some new AMMs (low liquidity token)"
+    // Jupiter DBC tokens are new/low liquidity, so we must disable this
+    if (action === 'sell') {
+      swapBody.useSharedAccounts = false;
+    }
 
     console.log('[JUPITER-SWAP] Swap body (without quoteResponse):', {
       userPublicKey: swapBody.userPublicKey,
       wrapAndUnwrapSol: swapBody.wrapAndUnwrapSol,
       dynamicComputeUnitLimit: swapBody.dynamicComputeUnitLimit,
+      useSharedAccounts: swapBody.useSharedAccounts,
       prioritizationFeeLamports: swapBody.prioritizationFeeLamports,
     });
 
