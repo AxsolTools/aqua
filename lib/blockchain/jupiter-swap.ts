@@ -269,8 +269,8 @@ export async function swapSolToUsd1(
   slippageBps: number = 500
 ): Promise<SwapResult> {
   try {
-    // Use higher slippage for USD1 pairs (minimum 5%)
-    const effectiveSlippage = Math.max(slippageBps, 500);
+    // Use higher slippage for USD1 pairs (minimum 10%)
+    const effectiveSlippage = Math.max(slippageBps, 1000);
     console.log(`[JUPITER] Swapping ${solAmount} SOL -> USD1 (slippage: ${effectiveSlippage}bps)...`);
     
     // Get quote with effective slippage
@@ -383,8 +383,8 @@ export async function swapUsd1ToSol(
   slippageBps: number = 500
 ): Promise<SwapResult> {
   try {
-    // USD1 pairs can have thin liquidity - use higher slippage (minimum 5%)
-    const effectiveSlippage = Math.max(slippageBps, 500);
+    // USD1 pairs can have thin liquidity - use higher slippage (minimum 10%)
+    const effectiveSlippage = Math.max(slippageBps, 1000);
     console.log(`[JUPITER] Swapping ${usd1Amount} USD1 -> SOL (slippage: ${effectiveSlippage}bps)...`);
     
     // Get quote with effective slippage
