@@ -15,13 +15,18 @@ import {
   AlertTriangle,
   ExternalLink,
   Plus,
-  ArrowUpRight
+  ArrowUpRight,
+  ArrowLeftRight,
+  RefreshCw
 } from "lucide-react"
 
 interface WalletSidebarProps {
   open: boolean
   onClose: () => void
 }
+
+// USD1 mint address
+const USD1_MINT = 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
 
 // Withdrawal Modal Component
 function WithdrawModal({ 
@@ -203,33 +208,56 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
   const { wallets, mainWallet, activeWallet, setActiveWallet, setMainWallet, setIsOnboarding, disconnect, refreshWallets } = useAuth()
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [balances, setBalances] = useState<Record<string, number>>({})
+  const [usd1Balances, setUsd1Balances] = useState<Record<string, number>>({})
   const [withdrawWallet, setWithdrawWallet] = useState<{ id: string; public_key: string; session_id: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
+  const [swappingWallet, setSwappingWallet] = useState<string | null>(null)
+  const [swapDirection, setSwapDirection] = useState<'sol_to_usd1' | 'usd1_to_sol' | null>(null)
+  const [swapAmount, setSwapAmount] = useState('')
+  const [swapError, setSwapError] = useState<string | null>(null)
+  const [isSwapping, setIsSwapping] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Fetch balances for all wallets
+  // Fetch balances for all wallets (SOL and USD1)
+  const fetchAllBalances = async () => {
+    if (wallets.length === 0) return
+    
+    setIsRefreshing(true)
+    const newBalances: Record<string, number> = {}
+    const newUsd1Balances: Record<string, number> = {}
+    
+    await Promise.all(wallets.map(async (wallet) => {
+      try {
+        // Fetch SOL balance
+        const solResponse = await fetch(`/api/wallet/balance?address=${wallet.public_key}`)
+        const solData = await solResponse.json()
+        if (solData.success && solData.data) {
+          newBalances[wallet.id] = solData.data.balanceSol || 0
+        }
+        
+        // Fetch USD1 balance
+        const usd1Response = await fetch(`/api/wallet/token-balance?wallet=${wallet.public_key}&mint=${USD1_MINT}`)
+        const usd1Data = await usd1Response.json()
+        if (usd1Data.success && usd1Data.data) {
+          newUsd1Balances[wallet.id] = usd1Data.data.uiBalance || 0
+        }
+      } catch (error) {
+        console.error(`[WALLET] Balance fetch error for ${wallet.public_key}:`, error)
+      }
+    }))
+    
+    setBalances(newBalances)
+    setUsd1Balances(newUsd1Balances)
+    setIsRefreshing(false)
+  }
+
   useEffect(() => {
     if (!open || wallets.length === 0) return
 
-    const fetchBalances = async () => {
-      const newBalances: Record<string, number> = {}
-      for (const wallet of wallets) {
-        try {
-          const response = await fetch(`/api/wallet/balance?address=${wallet.public_key}`)
-          const data = await response.json()
-          if (data.success && data.data) {
-            newBalances[wallet.id] = data.data.balanceSol || 0
-          }
-        } catch (error) {
-          console.error(`[WALLET] Balance fetch error for ${wallet.public_key}:`, error)
-        }
-      }
-      setBalances(newBalances)
-    }
-
-    fetchBalances()
+    fetchAllBalances()
     // Refresh balances every 30 seconds while sidebar is open
-    const interval = setInterval(fetchBalances, 30000)
+    const interval = setInterval(fetchAllBalances, 30000)
     return () => clearInterval(interval)
   }, [open, wallets])
 
@@ -291,6 +319,80 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
     } finally {
       setIsDeleting(false)
     }
+  }
+
+  const handleSwap = async (wallet: { id: string; public_key: string; session_id: string }, direction: 'sol_to_usd1' | 'usd1_to_sol') => {
+    const amountNum = parseFloat(swapAmount)
+    if (isNaN(amountNum) || amountNum <= 0) {
+      setSwapError('Please enter a valid amount')
+      return
+    }
+
+    // Validate balance
+    if (direction === 'sol_to_usd1') {
+      const solBal = balances[wallet.id] || 0
+      if (amountNum > solBal - 0.01) {
+        setSwapError('Insufficient SOL balance (need to keep ~0.01 for fees)')
+        return
+      }
+    } else {
+      const usd1Bal = usd1Balances[wallet.id] || 0
+      if (amountNum > usd1Bal) {
+        setSwapError('Insufficient USD1 balance')
+        return
+      }
+    }
+
+    setIsSwapping(true)
+    setSwapError(null)
+
+    try {
+      const response = await fetch('/api/wallet/swap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': wallet.session_id,
+          'x-wallet-address': wallet.public_key,
+        },
+        body: JSON.stringify({
+          direction,
+          amount: amountNum,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Swap failed')
+      }
+
+      console.log('[WALLET] Swap success:', data)
+      
+      // Close swap UI and refresh balances
+      setSwappingWallet(null)
+      setSwapDirection(null)
+      setSwapAmount('')
+      await fetchAllBalances()
+    } catch (error) {
+      console.error('[WALLET] Swap error:', error)
+      setSwapError(error instanceof Error ? error.message : 'Swap failed')
+    } finally {
+      setIsSwapping(false)
+    }
+  }
+
+  const openSwapUI = (walletId: string, direction: 'sol_to_usd1' | 'usd1_to_sol') => {
+    setSwappingWallet(walletId)
+    setSwapDirection(direction)
+    setSwapAmount('')
+    setSwapError(null)
+  }
+
+  const closeSwapUI = () => {
+    setSwappingWallet(null)
+    setSwapDirection(null)
+    setSwapAmount('')
+    setSwapError(null)
   }
 
   const copyAddress = (address: string, id: string) => {
@@ -439,14 +541,111 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-between mb-4">
-                        <p className="text-sm text-[var(--text-muted)] font-mono">
-                          {formatAddress(wallet.public_key, 8)}
-                        </p>
-                        <p className="text-sm font-medium text-[var(--text-primary)]">
-                          {balances[wallet.id]?.toFixed(4) || "..."} SOL
-                        </p>
+                      {/* Balances Section */}
+                      <div className="mb-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-[var(--text-muted)] font-mono">
+                            {formatAddress(wallet.public_key, 8)}
+                          </p>
+                          <button
+                            onClick={fetchAllBalances}
+                            disabled={isRefreshing}
+                            className="p-1 rounded hover:bg-[var(--glass-bg)] transition-colors text-[var(--text-muted)] hover:text-[var(--aqua-primary)]"
+                            title="Refresh balances"
+                          >
+                            <RefreshCw className={cn("w-3.5 h-3.5", isRefreshing && "animate-spin")} />
+                          </button>
+                        </div>
+                        
+                        {/* SOL and USD1 Balances */}
+                        <div className="grid grid-cols-2 gap-2 p-2 rounded-lg bg-[var(--ocean-surface)]">
+                          <div className="text-center">
+                            <p className="text-xs text-[var(--text-muted)] mb-0.5">SOL</p>
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">
+                              {balances[wallet.id]?.toFixed(4) || "..."}
+                            </p>
+                          </div>
+                          <div className="text-center border-l border-[var(--glass-border)]">
+                            <p className="text-xs text-[var(--text-muted)] mb-0.5">USD1</p>
+                            <p className="text-sm font-semibold text-emerald-400">
+                              {usd1Balances[wallet.id]?.toFixed(2) || "0.00"}
+                            </p>
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Swap UI (when active) */}
+                      {swappingWallet === wallet.id && (
+                        <div className="mb-3 p-3 rounded-lg bg-[var(--ocean-surface)] border border-[var(--glass-border)]">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium text-[var(--text-primary)]">
+                              {swapDirection === 'sol_to_usd1' ? 'SOL → USD1' : 'USD1 → SOL'}
+                            </span>
+                            <button onClick={closeSwapUI} className="p-1 hover:bg-[var(--glass-bg)] rounded">
+                              <X className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                            </button>
+                          </div>
+                          <div className="flex gap-2 mb-2">
+                            <div className="relative flex-1">
+                              <Input
+                                type="number"
+                                value={swapAmount}
+                                onChange={(e) => setSwapAmount(e.target.value)}
+                                placeholder="0.00"
+                                className="h-9 text-sm bg-[var(--ocean-deep)] border-[var(--glass-border)] pr-14"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (swapDirection === 'sol_to_usd1') {
+                                    const max = Math.max(0, (balances[wallet.id] || 0) - 0.01)
+                                    setSwapAmount(max.toFixed(4))
+                                  } else {
+                                    setSwapAmount((usd1Balances[wallet.id] || 0).toFixed(2))
+                                  }
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
+                              >
+                                MAX
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => handleSwap(wallet, swapDirection!)}
+                              disabled={isSwapping || !swapAmount}
+                              className="px-3 h-9 rounded-lg text-sm font-medium bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] text-[var(--ocean-deep)] hover:opacity-90 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                            >
+                              {isSwapping ? (
+                                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <ArrowLeftRight className="w-3.5 h-3.5" />
+                              )}
+                              Swap
+                            </button>
+                          </div>
+                          {swapError && (
+                            <p className="text-xs text-red-400">{swapError}</p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Swap Buttons Row */}
+                      {swappingWallet !== wallet.id && (
+                        <div className="flex items-center gap-2 mb-2">
+                          <button
+                            onClick={() => openSwapUI(wallet.id, 'sol_to_usd1')}
+                            disabled={(balances[wallet.id] || 0) < 0.02}
+                            className="flex-1 py-2 rounded-lg text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                          >
+                            SOL → USD1
+                          </button>
+                          <button
+                            onClick={() => openSwapUI(wallet.id, 'usd1_to_sol')}
+                            disabled={(usd1Balances[wallet.id] || 0) < 0.01}
+                            className="flex-1 py-2 rounded-lg text-xs font-medium text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                          >
+                            USD1 → SOL
+                          </button>
+                        </div>
+                      )}
 
                       {/* Actions Row 1: Main Controls */}
                       <div className="flex items-center gap-2 mb-2">
