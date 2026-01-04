@@ -1,7 +1,7 @@
 /**
  * AQUA Launchpad - Wallet Swap API
  * Swap SOL <-> USD1 for any wallet
- * Uses the existing Jupiter swap integration
+ * Uses the proven Jupiter swap implementation from jupiter-studio.ts
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
@@ -9,7 +9,11 @@ import { Connection, Keypair } from '@solana/web3.js';
 import bs58 from 'bs58';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
-import { swapSolToUsd1, swapUsd1ToSol } from '@/lib/blockchain/jupiter-swap';
+import { executeJupiterSwap } from '@/lib/blockchain/jupiter-studio';
+
+// USD1 and SOL mint addresses
+const USD1_MINT = 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB';
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 // ============================================================================
 // CONFIGURATION
@@ -90,13 +94,20 @@ export async function POST(request: NextRequest) {
 
     console.log(`[SWAP] ${direction}: ${amountNum} from wallet ${walletAddress.slice(0, 8)}...`);
 
-    // Execute swap
-    let swapResult;
-    if (direction === 'sol_to_usd1') {
-      swapResult = await swapSolToUsd1(connection, walletKeypair, amountNum, slippageBps);
-    } else {
-      swapResult = await swapUsd1ToSol(connection, walletKeypair, amountNum, slippageBps);
-    }
+    // Use the proven executeJupiterSwap from jupiter-studio.ts
+    // This implementation handles low-liquidity tokens properly with:
+    // - skipPreflight: true
+    // - useSharedAccounts: false for sells
+    // - restrictIntermediateTokens: true
+    // - Proper on-chain error checking
+    const swapResult = await executeJupiterSwap(connection, {
+      walletKeypair,
+      tokenMint: USD1_MINT,
+      action: direction === 'sol_to_usd1' ? 'buy' : 'sell',
+      amount: amountNum,
+      slippageBps: Math.max(slippageBps, 1000), // Minimum 10% slippage for USD1 pairs
+      tokenDecimals: 6, // USD1 has 6 decimals
+    });
 
     if (!swapResult.success) {
       console.error(`[SWAP] Failed:`, swapResult.error);
@@ -112,14 +123,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[SWAP] ✅ Success: ${swapResult.inputAmount} -> ${swapResult.outputAmount}`);
+    console.log(`[SWAP] ✅ Success: ${swapResult.amountSol} SOL <-> ${swapResult.amountTokens} USD1`);
+
+    // Return output in consistent format
+    const inputAmount = direction === 'sol_to_usd1' ? swapResult.amountSol : swapResult.amountTokens;
+    const outputAmount = direction === 'sol_to_usd1' ? swapResult.amountTokens : swapResult.amountSol;
 
     return NextResponse.json({
       success: true,
       data: {
         direction,
-        inputAmount: swapResult.inputAmount,
-        outputAmount: swapResult.outputAmount,
+        inputAmount,
+        outputAmount,
         txSignature: swapResult.txSignature,
       },
     });
