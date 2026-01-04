@@ -1255,11 +1255,19 @@ export async function executeJupiterSwap(
 
     console.log(`[JUPITER-SWAP] Transaction sent: ${signature}`);
 
-    // Confirm with longer timeout for network congestion
-    const confirmation = await connection.confirmTransaction(
+    // Confirm with timeout to prevent infinite waiting
+    const CONFIRM_TIMEOUT_MS = 60000; // 60 seconds max
+    const confirmPromise = connection.confirmTransaction(
       { signature, blockhash: transaction.message.recentBlockhash, lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight },
       'confirmed'
     );
+    
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Transaction confirmation timed out after 60s')), CONFIRM_TIMEOUT_MS)
+    );
+    
+    const confirmation = await Promise.race([confirmPromise, timeoutPromise]);
+    
     if (confirmation.value.err) {
       // Check for slippage error
       const errStr = JSON.stringify(confirmation.value.err);

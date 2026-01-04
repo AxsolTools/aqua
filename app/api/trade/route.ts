@@ -299,8 +299,9 @@ export async function POST(request: NextRequest) {
       } else if (errorLower.includes('quote failed') || errorLower.includes('no route')) {
         userMessage = 'Jupiter could not find a route. Token may not be indexed yet - try again in a few seconds.';
         errorCode = 3004;
-      } else if (errorLower.includes('timeout') || errorLower.includes('fetch failed')) {
-        userMessage = 'Jupiter API timed out. Please try again.';
+      } else if (errorLower.includes('timeout') || errorLower.includes('fetch failed') || 
+                 errorLower.includes('expired') || errorLower.includes('blockhash not found')) {
+        userMessage = 'Transaction timed out or expired. Network may be congested - please try again.';
         errorCode = 5003;
       } else if (errorLower.includes('swap request failed') || errorLower.includes('swap failed')) {
         userMessage = 'Jupiter swap failed. Please try again with higher slippage.';

@@ -7,7 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server"
 import { Connection, Keypair, PublicKey, VersionedTransaction } from "@solana/web3.js"
-import { getAssociatedTokenAddress } from "@solana/spl-token"
+import { getAssociatedTokenAddress, getAccount, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token"
 import bs58 from "bs58"
 import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
@@ -164,24 +164,53 @@ export async function POST(request: NextRequest) {
     // For sells, we need to get each wallet's actual token balance
     // because the client sends the TOTAL amount across all wallets
     const walletTokenBalances: Map<string, number> = new Map()
+    // Track which token program each wallet uses (for correct ATA derivation)
+    const walletTokenProgram: Map<string, PublicKey> = new Map()
+    const walletTokenAccount: Map<string, string> = new Map()
     
     if (action === "sell") {
       console.log("[BATCH-TRADE] Fetching individual token balances for sell...")
       const tokenMintPubkey = new PublicKey(tokenMint)
       
       // Fetch all balances in parallel for speed
+      // Try both SPL Token and Token-2022 programs
       const balancePromises = Array.from(walletKeypairs.keys()).map(async (address) => {
+        const walletPubkey = new PublicKey(address)
+        
+        // Try standard SPL Token first
         try {
-          const walletPubkey = new PublicKey(address)
-          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey)
-          const balance = await connection.getTokenAccountBalance(ata)
-          const tokenAmount = balance.value.uiAmount || 0
-          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens (ATA: ${ata.toBase58().slice(0, 8)})`)
-          return { address, balance: tokenAmount, error: null }
+          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, TOKEN_PROGRAM_ID)
+          const account = await getAccount(connection, ata, "confirmed", TOKEN_PROGRAM_ID)
+          const tokenAmount = Number(account.amount) / Math.pow(10, tokenDecimals)
+          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens (SPL Token ATA: ${ata.toBase58().slice(0, 8)})`)
+          return { 
+            address, 
+            balance: tokenAmount, 
+            error: null, 
+            programId: TOKEN_PROGRAM_ID,
+            ata: ata.toBase58()
+          }
+        } catch {
+          // SPL Token account not found, try Token-2022
+        }
+        
+        // Try Token-2022
+        try {
+          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, TOKEN_2022_PROGRAM_ID)
+          const account = await getAccount(connection, ata, "confirmed", TOKEN_2022_PROGRAM_ID)
+          const tokenAmount = Number(account.amount) / Math.pow(10, tokenDecimals)
+          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens (Token-2022 ATA: ${ata.toBase58().slice(0, 8)})`)
+          return { 
+            address, 
+            balance: tokenAmount, 
+            error: null, 
+            programId: TOKEN_2022_PROGRAM_ID,
+            ata: ata.toBase58()
+          }
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-          console.warn(`[BATCH-TRADE] Could not fetch balance for ${address.slice(0, 8)}:`, errorMsg)
-          return { address, balance: 0, error: errorMsg }
+          console.warn(`[BATCH-TRADE] Could not fetch balance for ${address.slice(0, 8)} (tried both SPL Token and Token-2022):`, errorMsg)
+          return { address, balance: 0, error: errorMsg, programId: null, ata: null }
         }
       })
       
@@ -190,14 +219,19 @@ export async function POST(request: NextRequest) {
       
       for (const result of balanceResults) {
         walletTokenBalances.set(result.address, result.balance)
-        if (result.error) fetchErrors++
+        if (result.error) {
+          fetchErrors++
+        } else {
+          if (result.programId) walletTokenProgram.set(result.address, result.programId)
+          if (result.ata) walletTokenAccount.set(result.address, result.ata)
+        }
       }
       
       console.log(`[BATCH-TRADE] Balance fetch complete: ${balanceResults.length - fetchErrors}/${balanceResults.length} successful`)
       
       // If ALL balance fetches failed, there might be an RPC issue
       if (fetchErrors === balanceResults.length && balanceResults.length > 0) {
-        console.error("[BATCH-TRADE] All balance fetches failed - possible RPC issue")
+        console.error("[BATCH-TRADE] All balance fetches failed - possible RPC issue or wallets have no tokens")
       }
     }
 
@@ -241,12 +275,19 @@ export async function POST(request: NextRequest) {
           pool: "pump",
         }
         
-        // For sells, include tokenAccount (same as single wallet sell does)
+        // For sells, include tokenAccount (use the ATA we already found during balance fetch)
         if (action === "sell") {
-          const tokenMintPubkey = new PublicKey(tokenMint)
-          const walletPubkey = new PublicKey(address)
-          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey)
-          tradeBody.tokenAccount = ata.toBase58()
+          const cachedAta = walletTokenAccount.get(address)
+          if (cachedAta) {
+            tradeBody.tokenAccount = cachedAta
+          } else {
+            // Fallback: derive ATA (shouldn't happen since we already fetched balances)
+            const tokenMintPubkey = new PublicKey(tokenMint)
+            const walletPubkey = new PublicKey(address)
+            const programId = walletTokenProgram.get(address) || TOKEN_PROGRAM_ID
+            const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, programId)
+            tradeBody.tokenAccount = ata.toBase58()
+          }
         }
 
         console.log(`[BATCH-TRADE] Requesting tx for ${address.slice(0, 8)}...`)
