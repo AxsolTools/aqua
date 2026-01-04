@@ -328,20 +328,9 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
       return
     }
 
-    // Validate balance
-    if (direction === 'sol_to_usd1') {
-      const solBal = balances[wallet.id] || 0
-      if (amountNum > solBal - 0.01) {
-        setSwapError('Insufficient SOL balance (need to keep ~0.01 for fees)')
-        return
-      }
-    } else {
-      const usd1Bal = usd1Balances[wallet.id] || 0
-      if (amountNum > usd1Bal) {
-        setSwapError('Insufficient USD1 balance')
-        return
-      }
-    }
+    // Skip client-side validation - let the backend handle it
+    // The cached balance might be slightly stale, and Jupiter will fail gracefully if insufficient
+    // This prevents false "insufficient balance" errors due to precision/timing issues
 
     setIsSwapping(true)
     setSwapError(null)
