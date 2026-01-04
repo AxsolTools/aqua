@@ -169,18 +169,35 @@ export async function POST(request: NextRequest) {
       console.log("[BATCH-TRADE] Fetching individual token balances for sell...")
       const tokenMintPubkey = new PublicKey(tokenMint)
       
-      for (const [address] of walletKeypairs) {
+      // Fetch all balances in parallel for speed
+      const balancePromises = Array.from(walletKeypairs.keys()).map(async (address) => {
         try {
           const walletPubkey = new PublicKey(address)
           const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey)
           const balance = await connection.getTokenAccountBalance(ata)
           const tokenAmount = balance.value.uiAmount || 0
-          walletTokenBalances.set(address, tokenAmount)
-          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens`)
+          console.log(`[BATCH-TRADE] Wallet ${address.slice(0, 8)} has ${tokenAmount.toFixed(2)} tokens (ATA: ${ata.toBase58().slice(0, 8)})`)
+          return { address, balance: tokenAmount, error: null }
         } catch (error) {
-          console.warn(`[BATCH-TRADE] Could not fetch balance for ${address.slice(0, 8)}:`, error)
-          walletTokenBalances.set(address, 0)
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error'
+          console.warn(`[BATCH-TRADE] Could not fetch balance for ${address.slice(0, 8)}:`, errorMsg)
+          return { address, balance: 0, error: errorMsg }
         }
+      })
+      
+      const balanceResults = await Promise.all(balancePromises)
+      let fetchErrors = 0
+      
+      for (const result of balanceResults) {
+        walletTokenBalances.set(result.address, result.balance)
+        if (result.error) fetchErrors++
+      }
+      
+      console.log(`[BATCH-TRADE] Balance fetch complete: ${balanceResults.length - fetchErrors}/${balanceResults.length} successful`)
+      
+      // If ALL balance fetches failed, there might be an RPC issue
+      if (fetchErrors === balanceResults.length && balanceResults.length > 0) {
+        console.error("[BATCH-TRADE] All balance fetches failed - possible RPC issue")
       }
     }
 
@@ -384,6 +401,13 @@ export async function POST(request: NextRequest) {
         error: {
           code: 5001,
           message: error instanceof Error ? error.message : "Batch trade failed",
+        },
+        data: {
+          totalWallets: 0,
+          successCount: 0,
+          failureCount: 0,
+          results: [],
+          duration: 0,
         },
       },
       { status: 500 }
