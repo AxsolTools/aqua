@@ -5,7 +5,8 @@ import { motion, AnimatePresence } from "framer-motion"
 import { createClient } from "@/lib/supabase/client"
 import { GlassPanel } from "@/components/ui/glass-panel"
 import { cn } from "@/lib/utils"
-import { useLogsSubscription, useHeliusWebSocketState } from "@/hooks/use-helius-websocket"
+import { useLogsSubscription, useHeliusWebSocketState, useHeliusConnect } from "@/hooks/use-helius-websocket"
+import { tradeEvents, type TradeEvent } from "@/lib/events/trade-events"
 
 interface Transaction {
   signature: string
@@ -27,9 +28,21 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const pendingSignatures = useRef<Set<string>>(new Set())
+  const hasInitializedWs = useRef(false)
   
   // WebSocket state for UI indicator
   const wsState = useHeliusWebSocketState()
+  const { connect } = useHeliusConnect()
+  
+  // Initialize WebSocket connection on mount (fix deadlock)
+  useEffect(() => {
+    if (!hasInitializedWs.current) {
+      hasInitializedWs.current = true
+      connect().catch(() => {
+        // Silently fail - will fallback to polling
+      })
+    }
+  }, [connect])
 
   // Fetch transactions from API (combines on-chain + database)
   const fetchTransactions = useCallback(async () => {
@@ -58,25 +71,80 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
     fetchTransactions()
   }, [fetchTransactions])
 
-  // WebSocket subscription for real-time updates (replaces 5s polling when connected)
-  // This is much more efficient - only fetches when there's actually a new transaction
+  // WebSocket subscription for real-time updates
+  // FIXED: Always pass tokenAddress (removed wsState.isConnected conditional that caused deadlock)
+  // The hook will handle connection internally
   useLogsSubscription(
-    wsState.isConnected ? tokenAddress : null,
+    tokenAddress, // Always subscribe - hook will attempt connection
     useCallback((logs) => {
       // New transaction detected via WebSocket!
       const signature = logs.signature
       
-      // Avoid duplicate fetches for the same signature
+      // Avoid duplicate processing for the same signature
       if (pendingSignatures.current.has(signature)) return
       pendingSignatures.current.add(signature)
       
-      // Fetch the new transaction details
+      // Parse transaction type from logs (instant - no indexing delay!)
+      const isBuy = parseIsBuyFromLogs(logs.logs)
+      const solAmount = parseSolAmountFromLogs(logs.logs)
+      
+      // Immediately add to UI as pending (no waiting for Helius indexing!)
+      if (signature && (isBuy !== null || solAmount > 0)) {
+        const newTx: Transaction = {
+          signature,
+          type: isBuy ? "buy" : "sell",
+          walletAddress: "", // Will be filled when confirmed
+          amountSol: solAmount,
+          amountTokens: 0,
+          timestamp: Date.now(),
+          status: "pending",
+        }
+        
+        setTransactions(prev => {
+          if (prev.some(t => t.signature === signature)) return prev
+          return [newTx, ...prev].slice(0, 50)
+        })
+        
+        console.log('[TRANSACTIONS] WebSocket detected:', signature.slice(0, 12), isBuy ? 'BUY' : 'SELL')
+      }
+      
+      // Also fetch full details after a delay (to get accurate amounts)
       setTimeout(() => {
         fetchTransactions()
         pendingSignatures.current.delete(signature)
-      }, 1000) // Small delay to ensure transaction is indexed
+      }, 3000) // 3 seconds - transaction should be indexed by then
     }, [fetchTransactions])
   )
+  
+  // Subscribe to instant platform trade events
+  useEffect(() => {
+    const unsubscribe = tradeEvents.subscribe(tokenAddress, (event: TradeEvent) => {
+      // Immediately add platform trades to UI
+      const newTx: Transaction = {
+        signature: event.signature,
+        type: event.type,
+        walletAddress: event.walletAddress,
+        amountSol: event.amountSol,
+        amountTokens: event.amountTokens,
+        timestamp: event.timestamp,
+        status: event.status,
+      }
+      
+      setTransactions(prev => {
+        // Update existing or add new
+        const existingIdx = prev.findIndex(t => t.signature === event.signature)
+        if (existingIdx >= 0) {
+          // Update status
+          const updated = [...prev]
+          updated[existingIdx] = { ...updated[existingIdx], status: event.status }
+          return updated
+        }
+        return [newTx, ...prev].slice(0, 50)
+      })
+    })
+    
+    return unsubscribe
+  }, [tokenAddress])
 
   // Fallback polling when WebSocket is not connected (less frequent)
   useEffect(() => {
@@ -135,6 +203,44 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
   const formatAddress = (addr: string) => {
     if (!addr || addr.length < 8) return addr || "..."
     return `${addr.slice(0, 4)}...${addr.slice(-4)}`
+  }
+  
+  // Helper: Parse if transaction is a buy from program logs
+  function parseIsBuyFromLogs(logs: string[]): boolean | null {
+    for (const log of logs) {
+      // Pump.fun logs
+      if (log.includes('Instruction: Buy')) return true
+      if (log.includes('Instruction: Sell')) return false
+      // Jupiter logs
+      if (log.includes('Swap') && log.includes('SOL')) {
+        // If SOL is being spent (before token), it's a buy
+        const solIndex = log.indexOf('SOL')
+        const tokenIndex = log.indexOf('token')
+        if (tokenIndex > 0 && solIndex < tokenIndex) return true
+        if (solIndex > tokenIndex) return false
+      }
+    }
+    return null
+  }
+  
+  // Helper: Parse SOL amount from program logs (rough estimate)
+  function parseSolAmountFromLogs(logs: string[]): number {
+    for (const log of logs) {
+      // Look for lamport transfers
+      const match = log.match(/(\d+)\s*lamports?/i)
+      if (match) {
+        const lamports = parseInt(match[1], 10)
+        if (lamports > 1_000_000 && lamports < 100_000_000_000) { // 0.001 - 100 SOL
+          return lamports / 1e9
+        }
+      }
+      // Look for SOL amount patterns
+      const solMatch = log.match(/(\d+\.?\d*)\s*SOL/i)
+      if (solMatch) {
+        return parseFloat(solMatch[1])
+      }
+    }
+    return 0
   }
 
   const formatSolAmount = (amount: number) => {

@@ -10,6 +10,7 @@ import { useMultiWalletPNL, formatPnlPercent, formatTokenBalance, formatSolBalan
 import { cn } from "@/lib/utils"
 import { EarnShortcut } from "@/components/earn/earn-shortcut"
 import { VolumeBotQuickControls } from "@/components/token/volume-bot-quick-controls"
+import { tradeEvents } from "@/lib/events/trade-events"
 
 interface TradePanelProps {
   token: Token
@@ -284,6 +285,24 @@ export function TradePanel({ token }: TradePanelProps) {
         const { successCount, failureCount, results } = data.data
         setBatchResults(results)
         
+        // Emit trade events for INSTANT UI update for each successful wallet
+        if (token.mint_address) {
+          for (const result of results) {
+            if (result.success && result.txSignature) {
+              tradeEvents.emit({
+                signature: result.txSignature,
+                tokenMint: token.mint_address,
+                type: mode,
+                walletAddress: result.walletAddress,
+                amountSol: parseFloat(amount) || 0,
+                amountTokens: 0,
+                timestamp: Date.now(),
+                status: 'confirmed',
+              })
+            }
+          }
+        }
+        
         if (successCount > 0) {
           setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} with ${successCount}/${results.length} wallets`)
           setAmount("")
@@ -363,6 +382,20 @@ export function TradePanel({ token }: TradePanelProps) {
         throw new Error(friendlyMessage)
       }
 
+      // Emit trade event for INSTANT UI update (no waiting for Helius indexing!)
+      if (data.data?.txSignature && token.mint_address) {
+        tradeEvents.emit({
+          signature: data.data.txSignature,
+          tokenMint: token.mint_address,
+          type: mode,
+          walletAddress: activeWallet?.public_key || '',
+          amountSol: data.data.amountSol || parseFloat(amount) || 0,
+          amountTokens: data.data.amountTokens || 0,
+          timestamp: Date.now(),
+          status: 'confirmed',
+        })
+      }
+      
       setSuccess(`Successfully ${mode === 'buy' ? 'bought' : 'sold'} ${token.symbol}!`)
       setAmount("")
       // Refresh balances and price after successful trade
