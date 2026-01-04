@@ -330,13 +330,26 @@ export async function swapSolToUsd1(
       preflightCommitment: 'processed',
     });
     
-    // Confirm with timeout
+    console.log(`[JUPITER] Transaction sent: ${signature}`);
+    
+    // Confirm with timeout and CHECK FOR ERRORS
     const latestBlockhash = await connection.getLatestBlockhash();
-    await connection.confirmTransaction({
+    const confirmation = await connection.confirmTransaction({
       signature,
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
     }, 'confirmed');
+    
+    // Check if transaction failed on-chain
+    if (confirmation.value.err) {
+      const errStr = JSON.stringify(confirmation.value.err);
+      console.error(`[JUPITER] Transaction failed on-chain: ${errStr}`);
+      // Check for slippage error (0x1788 = 6024)
+      if (errStr.includes('0x1788') || errStr.includes('6024')) {
+        throw new Error('Slippage exceeded - price moved during transaction. Try again with higher slippage.');
+      }
+      throw new Error(`Transaction failed on-chain: ${errStr}`);
+    }
     
     const outputAmount = parseInt(quote.outAmount) / USD1_MULTIPLIER;
     console.log(`[JUPITER] ✅ Swapped ${solAmount} SOL -> ${outputAmount.toFixed(2)} USD1 (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
@@ -431,13 +444,26 @@ export async function swapUsd1ToSol(
       preflightCommitment: 'processed',
     });
     
-    // Confirm with timeout
+    console.log(`[JUPITER] Transaction sent: ${signature}`);
+    
+    // Confirm with timeout and CHECK FOR ERRORS
     const latestBlockhash = await connection.getLatestBlockhash();
-    await connection.confirmTransaction({
+    const confirmation = await connection.confirmTransaction({
       signature,
       blockhash: latestBlockhash.blockhash,
       lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
     }, 'confirmed');
+    
+    // Check if transaction failed on-chain
+    if (confirmation.value.err) {
+      const errStr = JSON.stringify(confirmation.value.err);
+      console.error(`[JUPITER] Transaction failed on-chain: ${errStr}`);
+      // Check for slippage error (0x1788 = 6024)
+      if (errStr.includes('0x1788') || errStr.includes('6024')) {
+        throw new Error('Slippage exceeded - price moved during transaction. Try again with higher slippage.');
+      }
+      throw new Error(`Transaction failed on-chain: ${errStr}`);
+    }
     
     const outputAmount = parseInt(quote.outAmount) / LAMPORTS_PER_SOL;
     console.log(`[JUPITER] ✅ Swapped ${usd1Amount} USD1 -> ${outputAmount.toFixed(6)} SOL (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
