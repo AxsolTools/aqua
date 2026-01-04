@@ -36,7 +36,8 @@ export const metadata: Metadata = {
   authors: [{ name: "Propel" }],
   icons: {
     icon: [
-      { url: "/favicon.png", type: "image/png" },
+      { url: "/icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/favicon.png", type: "image/png", sizes: "32x32" },
     ],
     shortcut: "/favicon.png",
     apple: "/apple-touch-icon.png",
