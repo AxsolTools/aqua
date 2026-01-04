@@ -12,7 +12,7 @@ import bs58 from "bs58"
 import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
 import { executeBundle, executeSequentialFallback } from "@/lib/blockchain/jito-bundles"
-import { swapSolToUsd1, swapUsd1ToSol, QUOTE_MINTS, POOL_TYPES } from "@/lib/blockchain"
+import { QUOTE_MINTS, POOL_TYPES } from "@/lib/blockchain"
 
 // ============================================================================
 // CONFIGURATION
@@ -34,10 +34,9 @@ interface BatchTradeRequest {
   amountPerWallet: number
   slippageBps: number
   tokenDecimals?: number
-  // Bonk pool USD1 support
+  // Bonk pool USD1 support (PumpPortal handles SOL<->USD1 conversion internally)
   pool?: string
   quoteMint?: string
-  autoConvertUsd1?: boolean
 }
 
 interface WalletTradeResult {
@@ -75,10 +74,9 @@ export async function POST(request: NextRequest) {
       amountPerWallet,
       slippageBps = 500,
       tokenDecimals = 6,
-      // Bonk pool USD1 support
+      // Bonk pool USD1 support (PumpPortal handles SOL<->USD1 conversion internally)
       pool = 'pump',
       quoteMint = QUOTE_MINTS.WSOL,
-      autoConvertUsd1 = false,
     } = body
     
     // Detect Bonk USD1 mode
@@ -123,7 +121,6 @@ export async function POST(request: NextRequest) {
       pool,
       isBonkPool,
       isUsd1Quote,
-      autoConvertUsd1,
     })
 
     const adminClient = getAdminClient()
@@ -372,122 +369,184 @@ export async function POST(request: NextRequest) {
     
     // ============================================================================
     // PUMP.FUN / BONK.FUN PATH - Build transactions for Jito bundle
+    // Uses batch array request per PumpPortal docs (optimal method)
+    // For USD1 pairs, PumpPortal handles SOL<->USD1 conversion internally
     // ============================================================================
     const poolLabel = isBonkPool ? 'Bonk.fun' : 'Pump.fun'
     console.log(`[BATCH-TRADE] Using ${poolLabel} for trades...`)
     
-    const transactions: VersionedTransaction[] = []
-    const walletToTxIndex: Map<string, number> = new Map()
     const walletActualAmounts: Map<string, number> = new Map()
+    const validWalletAddresses: string[] = []
     
-    // Track USD1 conversion results for post-sell conversion
-    const walletUsd1Proceeds: Map<string, number> = new Map()
-
+    // Build batch array of trade arguments (per official PumpPortal docs)
+    const bundledTxArgs: Record<string, unknown>[] = []
+    
     for (const [address, keypair] of walletKeypairs) {
-      try {
-        // For sells, use actual wallet balance. For buys, use the requested amount.
-        let actualAmount = amountPerWallet
-        
-        // ========== BONK USD1 PRE-BUY CONVERSION ==========
-        // Convert SOL to USD1 before buying on USD1 bonding curve
-        if (action === "buy" && isBonkPool && isUsd1Quote && autoConvertUsd1) {
-          console.log(`[BATCH-TRADE] Converting ${amountPerWallet} SOL -> USD1 for ${address.slice(0, 8)}...`)
-          const swapResult = await swapSolToUsd1(connection, keypair, amountPerWallet)
-          
-          if (!swapResult.success) {
-            console.error(`[BATCH-TRADE] SOL->USD1 conversion failed for ${address.slice(0, 8)}: ${swapResult.error}`)
-            walletErrors.push({
-              walletAddress: address,
-              success: false,
-              error: `SOL to USD1 conversion failed: ${swapResult.error}`,
-            })
-            continue
-          }
-          
-          actualAmount = swapResult.outputAmount
-          console.log(`[BATCH-TRADE] ✅ Converted ${amountPerWallet} SOL -> ${actualAmount.toFixed(2)} USD1 for ${address.slice(0, 8)}`)
+      // For sells, use actual wallet balance. For buys, use the requested amount.
+      let actualAmount = amountPerWallet
+      
+      if (action === "sell") {
+        const walletBalance = walletTokenBalances.get(address) || 0
+        if (walletBalance <= 0) {
+          console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
+          walletErrors.push({
+            walletAddress: address,
+            success: false,
+            error: "No tokens to sell",
+          })
+          continue
         }
-        
-        if (action === "sell") {
-          const walletBalance = walletTokenBalances.get(address) || 0
-          if (walletBalance <= 0) {
-            console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
-            walletErrors.push({
-              walletAddress: address,
-              success: false,
-              error: "No tokens to sell",
-            })
-            continue
-          }
-          // Use the wallet's actual balance for sells
-          actualAmount = walletBalance
-          console.log(`[BATCH-TRADE] Will sell ${actualAmount.toFixed(2)} tokens from ${address.slice(0, 8)}`)
-        }
-        
-        walletActualAmounts.set(address, actualAmount)
-
-        // Build trade request for PumpPortal
-        const tradeBody: Record<string, unknown> = {
-          publicKey: address,
-          action,
-          mint: tokenMint,
-          denominatedInSol: action === "buy" ? "true" : "false",
-          amount: actualAmount,
-          slippage: slippageBps / 100, // Convert to percentage
-          priorityFee: transactions.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays tip
-          pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
-        }
-        
-        // Add quoteMint for Bonk USD1 pairs
-        if (isBonkPool && quoteMint) {
-          tradeBody.quoteMint = quoteMint
-        }
-        
-        // For sells, include tokenAccount (use the ATA we already found during balance fetch)
-        if (action === "sell") {
-          const cachedAta = walletTokenAccount.get(address)
-          if (cachedAta) {
-            tradeBody.tokenAccount = cachedAta
-          } else {
-            // Fallback: derive ATA (shouldn't happen since we already fetched balances)
-            const tokenMintPubkey = new PublicKey(tokenMint)
-            const walletPubkey = new PublicKey(address)
-            const programId = walletTokenProgram.get(address) || TOKEN_PROGRAM_ID
-            const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, programId)
-            tradeBody.tokenAccount = ata.toBase58()
-          }
-        }
-
-        console.log(`[BATCH-TRADE] Requesting tx for ${address.slice(0, 8)}...`)
-
-        const response = await fetch(PUMPPORTAL_LOCAL_TRADE, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(tradeBody),
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`PumpPortal error: ${errorText}`)
-        }
-
-        // PumpPortal returns raw transaction bytes
-        const txBytes = new Uint8Array(await response.arrayBuffer())
-        const tx = VersionedTransaction.deserialize(txBytes)
-
-        // Sign the transaction
-        tx.sign([keypair])
-
-        walletToTxIndex.set(address, transactions.length)
-        transactions.push(tx)
-      } catch (error) {
-        console.error(`[BATCH-TRADE] Failed to build tx for ${address}:`, error)
-        walletErrors.push({
-          walletAddress: address,
-          success: false,
-          error: error instanceof Error ? error.message : "Failed to build transaction",
-        })
+        // Use the wallet's actual balance for sells
+        actualAmount = walletBalance
+        console.log(`[BATCH-TRADE] Will sell ${actualAmount.toFixed(2)} tokens from ${address.slice(0, 8)}`)
       }
+      
+      walletActualAmounts.set(address, actualAmount)
+      validWalletAddresses.push(address)
+
+      // Build trade request for PumpPortal batch array
+      const tradeArg: Record<string, unknown> = {
+        publicKey: address,
+        action,
+        mint: tokenMint,
+        denominatedInSol: action === "buy" ? "true" : "false", // For buys: SOL amount, for sells: token amount
+        amount: actualAmount,
+        slippage: slippageBps / 100, // Convert to percentage
+        priorityFee: bundledTxArgs.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays Jito tip
+        pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
+      }
+      
+      // Add quoteMint for Bonk pools (PumpPortal handles USD1 conversion internally)
+      if (isBonkPool && quoteMint) {
+        tradeArg.quoteMint = quoteMint
+      }
+      
+      // For sells, include tokenAccount (use the ATA we already found during balance fetch)
+      if (action === "sell") {
+        const cachedAta = walletTokenAccount.get(address)
+        if (cachedAta) {
+          tradeArg.tokenAccount = cachedAta
+        } else {
+          // Fallback: derive ATA
+          const tokenMintPubkey = new PublicKey(tokenMint)
+          const walletPubkey = new PublicKey(address)
+          const programId = walletTokenProgram.get(address) || TOKEN_PROGRAM_ID
+          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, programId)
+          tradeArg.tokenAccount = ata.toBase58()
+        }
+      }
+
+      bundledTxArgs.push(tradeArg)
+    }
+
+    if (bundledTxArgs.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: { code: 3002, message: "No transactions could be built" },
+          data: {
+            totalWallets: walletAddresses.length,
+            successCount: 0,
+            failureCount: walletErrors.length,
+            results: walletErrors,
+            duration: Date.now() - startTime,
+          },
+        },
+        { status: 400 }
+      )
+    }
+
+    console.log(`[BATCH-TRADE] Requesting ${bundledTxArgs.length} transactions from PumpPortal (batch array)...`)
+
+    // ============================================================================
+    // PRIMARY METHOD: Batch array request to PumpPortal (per official docs)
+    // ============================================================================
+    let transactions: VersionedTransaction[] = []
+    let usedFallback = false
+    
+    try {
+      const response = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bundledTxArgs), // Send ALL tx args at once as array
+      })
+
+      if (!response.ok) {
+        throw new Error(`PumpPortal batch error: ${response.statusText}`)
+      }
+
+      const txPayloads = await response.json()
+      const txArray = Array.isArray(txPayloads) ? txPayloads : []
+      
+      if (txArray.length === 0) {
+        throw new Error("PumpPortal returned no transactions")
+      }
+
+      console.log(`[BATCH-TRADE] Received ${txArray.length} transactions from batch request`)
+
+      // Deserialize and sign each transaction
+      for (let i = 0; i < txArray.length; i++) {
+        const address = validWalletAddresses[i]
+        const keypair = walletKeypairs.get(address)
+        
+        if (!keypair) {
+          console.warn(`[BATCH-TRADE] No keypair for index ${i}`)
+          continue
+        }
+        
+        const tx = VersionedTransaction.deserialize(new Uint8Array(bs58.decode(txArray[i])))
+        tx.sign([keypair])
+        transactions.push(tx)
+      }
+      
+      console.log(`[BATCH-TRADE] Signed ${transactions.length} transactions (batch method)`)
+      
+    } catch (batchError) {
+      // ============================================================================
+      // FALLBACK: Individual requests (legacy method, still works)
+      // ============================================================================
+      console.warn(`[BATCH-TRADE] Batch request failed, falling back to individual requests:`, batchError)
+      usedFallback = true
+      transactions = []
+      
+      for (let i = 0; i < bundledTxArgs.length; i++) {
+        const tradeArg = bundledTxArgs[i]
+        const address = validWalletAddresses[i]
+        const keypair = walletKeypairs.get(address)
+        
+        if (!keypair) continue
+        
+        try {
+          console.log(`[BATCH-TRADE] [Fallback] Requesting tx for ${address.slice(0, 8)}...`)
+          
+          const response = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tradeArg), // Individual request
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`PumpPortal error: ${errorText}`)
+          }
+
+          // Individual request returns raw bytes, batch returns base58 array
+          const txBytes = new Uint8Array(await response.arrayBuffer())
+          const tx = VersionedTransaction.deserialize(txBytes)
+          tx.sign([keypair])
+          transactions.push(tx)
+          
+        } catch (individualError) {
+          console.error(`[BATCH-TRADE] [Fallback] Failed for ${address.slice(0, 8)}:`, individualError)
+          walletErrors.push({
+            walletAddress: address,
+            success: false,
+            error: individualError instanceof Error ? individualError.message : "Failed to build transaction",
+          })
+        }
+      }
+      
+      console.log(`[BATCH-TRADE] [Fallback] Built ${transactions.length} transactions`)
     }
 
     if (transactions.length === 0) {
@@ -507,10 +566,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[BATCH-TRADE] Built ${transactions.length} transactions`)
+    console.log(`[BATCH-TRADE] Ready to execute ${transactions.length} transactions${usedFallback ? ' (fallback method)' : ' (batch method)'}`)
 
-    // Execute transactions
+    // Execute transactions via Jito bundle
     const results: WalletTradeResult[] = [...walletErrors]
+    
+    // Build wallet-to-transaction index mapping using validWalletAddresses
+    // (transactions are in same order as validWalletAddresses after fallback filtering)
+    const txWalletAddresses = usedFallback 
+      ? validWalletAddresses.filter(addr => !walletErrors.some(e => e.walletAddress === addr))
+      : validWalletAddresses.slice(0, transactions.length)
 
     if (transactions.length <= MAX_BUNDLE_SIZE) {
       // Single bundle execution
@@ -522,17 +587,20 @@ export async function POST(request: NextRequest) {
       })
 
       // Map results back to wallets
-      for (const [address, txIndex] of walletToTxIndex) {
-        const signature = bundleResult.signatures[txIndex]
-        results.push({
-          walletAddress: address,
-          success: bundleResult.success,
-          txSignature: signature,
-          error: bundleResult.success ? undefined : bundleResult.error,
-        })
+      for (let i = 0; i < transactions.length; i++) {
+        const address = txWalletAddresses[i]
+        if (address) {
+          const signature = bundleResult.signatures[i]
+          results.push({
+            walletAddress: address,
+            success: bundleResult.success,
+            txSignature: signature,
+            error: bundleResult.success ? undefined : bundleResult.error,
+          })
+        }
       }
     } else {
-      // Multiple bundles needed - execute in chunks
+      // Multiple bundles needed - execute in chunks (max 5 per Jito bundle)
       console.log(`[BATCH-TRADE] Splitting into ${Math.ceil(transactions.length / MAX_BUNDLE_SIZE)} bundles...`)
 
       const chunks: VersionedTransaction[][] = []
@@ -552,14 +620,11 @@ export async function POST(request: NextRequest) {
 
         // Map results back to wallets
         for (let i = 0; i < chunk.length; i++) {
-          const walletAddress = Array.from(walletToTxIndex.entries()).find(
-            ([, idx]) => idx === globalIndex + i
-          )?.[0]
-
-          if (walletAddress) {
+          const address = txWalletAddresses[globalIndex + i]
+          if (address) {
             const signature = bundleResult.signatures[i]
             results.push({
-              walletAddress,
+              walletAddress: address,
               success: bundleResult.success,
               txSignature: signature,
               error: bundleResult.success ? undefined : bundleResult.error,
@@ -576,47 +641,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ========== BONK USD1 POST-SELL CONVERSION ==========
-    // After selling on USD1 pairs, convert USD1 proceeds back to SOL for each successful wallet
-    if (action === "sell" && isBonkPool && isUsd1Quote && autoConvertUsd1) {
-      console.log("[BATCH-TRADE] ========== POST-SELL USD1->SOL CONVERSIONS ==========")
-      
-      for (const result of results.filter(r => r.success)) {
-        try {
-          const keypair = walletKeypairs.get(result.walletAddress)
-          if (!keypair) continue
-          
-          // Get wallet's USD1 balance (proceeds from the sell)
-          const usd1Mint = new PublicKey(QUOTE_MINTS.USD1)
-          const walletPubkey = new PublicKey(result.walletAddress)
-          
-          try {
-            const ata = await getAssociatedTokenAddress(usd1Mint, walletPubkey, false, TOKEN_PROGRAM_ID)
-            const account = await getAccount(connection, ata, "confirmed", TOKEN_PROGRAM_ID)
-            const usd1Balance = Number(account.amount) / 1e6 // USD1 has 6 decimals
-            
-            if (usd1Balance > 0.01) { // Only convert if meaningful amount
-              console.log(`[BATCH-TRADE] Converting ${usd1Balance.toFixed(2)} USD1 -> SOL for ${result.walletAddress.slice(0, 8)}...`)
-              const swapResult = await swapUsd1ToSol(connection, keypair, usd1Balance)
-              
-              if (swapResult.success) {
-                console.log(`[BATCH-TRADE] ✅ Converted ${usd1Balance.toFixed(2)} USD1 -> ${swapResult.outputAmount.toFixed(6)} SOL`)
-              } else {
-                console.warn(`[BATCH-TRADE] ⚠️ USD1->SOL conversion failed for ${result.walletAddress.slice(0, 8)}: ${swapResult.error}`)
-                // Note: Trade still succeeded, just the USD1 conversion failed
-              }
-            }
-          } catch (balanceError) {
-            // No USD1 balance to convert
-            console.log(`[BATCH-TRADE] No USD1 balance to convert for ${result.walletAddress.slice(0, 8)}`)
-          }
-        } catch (conversionError) {
-          console.error(`[BATCH-TRADE] Post-sell conversion error for ${result.walletAddress}:`, conversionError)
-        }
-      }
-      
-      console.log("[BATCH-TRADE] ========== POST-SELL CONVERSIONS COMPLETE ==========")
-    }
+    // NOTE: For Bonk USD1 pairs, PumpPortal handles SOL<->USD1 conversion internally
+    // No manual pre-buy or post-sell conversion needed
 
     const successCount = results.filter((r) => r.success).length
     const duration = Date.now() - startTime
