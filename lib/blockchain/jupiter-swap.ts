@@ -265,7 +265,6 @@ export async function swapSolToUsd1(
         quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
         userPublicKey: walletKeypair.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
-        useSharedAccounts: true,
         dynamicComputeUnitLimit: true,
         prioritizationFeeLamports: 100000, // 0.0001 SOL
       }),
@@ -348,7 +347,6 @@ export async function swapUsd1ToSol(
         quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
         userPublicKey: walletKeypair.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
-        useSharedAccounts: true,
         dynamicComputeUnitLimit: true,
         prioritizationFeeLamports: 100000, // 0.0001 SOL
       }),
