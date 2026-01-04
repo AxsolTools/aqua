@@ -1108,13 +1108,21 @@ export async function executeJupiterSwap(
     let usedEndpoint: string = '';
 
     // Build quote URL with parameters
+    // For sells, don't restrict intermediate tokens - allows more routing options
+    // For buys, restrict to avoid complex routes
     const quoteParams = new URLSearchParams({
       inputMint,
       outputMint,
       amount: amountRaw.toString(),
       slippageBps: slippageBps.toString(),
-      restrictIntermediateTokens: 'true',
     });
+    
+    // Only restrict intermediate tokens for buys (sells need more flexibility for DBC tokens)
+    if (action === 'buy') {
+      quoteParams.set('restrictIntermediateTokens', 'true');
+    }
+    
+    console.log('[JUPITER-SWAP] Quote params:', Object.fromEntries(quoteParams));
 
     // Try Metis API first (if we have API key)
     if (jupiterApiKey) {

@@ -211,8 +211,8 @@ export async function POST(request: NextRequest) {
       
       // Jupiter DBC tokens use USDC as quote currency, so sells go Token -> USDC -> SOL
       // This multi-hop routing compounds slippage significantly
-      // Use 20% for sells to handle complex routes, 5% for buys
-      const minSlippageForJupiter = action === 'sell' ? 2000 : 500; // 20% for sells, 5% for buys
+      // Use 30% for sells to handle complex multi-hop routes, 5% for buys
+      const minSlippageForJupiter = action === 'sell' ? 3000 : 500; // 30% for sells, 5% for buys
       const effectiveSlippageBps = Math.max(slippageBps, minSlippageForJupiter);
       
       // DEBUG: Detailed logging for Jupiter trades
