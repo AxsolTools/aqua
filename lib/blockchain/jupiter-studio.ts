@@ -1244,19 +1244,29 @@ export async function executeJupiterSwap(
     );
     transaction.sign([walletKeypair]);
 
-    // Send transaction
+    // Send transaction - use skipPreflight: true to avoid simulation race conditions
+    // For low-liquidity tokens, prices can move between quote and execution
     console.log('[JUPITER-SWAP] Sending transaction to network...');
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      skipPreflight: false,
-      maxRetries: 3,
+      skipPreflight: true, // Skip simulation to avoid stale data issues
+      maxRetries: 5,
+      preflightCommitment: 'processed',
     });
 
     console.log(`[JUPITER-SWAP] Transaction sent: ${signature}`);
 
-    // Confirm
-    const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+    // Confirm with longer timeout for network congestion
+    const confirmation = await connection.confirmTransaction(
+      { signature, blockhash: transaction.message.recentBlockhash, lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight },
+      'confirmed'
+    );
     if (confirmation.value.err) {
-      throw new Error(`Transaction failed on-chain: ${JSON.stringify(confirmation.value.err)}`);
+      // Check for slippage error
+      const errStr = JSON.stringify(confirmation.value.err);
+      if (errStr.includes('0x1788') || errStr.includes('6024')) {
+        throw new Error('Slippage exceeded - price moved during transaction. Try again with higher slippage.');
+      }
+      throw new Error(`Transaction failed on-chain: ${errStr}`);
     }
 
     // Calculate amounts from quote

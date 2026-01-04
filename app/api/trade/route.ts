@@ -208,13 +208,20 @@ export async function POST(request: NextRequest) {
     if (isJupiterToken) {
       // Use Jupiter swap API for Jupiter DBC tokens
       console.log('[TRADE] ========== JUPITER SWAP START ==========');
+      
+      // Jupiter DBC tokens often have lower liquidity - use minimum 2% slippage (200 bps)
+      // For sells, use higher slippage since price impact is typically higher
+      const minSlippageForJupiter = action === 'sell' ? 300 : 200; // 3% for sells, 2% for buys
+      const effectiveSlippageBps = Math.max(slippageBps, minSlippageForJupiter);
+      
       console.log('[TRADE] Jupiter token detected:', {
         tokenMint: tokenMint.slice(0, 12),
         poolType: (token as any)?.pool_type,
         dbcPoolAddress: (token as any)?.dbc_pool_address?.slice(0, 12),
         action,
         amount,
-        slippageBps,
+        requestedSlippageBps: slippageBps,
+        effectiveSlippageBps,
         tokenDecimals,
         walletAddress: userKeypair.publicKey.toBase58().slice(0, 12),
       });
@@ -227,7 +234,7 @@ export async function POST(request: NextRequest) {
         tokenMint,
         action,
         amount, // SOL for buy, tokens for sell
-        slippageBps,
+        slippageBps: effectiveSlippageBps, // Use higher slippage for Jupiter tokens
         tokenDecimals: effectiveDecimals,
       });
       const duration = Date.now() - startTime;
