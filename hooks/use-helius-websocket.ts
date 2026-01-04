@@ -104,22 +104,38 @@ async function ensureConnection(): Promise<void> {
       handleMessage(event.data)
     }
 
-    wsInstance.onerror = (error) => {
-      console.error('[HELIUS-WS] Error:', error)
+    wsInstance.onerror = (event) => {
+      // WebSocket error events don't contain useful info - the close event has the code
+      console.warn('[HELIUS-WS] Connection error occurred (details in close event)')
       notifyStateChange()
     }
 
     wsInstance.onclose = (event) => {
-      console.log('[HELIUS-WS] Disconnected:', event.code)
+      const codeDescriptions: Record<number, string> = {
+        1000: 'Normal closure',
+        1001: 'Going away',
+        1002: 'Protocol error',
+        1003: 'Unsupported data',
+        1006: 'Abnormal closure (network issue or server disconnect)',
+        1007: 'Invalid data',
+        1008: 'Policy violation',
+        1009: 'Message too big',
+        1011: 'Server error',
+        1015: 'TLS handshake failed',
+      }
+      const description = codeDescriptions[event.code] || 'Unknown'
+      console.log(`[HELIUS-WS] Disconnected: ${event.code} (${description})${event.reason ? ` - ${event.reason}` : ''}`)
       stopPingInterval()
       notifyStateChange()
       
-      // Attempt reconnection
+      // Attempt reconnection for non-normal closures
       if (event.code !== 1000 && reconnectAttempts < 5) {
         reconnectAttempts++
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000)
+        console.log(`[HELIUS-WS] Reconnecting in ${delay / 1000}s (attempt ${reconnectAttempts}/5)...`)
         setTimeout(() => {
           ensureConnection().catch(console.error)
-        }, Math.min(1000 * Math.pow(2, reconnectAttempts), 30000))
+        }, delay)
       }
     }
 

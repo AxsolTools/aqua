@@ -35,7 +35,23 @@ const USD1_MULTIPLIER = 10 ** USD1_DECIMALS;
 // TYPES
 // ============================================================================
 
+// Full Jupiter quote response - we pass this directly to the swap endpoint
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type JupiterQuoteResponse = Record<string, any> & {
+  inputMint: string;
+  outputMint: string;
+  inAmount: string;
+  outAmount: string;
+  otherAmountThreshold: string;
+  priceImpactPct: string;
+  slippageBps: number;
+  routePlan: any[];
+};
+
 export interface SwapQuote {
+  // Raw quote response from Jupiter - passed directly to swap endpoint
+  rawQuote: JupiterQuoteResponse;
+  // Convenience accessors
   inputMint: string;
   outputMint: string;
   inAmount: string;
@@ -149,6 +165,7 @@ export async function getSwapSolToUsd1Quote(
     const quote = await response.json();
     
     return {
+      rawQuote: quote, // Pass full response to swap endpoint
       inputMint: quote.inputMint,
       outputMint: quote.outputMint,
       inAmount: quote.inAmount,
@@ -191,6 +208,7 @@ export async function getSwapUsd1ToSolQuote(
     const quote = await response.json();
     
     return {
+      rawQuote: quote, // Pass full response to swap endpoint
       inputMint: quote.inputMint,
       outputMint: quote.outputMint,
       inAmount: quote.inAmount,
@@ -244,7 +262,7 @@ export async function swapSolToUsd1(
       method: 'POST',
       headers: swapHeaders,
       body: JSON.stringify({
-        quoteResponse: quote,
+        quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
         userPublicKey: walletKeypair.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
         useSharedAccounts: true,
@@ -327,7 +345,7 @@ export async function swapUsd1ToSol(
       method: 'POST',
       headers: swapHeaders2,
       body: JSON.stringify({
-        quoteResponse: quote,
+        quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
         userPublicKey: walletKeypair.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
         useSharedAccounts: true,
