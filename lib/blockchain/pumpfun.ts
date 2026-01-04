@@ -486,10 +486,14 @@ export async function createToken(
 
       // Lightning API returns JSON with signature (already sent)
       const result = await response.json();
+      console.log(`${logPrefix} PumpPortal response:`, JSON.stringify(result, null, 2));
+      
       const signature = result.signature;
 
       if (!signature) {
-        throw new Error('PumpPortal did not return a transaction signature');
+        // Log the full response for debugging
+        console.error(`${logPrefix} No signature in response. Full response:`, result);
+        throw new Error(`PumpPortal did not return a transaction signature. Response: ${JSON.stringify(result)}`);
       }
 
       console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
