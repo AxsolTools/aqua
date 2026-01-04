@@ -135,13 +135,19 @@ function handleMessage(data: string) {
   try {
     const message = JSON.parse(data)
 
-    // Handle subscription confirmation
+    // Handle subscription confirmation (result is a subscription ID)
     if (message.id && typeof message.result === 'number') {
       const pending = pendingRequests.get(message.id)
       if (pending) {
         pendingRequests.delete(message.id)
         pending.resolve(message.result)
       }
+      // If no pending request, this might be a ping response (getSlot) - ignore it
+      return
+    }
+    
+    // Handle other successful responses (like getSlot ping) - just ignore
+    if (message.id && message.result !== undefined) {
       return
     }
 
@@ -170,12 +176,15 @@ function handleMessage(data: string) {
 
 function startPingInterval() {
   if (pingInterval) return
+  // Use getSlot instead of getHealth - it's a valid WebSocket RPC method
+  // This keeps the connection alive and verifies it's working
   pingInterval = setInterval(() => {
     if (wsInstance?.readyState === WebSocket.OPEN) {
       wsInstance.send(JSON.stringify({
         jsonrpc: '2.0',
         id: requestIdCounter++,
-        method: 'getHealth',
+        method: 'getSlot',
+        params: [],
       }))
     }
   }, 30000)
