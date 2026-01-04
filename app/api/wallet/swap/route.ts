@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const {
       direction, // 'sol_to_usd1' or 'usd1_to_sol'
       amount,    // Amount to swap (in SOL or USD1 depending on direction)
-      slippageBps = 100, // Default 1% slippage
+      slippageBps = 500, // Default 5% slippage (matches /api/trade)
     } = body;
 
     // Validate required fields
