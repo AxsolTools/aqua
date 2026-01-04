@@ -85,8 +85,10 @@ export function TransactionHistory({ tokenAddress, tokenId }: TransactionHistory
       pendingSignatures.current.add(signature)
       
       // Parse transaction type from logs (instant - no indexing delay!)
-      const isBuy = parseIsBuyFromLogs(logs.logs)
-      const solAmount = parseSolAmountFromLogs(logs.logs)
+      // Safety check - logs.logs might not be an array
+      const logArray = Array.isArray(logs.logs) ? logs.logs : []
+      const isBuy = parseIsBuyFromLogs(logArray)
+      const solAmount = parseSolAmountFromLogs(logArray)
       
       // Immediately add to UI as pending (no waiting for Helius indexing!)
       if (signature && (isBuy !== null || solAmount > 0)) {

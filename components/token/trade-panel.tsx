@@ -57,7 +57,7 @@ function useLiveTokenPrice(mintAddress: string | null) {
   return { priceSol, priceUsd, isLoading, error, refresh: fetchPrice }
 }
 
-// Error code to user-friendly message mapping
+// Error code to user-friendly message mapping (must match server codes)
 const ERROR_MESSAGES: Record<number, string> = {
   1001: "Please connect your wallet first",
   1002: "Session expired - please reconnect wallet",
@@ -66,12 +66,14 @@ const ERROR_MESSAGES: Record<number, string> = {
   2002: "Not enough tokens to sell",
   2003: "Invalid amount entered",
   3001: "Trade failed on-chain - try again",
-  3002: "Transaction timed out - check Solscan",
-  3003: "Slippage too high - increase tolerance",
-  3004: "Jupiter quote failed - token may not be indexed yet",
+  3002: "Slippage too high - increase tolerance", // Server: slippage errors
+  3003: "Transaction failed on-chain - try again",
+  3004: "Jupiter swap failed - try again or increase slippage",
   4001: "Token not found or delisted",
   4002: "Bonding curve locked",
   5001: "Trading service temporarily unavailable",
+  5002: "Backup trading service failed",
+  5003: "API timed out - please try again", // Server: timeout errors
   5002: "Backup trading service also failed",
   5003: "Jupiter API temporarily unavailable - try again",
 }
