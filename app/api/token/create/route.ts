@@ -5,8 +5,7 @@
  * Includes:
  * - IPFS metadata upload (pump.fun or bonk.fun)
  * - Token creation on bonding curve
- * - Optional initial buy
- * - Auto SOL->USD1 conversion for Bonk USD1 pairs
+ * - Optional initial buy (for USD1 pairs, PumpPortal handles SOL->USD1 conversion internally)
  * - Fee collection
  * - Database record creation
  */
@@ -27,8 +26,6 @@ import {
   type QuoteMint,
   POOL_TYPES,
   QUOTE_MINTS,
-  swapSolToUsd1,
-  solToUsd1Amount,
 } from '@/lib/blockchain';
 import { getReferrer, addReferralEarnings } from '@/lib/referral';
 
@@ -114,8 +111,7 @@ export async function POST(request: NextRequest) {
       
       // Pool selection (pump or bonk)
       pool = 'pump',
-      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools
-      autoConvertToUsd1 = false, // Auto-swap SOL to USD1 before creation
+      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools - PumpPortal handles conversion internally
     } = body;
 
     // Validate required fields
@@ -207,33 +203,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // ========== AUTO-SWAP SOL TO USD1 (for Bonk USD1 pairs) ==========
-    let actualInitialBuy = initialBuySol;
-    let swapTxSignature: string | undefined;
-    
-    if (poolType === POOL_TYPES.BONK && quoteType === QUOTE_MINTS.USD1 && autoConvertToUsd1 && initialBuySol > 0) {
-      console.log(`[TOKEN] Auto-converting ${initialBuySol} SOL to USD1 for initial buy...`);
-      
-      const swapResult = await swapSolToUsd1(connection, creatorKeypair, initialBuySol);
-      
-      if (!swapResult.success) {
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: { 
-              code: 4001, 
-              message: `SOL to USD1 conversion failed: ${swapResult.error}` 
-            } 
-          },
-          { status: 500 }
-        );
-      }
-      
-      // For USD1 pairs, the initial buy amount is in USD1 terms
-      actualInitialBuy = swapResult.outputAmount;
-      swapTxSignature = swapResult.txSignature;
-      console.log(`[TOKEN] ✅ Converted to ${actualInitialBuy.toFixed(2)} USD1`);
-    }
+    // NOTE: For BONK USD1 pairs, PumpPortal handles the SOL→USD1 conversion internally
+    // We pass the SOL amount directly with denominatedInSol: 'true' and PumpPortal swaps it
 
     // Prepare metadata
     const metadata: TokenMetadata = {
@@ -248,10 +219,11 @@ export async function POST(request: NextRequest) {
     };
 
     // Create token via PumpPortal (supports pump and bonk pools)
+    // For BONK USD1 pairs, pass SOL amount - PumpPortal handles conversion internally
     const createResult = await createToken(connection, {
       metadata,
       creatorKeypair,
-      initialBuySol: actualInitialBuy,
+      initialBuySol,
       slippageBps,
       priorityFee: 0.001,
       mintKeypair,
@@ -508,9 +480,6 @@ export async function POST(request: NextRequest) {
         // Pool info
         pool: poolType,
         quoteMint: quoteType,
-        // Swap info (for USD1 conversions)
-        ...(swapTxSignature && { swapTxSignature }),
-        ...(autoConvertToUsd1 && { convertedUsd1Amount: actualInitialBuy }),
       },
     });
 

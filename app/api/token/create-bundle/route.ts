@@ -17,7 +17,7 @@ import { executeBundle } from "@/lib/blockchain/jito-bundles"
 import { solToLamports, lamportsToSol, calculatePlatformFee } from "@/lib/precision"
 import { collectPlatformFee, TOKEN_CREATION_FEE_LAMPORTS, TOKEN_CREATION_FEE_SOL } from "@/lib/fees"
 import { getReferrer, addReferralEarnings } from "@/lib/referral"
-import { swapSolToUsd1, solToUsd1Amount } from "@/lib/blockchain/jupiter-swap"
+// Note: USD1 conversion is handled internally by PumpPortal when quoteMint is USD1
 import { QUOTE_MINTS, POOL_TYPES } from "@/lib/blockchain/pumpfun"
 
 // ============================================================================
@@ -58,8 +58,7 @@ interface CreateBundleRequest {
   bundleWallets: BundleWallet[]
   // Pool configuration (pump or bonk)
   pool?: 'pump' | 'bonk'
-  quoteMint?: string // WSOL or USD1 mint address
-  autoConvertToUsd1?: boolean // Auto-swap SOL to USD1 for Bonk USD1 pairs
+  quoteMint?: string // WSOL or USD1 mint address - PumpPortal handles conversion internally
   // AQUA parameters
   pourEnabled?: boolean
   pourRate?: number
@@ -113,8 +112,7 @@ export async function POST(request: NextRequest) {
       mintAddress,
       bundleWallets = [],
       pool = 'pump',
-      quoteMint = QUOTE_MINTS.WSOL,
-      autoConvertToUsd1 = false,
+      quoteMint = QUOTE_MINTS.WSOL, // PumpPortal handles USD1 conversion internally
     } = body
     
     // Determine pool type and quote type
@@ -145,7 +143,6 @@ export async function POST(request: NextRequest) {
       mintAddress: mintAddress.slice(0, 8),
       pool: poolType,
       quoteMint: isUsd1Quote ? 'USD1' : 'SOL',
-      autoConvertToUsd1,
     })
 
     const adminClient = getAdminClient()
@@ -280,54 +277,8 @@ export async function POST(request: NextRequest) {
     console.log(`[BUNDLE-CREATE] Successfully loaded ${bundleKeypairs.size}/${limitedWallets.length} bundle wallets`)
 
     // =========================================================================
-    // STEP 2.5: AUTO-SWAP SOL TO USD1 (for Bonk USD1 pairs)
-    // =========================================================================
-    let actualDevBuyAmount = initialBuySol
-    let devSwapTxSignature: string | undefined
-    const bundleUsd1Amounts: Map<string, number> = new Map()
-    
-    if (poolType === POOL_TYPES.BONK && isUsd1Quote && autoConvertToUsd1) {
-      console.log(`[BUNDLE-CREATE] ========== USD1 CONVERSIONS ==========`)
-      
-      // Convert dev buy SOL to USD1
-      if (initialBuySol > 0) {
-        console.log(`[BUNDLE-CREATE] Converting dev buy: ${initialBuySol} SOL -> USD1...`)
-        const devSwapResult = await swapSolToUsd1(connection, creatorKeypair, initialBuySol)
-        
-        if (!devSwapResult.success) {
-          return NextResponse.json({
-            success: false,
-            error: { code: 4001, message: `Dev SOL to USD1 conversion failed: ${devSwapResult.error}` },
-          }, { status: 500 })
-        }
-        
-        actualDevBuyAmount = devSwapResult.outputAmount
-        devSwapTxSignature = devSwapResult.txSignature
-        console.log(`[BUNDLE-CREATE] ✅ Dev buy converted: ${initialBuySol} SOL -> ${actualDevBuyAmount.toFixed(2)} USD1`)
-      }
-      
-      // Convert bundle wallet SOL to USD1
-      for (const [address, { keypair, amount }] of bundleKeypairs) {
-        if (amount > 0) {
-          console.log(`[BUNDLE-CREATE] Converting bundle wallet ${address.slice(0, 8)}: ${amount} SOL -> USD1...`)
-          const swapResult = await swapSolToUsd1(connection, keypair, amount)
-          
-          if (!swapResult.success) {
-            console.warn(`[BUNDLE-CREATE] ⚠️ Bundle wallet ${address.slice(0, 8)} USD1 conversion failed: ${swapResult.error}`)
-            // Continue with other wallets, but this one won't participate in buy
-            bundleUsd1Amounts.set(address, 0)
-          } else {
-            bundleUsd1Amounts.set(address, swapResult.outputAmount)
-            console.log(`[BUNDLE-CREATE] ✅ Bundle wallet ${address.slice(0, 8)} converted: ${amount} SOL -> ${swapResult.outputAmount.toFixed(2)} USD1`)
-          }
-        }
-      }
-      
-      console.log(`[BUNDLE-CREATE] ========== USD1 CONVERSIONS COMPLETE ==========`)
-    }
-
-    // =========================================================================
     // STEP 3: Build bundle transactions via PumpPortal
+    // NOTE: For USD1 pairs, PumpPortal handles SOL->USD1 conversion internally
     // =========================================================================
     const txArgs: {
       publicKey: string
@@ -343,6 +294,7 @@ export async function POST(request: NextRequest) {
     }[] = []
 
     // Transaction 0: Create + dev buy (with Jito tip via priorityFee)
+    // For USD1 pairs, pass SOL amount with denominatedInSol: "true" - PumpPortal handles conversion
     const createTxArg: typeof txArgs[0] = {
       publicKey: walletAddress,
       action: "create",
@@ -352,8 +304,8 @@ export async function POST(request: NextRequest) {
         uri: metadataUri,
       },
       mint: mintAddress,
-      denominatedInSol: "true",
-      amount: actualDevBuyAmount,
+      denominatedInSol: "true", // Always true - PumpPortal handles USD1 conversion internally
+      amount: initialBuySol,
       slippage: BUNDLE_SLIPPAGE,
       priorityFee: DEFAULT_PRIORITY_FEE,
       pool: poolType,
@@ -367,22 +319,14 @@ export async function POST(request: NextRequest) {
     txArgs.push(createTxArg)
 
     // Transactions 1-4: Bundle wallet buys
+    // For USD1 pairs, pass SOL amount - PumpPortal handles conversion internally
     for (const [address, { amount }] of bundleKeypairs) {
-      // Use converted USD1 amount if available, otherwise original SOL amount
-      const buyAmount = bundleUsd1Amounts.get(address) ?? amount
-      
-      // Skip wallets that failed USD1 conversion
-      if (isUsd1Quote && autoConvertToUsd1 && buyAmount === 0) {
-        console.log(`[BUNDLE-CREATE] Skipping bundle wallet ${address.slice(0, 8)} - USD1 conversion failed`)
-        continue
-      }
-      
       const buyTxArg: typeof txArgs[0] = {
         publicKey: address,
         action: "buy",
         mint: mintAddress,
-        denominatedInSol: "true",
-        amount: buyAmount,
+        denominatedInSol: "true", // Always true - PumpPortal handles USD1 conversion internally
+        amount: amount,
         slippage: BUNDLE_SLIPPAGE,
         priorityFee: 0, // Only first tx pays tip
         pool: poolType,
@@ -651,13 +595,6 @@ export async function POST(request: NextRequest) {
         // Pool info
         pool: poolType,
         quoteMint: quoteType,
-        // USD1 conversion info (for Bonk USD1 pairs)
-        ...(autoConvertToUsd1 && {
-          usd1Conversion: {
-            devBuyConverted: actualDevBuyAmount,
-            devSwapTx: devSwapTxSignature,
-          },
-        }),
       },
     })
 
