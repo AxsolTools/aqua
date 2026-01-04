@@ -584,12 +584,36 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
                                 className="h-9 text-sm bg-[var(--ocean-deep)] border-[var(--glass-border)] pr-14"
                               />
                               <button
-                                onClick={() => {
-                                  if (swapDirection === 'sol_to_usd1') {
-                                    const max = Math.max(0, (balances[wallet.id] || 0) - 0.01)
-                                    setSwapAmount(max.toFixed(4))
-                                  } else {
-                                    setSwapAmount((usd1Balances[wallet.id] || 0).toFixed(2))
+                                onClick={async () => {
+                                  // Fetch fresh balance before setting MAX
+                                  try {
+                                    if (swapDirection === 'sol_to_usd1') {
+                                      const response = await fetch(`/api/wallet/balance?address=${wallet.public_key}`)
+                                      const data = await response.json()
+                                      if (data.success && data.data) {
+                                        const freshBalance = data.data.balanceSol || 0
+                                        const max = Math.max(0, freshBalance - 0.01)
+                                        setSwapAmount(max.toFixed(4))
+                                        setBalances(prev => ({ ...prev, [wallet.id]: freshBalance }))
+                                      }
+                                    } else {
+                                      const response = await fetch(`/api/wallet/token-balance?wallet=${wallet.public_key}&mint=${USD1_MINT}`)
+                                      const data = await response.json()
+                                      if (data.success && data.data) {
+                                        const freshBalance = data.data.uiBalance || 0
+                                        setSwapAmount(freshBalance.toFixed(2))
+                                        setUsd1Balances(prev => ({ ...prev, [wallet.id]: freshBalance }))
+                                      }
+                                    }
+                                  } catch (error) {
+                                    console.error('[WALLET] Failed to fetch fresh balance for MAX:', error)
+                                    // Fallback to cached balance
+                                    if (swapDirection === 'sol_to_usd1') {
+                                      const max = Math.max(0, (balances[wallet.id] || 0) - 0.01)
+                                      setSwapAmount(max.toFixed(4))
+                                    } else {
+                                      setSwapAmount((usd1Balances[wallet.id] || 0).toFixed(2))
+                                    }
                                   }
                                 }}
                                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-medium text-[var(--aqua-primary)] hover:text-[var(--aqua-secondary)]"
