@@ -455,6 +455,11 @@ export async function createToken(
         throw new Error('PUMPPORTAL_API_KEY environment variable is required for Bonk pool token creation');
       }
 
+      // When using USD1 quote mint, the amount passed is already in USD1 terms (after swap)
+      // so we need denominatedInSol: 'false' to tell PumpPortal the amount is in quote tokens
+      // When using WSOL quote mint, the amount is in SOL terms, so denominatedInSol: 'true'
+      const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
+      
       const createParams: Record<string, any> = {
         action: 'create',
         tokenMetadata: {
@@ -463,7 +468,7 @@ export async function createToken(
           uri: ipfsResult.metadataUri,
         },
         mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
-        denominatedInSol: 'true',
+        denominatedInSol: isUsd1Quote ? 'false' : 'true', // false for USD1 (amount in tokens), true for SOL
         slippage: slippagePercent,
         priorityFee: priorityFee,
         pool: 'bonk',
