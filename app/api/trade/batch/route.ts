@@ -112,6 +112,22 @@ export async function POST(request: NextRequest) {
     const adminClient = getAdminClient()
     const connection = new Connection(HELIUS_RPC_URL, "confirmed")
     const serviceSalt = await getOrCreateServiceSalt(adminClient)
+    
+    // Check if this is a Jupiter DBC token
+    const { data: token } = await adminClient
+      .from("tokens")
+      .select("id, pool_type, dbc_pool_address, decimals")
+      .eq("mint_address", tokenMint)
+      .single()
+    
+    const isJupiterToken = token?.pool_type === "jupiter"
+    const effectiveDecimals = token?.decimals ?? tokenDecimals
+    
+    console.log("[BATCH-TRADE] Token type:", {
+      isJupiter: isJupiterToken,
+      poolType: token?.pool_type,
+      decimals: effectiveDecimals,
+    })
 
     // Fetch and decrypt all wallet keypairs
     const walletKeypairs: Map<string, Keypair> = new Map()
@@ -235,7 +251,111 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build transactions for each wallet via PumpPortal
+    // ============================================================================
+    // JUPITER TOKEN PATH - Execute swaps directly (no Jito bundles)
+    // ============================================================================
+    if (isJupiterToken) {
+      console.log("[BATCH-TRADE] Using Jupiter swap for DBC token...")
+      const { executeJupiterSwap } = await import("@/lib/blockchain/jupiter-studio")
+      
+      const results: WalletTradeResult[] = [...walletErrors]
+      let successCount = 0
+      let failedCount = walletErrors.length
+      
+      // Jupiter DBC tokens need higher slippage
+      const minSlippageForJupiter = action === "sell" ? 1000 : 300 // 10% for sells, 3% for buys
+      const effectiveSlippageBps = Math.max(slippageBps, minSlippageForJupiter)
+      
+      // Execute Jupiter swaps for each wallet (sequentially to avoid rate limits)
+      for (const [address, keypair] of walletKeypairs) {
+        try {
+          // For sells, use actual wallet balance
+          let actualAmount = amountPerWallet
+          
+          if (action === "sell") {
+            const walletBalance = walletTokenBalances.get(address) || 0
+            if (walletBalance <= 0) {
+              console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
+              results.push({
+                walletAddress: address,
+                success: false,
+                error: "No tokens to sell",
+              })
+              failedCount++
+              continue
+            }
+            actualAmount = walletBalance
+          }
+          
+          console.log(`[BATCH-TRADE] Jupiter swap for ${address.slice(0, 8)}: ${action} ${actualAmount}`)
+          
+          const swapResult = await executeJupiterSwap(connection, {
+            walletKeypair: keypair,
+            tokenMint,
+            action,
+            amount: actualAmount,
+            slippageBps: effectiveSlippageBps,
+            tokenDecimals: effectiveDecimals,
+          })
+          
+          if (swapResult.success) {
+            results.push({
+              walletAddress: address,
+              success: true,
+              txSignature: swapResult.txSignature,
+            })
+            successCount++
+            
+            // Log trade to database (async, don't await)
+            if (token && userId) {
+              adminClient.from("trades").insert({
+                token_id: token.id,
+                token_address: tokenMint,
+                user_id: userId,
+                wallet_address: address,
+                trade_type: action,
+                amount_sol: swapResult.amountSol || 0,
+                token_amount: swapResult.amountTokens || 0,
+                price_per_token_sol: swapResult.pricePerToken || 0,
+                tx_signature: swapResult.txSignature,
+                status: "confirmed",
+              } as any).then(() => {}).catch((e) => console.error("[BATCH-TRADE] DB log error:", e))
+            }
+          } else {
+            results.push({
+              walletAddress: address,
+              success: false,
+              error: swapResult.error || "Jupiter swap failed",
+            })
+            failedCount++
+          }
+        } catch (error) {
+          console.error(`[BATCH-TRADE] Jupiter swap error for ${address.slice(0, 8)}:`, error)
+          results.push({
+            walletAddress: address,
+            success: false,
+            error: error instanceof Error ? error.message : "Jupiter swap failed",
+          })
+          failedCount++
+        }
+      }
+      
+      console.log(`[BATCH-TRADE] Jupiter swaps complete: ${successCount} succeeded, ${failedCount} failed`)
+      
+      return NextResponse.json({
+        success: successCount > 0,
+        data: {
+          successCount,
+          failedCount,
+          results,
+          method: "jupiter",
+        },
+      })
+    }
+    
+    // ============================================================================
+    // PUMP.FUN PATH - Build transactions for Jito bundle
+    // ============================================================================
     const transactions: VersionedTransaction[] = []
     const walletToTxIndex: Map<string, number> = new Map()
     const walletActualAmounts: Map<string, number> = new Map()
