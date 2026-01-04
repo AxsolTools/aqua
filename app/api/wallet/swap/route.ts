@@ -1,8 +1,7 @@
 /**
  * AQUA Launchpad - Wallet Swap API
  * Swap SOL <-> USD1 for any wallet
- * Uses the proven Jupiter swap implementation from jupiter-swap.ts
- * (same functions used successfully in token creation and trade flows)
+ * Uses the existing Jupiter swap integration
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
@@ -43,7 +42,7 @@ export async function POST(request: NextRequest) {
     const {
       direction, // 'sol_to_usd1' or 'usd1_to_sol'
       amount,    // Amount to swap (in SOL or USD1 depending on direction)
-      slippageBps = 500, // Default 5% slippage (matches /api/trade)
+      slippageBps = 100, // Default 1% slippage
     } = body;
 
     // Validate required fields
@@ -91,14 +90,8 @@ export async function POST(request: NextRequest) {
 
     console.log(`[SWAP] ${direction}: ${amountNum} from wallet ${walletAddress.slice(0, 8)}...`);
 
-    // Use the proven swap functions from jupiter-swap.ts
-    // These are the SAME functions used successfully in:
-    // - /api/token/create (autoConvertToUsd1)
-    // - /api/token/create-bundle (bundle USD1 conversions)
-    // - /api/trade (BONK USD1 auto-conversion)
-    // - /api/trade/batch (batch USD1 conversions)
+    // Execute swap
     let swapResult;
-    
     if (direction === 'sol_to_usd1') {
       swapResult = await swapSolToUsd1(connection, walletKeypair, amountNum, slippageBps);
     } else {
@@ -121,16 +114,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[SWAP] ✅ Success: ${swapResult.inputAmount} -> ${swapResult.outputAmount}`);
 
-    // Return output in consistent format
-    const inputAmount = swapResult.inputAmount;
-    const outputAmount = swapResult.outputAmount;
-
     return NextResponse.json({
       success: true,
       data: {
         direction,
-        inputAmount,
-        outputAmount,
+        inputAmount: swapResult.inputAmount,
+        outputAmount: swapResult.outputAmount,
         txSignature: swapResult.txSignature,
       },
     });

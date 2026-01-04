@@ -601,7 +601,9 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
                                       const data = await response.json()
                                       if (data.success && data.data) {
                                         const freshBalance = data.data.uiBalance || 0
-                                        setSwapAmount(freshBalance.toFixed(2))
+                                        // Use 99% of balance to avoid rounding/stale data issues
+                                        const maxUsd1 = Math.floor(freshBalance * 99) / 100
+                                        setSwapAmount(maxUsd1.toFixed(2))
                                         setUsd1Balances(prev => ({ ...prev, [wallet.id]: freshBalance }))
                                       }
                                     }
@@ -612,7 +614,9 @@ export function WalletSidebar({ open, onClose }: WalletSidebarProps) {
                                       const max = Math.max(0, (balances[wallet.id] || 0) - 0.01)
                                       setSwapAmount(max.toFixed(4))
                                     } else {
-                                      setSwapAmount((usd1Balances[wallet.id] || 0).toFixed(2))
+                                      // Use 99% of balance to avoid rounding/stale data issues
+                                      const maxUsd1 = Math.floor((usd1Balances[wallet.id] || 0) * 99) / 100
+                                      setSwapAmount(maxUsd1.toFixed(2))
                                     }
                                   }
                                 }}

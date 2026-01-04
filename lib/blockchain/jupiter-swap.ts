@@ -143,34 +143,19 @@ export async function usd1ToSolAmount(usd1Amount: number): Promise<number> {
  */
 export async function getSwapSolToUsd1Quote(
   solAmount: number,
-  slippageBps: number = 500
+  slippageBps: number = 50
 ): Promise<SwapQuote | null> {
   try {
     const lamports = Math.floor(solAmount * LAMPORTS_PER_SOL);
     
-    // Build quote URL with restrictIntermediateTokens for more stable routing
-    const quoteParams = new URLSearchParams({
-      inputMint: QUOTE_MINTS.WSOL,
-      outputMint: QUOTE_MINTS.USD1,
-      amount: lamports.toString(),
-      slippageBps: slippageBps.toString(),
-      swapMode: 'ExactIn',
-      restrictIntermediateTokens: 'true', // Reduces failures on random routes
-    });
-    
-    const url = `${JUPITER_API_BASE}/quote?${quoteParams}`;
+    const url = `${JUPITER_API_BASE}/quote?inputMint=${QUOTE_MINTS.WSOL}&outputMint=${QUOTE_MINTS.USD1}&amount=${lamports}&slippageBps=${slippageBps}`;
     
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (JUPITER_API_KEY) {
       headers['x-api-key'] = JUPITER_API_KEY;
     }
     
-    // Use timeout for quote fetching
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch(url, { headers, signal: controller.signal });
-    clearTimeout(timer);
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -201,34 +186,19 @@ export async function getSwapSolToUsd1Quote(
  */
 export async function getSwapUsd1ToSolQuote(
   usd1Amount: number,
-  slippageBps: number = 500
+  slippageBps: number = 50
 ): Promise<SwapQuote | null> {
   try {
     const usd1Units = Math.floor(usd1Amount * USD1_MULTIPLIER);
     
-    // Build quote URL with restrictIntermediateTokens for more stable routing
-    const quoteParams = new URLSearchParams({
-      inputMint: QUOTE_MINTS.USD1,
-      outputMint: QUOTE_MINTS.WSOL,
-      amount: usd1Units.toString(),
-      slippageBps: slippageBps.toString(),
-      swapMode: 'ExactIn',
-      restrictIntermediateTokens: 'true', // Reduces failures on random routes
-    });
-    
-    const url = `${JUPITER_API_BASE}/quote?${quoteParams}`;
+    const url = `${JUPITER_API_BASE}/quote?inputMint=${QUOTE_MINTS.USD1}&outputMint=${QUOTE_MINTS.WSOL}&amount=${usd1Units}&slippageBps=${slippageBps}`;
     
     const headers: Record<string, string> = { 'Accept': 'application/json' };
     if (JUPITER_API_KEY) {
       headers['x-api-key'] = JUPITER_API_KEY;
     }
     
-    // Use timeout for quote fetching
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15000);
-    
-    const response = await fetch(url, { headers, signal: controller.signal });
-    clearTimeout(timer);
+    const response = await fetch(url, { headers });
     
     if (!response.ok) {
       const errorText = await response.text();
@@ -260,56 +230,45 @@ export async function getSwapUsd1ToSolQuote(
 
 /**
  * Execute swap from SOL to USD1
- * Uses settings from the working executeJupiterSwap implementation
  */
 export async function swapSolToUsd1(
   connection: Connection,
   walletKeypair: Keypair,
   solAmount: number,
-  slippageBps: number = 500
+  slippageBps: number = 50
 ): Promise<SwapResult> {
   try {
-    // Use higher slippage for USD1 pairs (minimum 10%)
-    const effectiveSlippage = Math.max(slippageBps, 1000);
-    console.log(`[JUPITER] Swapping ${solAmount} SOL -> USD1 (slippage: ${effectiveSlippage}bps)...`);
+    console.log(`[JUPITER] Swapping ${solAmount} SOL -> USD1...`);
     
-    // Get quote with effective slippage
-    const quote = await getSwapSolToUsd1Quote(solAmount, effectiveSlippage);
+    // Get quote
+    const quote = await getSwapSolToUsd1Quote(solAmount, slippageBps);
     if (!quote) {
       return { success: false, inputAmount: solAmount, outputAmount: 0, error: 'Failed to get quote' };
     }
     
-    // Quote is fresh since we just fetched it
-    console.log(`[JUPITER] Quote received: ${quote.inAmount} lamports -> ${quote.outAmount} USD1`);
+    // Validate quote age
+    const quoteAge = Date.now() - quote.timestamp;
+    if (quoteAge > 30000) {
+      return { success: false, inputAmount: solAmount, outputAmount: 0, error: 'Quote expired' };
+    }
     
-    // Get swap transaction with settings from working implementation
+    // Get swap transaction
     const swapHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
     if (JUPITER_API_KEY) {
       swapHeaders['x-api-key'] = JUPITER_API_KEY;
     }
     
-    // Use swap body structure from working executeJupiterSwap
-    const swapBody: Record<string, unknown> = {
-      quoteResponse: quote.rawQuote,
-      userPublicKey: walletKeypair.publicKey.toBase58(),
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: true,
-      // Better priority fee structure from working implementation
-      prioritizationFeeLamports: {
-        priorityLevelWithMaxLamports: {
-          maxLamports: 2000000, // 0.002 SOL max for better landing
-          priorityLevel: 'veryHigh',
-          global: false, // Use local fee market
-        },
-      },
-      // Disable shared accounts to avoid failures on some AMMs
-      useSharedAccounts: false,
-    };
-    
     const swapResponse = await fetch(`${JUPITER_API_BASE}/swap`, {
       method: 'POST',
       headers: swapHeaders,
-      body: JSON.stringify(swapBody),
+      body: JSON.stringify({
+        quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
+        userPublicKey: walletKeypair.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+        useSharedAccounts: true,
+        dynamicComputeUnitLimit: true,
+        prioritizationFeeLamports: 100000, // 0.0001 SOL
+      }),
     });
     
     if (!swapResponse.ok) {
@@ -319,37 +278,17 @@ export async function swapSolToUsd1(
     
     const { swapTransaction } = await swapResponse.json();
     
-    // Sign and send - skip preflight to avoid simulation failures on fast-moving markets
+    // Sign and send
     const txBuffer = Buffer.from(swapTransaction, 'base64');
     const tx = VersionedTransaction.deserialize(txBuffer);
     tx.sign([walletKeypair]);
     
     const signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true, // Skip simulation to avoid stale data issues
-      maxRetries: 5,
-      preflightCommitment: 'processed',
+      skipPreflight: false,
+      maxRetries: 3,
     });
     
-    console.log(`[JUPITER] Transaction sent: ${signature}`);
-    
-    // Confirm with timeout and CHECK FOR ERRORS
-    const latestBlockhash = await connection.getLatestBlockhash();
-    const confirmation = await connection.confirmTransaction({
-      signature,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-    }, 'confirmed');
-    
-    // Check if transaction failed on-chain
-    if (confirmation.value.err) {
-      const errStr = JSON.stringify(confirmation.value.err);
-      console.error(`[JUPITER] Transaction failed on-chain: ${errStr}`);
-      // Check for slippage error (0x1788 = 6024)
-      if (errStr.includes('0x1788') || errStr.includes('6024')) {
-        throw new Error('Slippage exceeded - price moved during transaction. Try again with higher slippage.');
-      }
-      throw new Error(`Transaction failed on-chain: ${errStr}`);
-    }
+    await connection.confirmTransaction(signature, 'confirmed');
     
     const outputAmount = parseInt(quote.outAmount) / USD1_MULTIPLIER;
     console.log(`[JUPITER] ✅ Swapped ${solAmount} SOL -> ${outputAmount.toFixed(2)} USD1 (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
@@ -374,56 +313,45 @@ export async function swapSolToUsd1(
 
 /**
  * Execute swap from USD1 to SOL
- * Uses settings from the working executeJupiterSwap implementation
  */
 export async function swapUsd1ToSol(
   connection: Connection,
   walletKeypair: Keypair,
   usd1Amount: number,
-  slippageBps: number = 500
+  slippageBps: number = 50
 ): Promise<SwapResult> {
   try {
-    // USD1 pairs can have thin liquidity - use higher slippage (minimum 10%)
-    const effectiveSlippage = Math.max(slippageBps, 1000);
-    console.log(`[JUPITER] Swapping ${usd1Amount} USD1 -> SOL (slippage: ${effectiveSlippage}bps)...`);
+    console.log(`[JUPITER] Swapping ${usd1Amount} USD1 -> SOL...`);
     
-    // Get quote with effective slippage
-    const quote = await getSwapUsd1ToSolQuote(usd1Amount, effectiveSlippage);
+    // Get quote
+    const quote = await getSwapUsd1ToSolQuote(usd1Amount, slippageBps);
     if (!quote) {
       return { success: false, inputAmount: usd1Amount, outputAmount: 0, error: 'Failed to get quote' };
     }
     
-    // Quote is fresh since we just fetched it, no need to validate age here
-    console.log(`[JUPITER] Quote received: ${quote.inAmount} USD1 -> ${quote.outAmount} lamports`);
-    
-    // Get swap transaction with settings from working implementation
-    const swapHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (JUPITER_API_KEY) {
-      swapHeaders['x-api-key'] = JUPITER_API_KEY;
+    // Validate quote age
+    const quoteAge = Date.now() - quote.timestamp;
+    if (quoteAge > 30000) {
+      return { success: false, inputAmount: usd1Amount, outputAmount: 0, error: 'Quote expired' };
     }
     
-    // Use swap body structure from working executeJupiterSwap
-    const swapBody: Record<string, unknown> = {
-      quoteResponse: quote.rawQuote,
-      userPublicKey: walletKeypair.publicKey.toBase58(),
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: true,
-      // Better priority fee structure from working implementation
-      prioritizationFeeLamports: {
-        priorityLevelWithMaxLamports: {
-          maxLamports: 2000000, // 0.002 SOL max for better landing
-          priorityLevel: 'veryHigh',
-          global: false, // Use local fee market
-        },
-      },
-      // Disable shared accounts to avoid failures on some AMMs
-      useSharedAccounts: false,
-    };
+    // Get swap transaction
+    const swapHeaders2: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (JUPITER_API_KEY) {
+      swapHeaders2['x-api-key'] = JUPITER_API_KEY;
+    }
     
     const swapResponse = await fetch(`${JUPITER_API_BASE}/swap`, {
       method: 'POST',
-      headers: swapHeaders,
-      body: JSON.stringify(swapBody),
+      headers: swapHeaders2,
+      body: JSON.stringify({
+        quoteResponse: quote.rawQuote, // Pass full Jupiter quote response
+        userPublicKey: walletKeypair.publicKey.toBase58(),
+        wrapAndUnwrapSol: true,
+        useSharedAccounts: true,
+        dynamicComputeUnitLimit: true,
+        prioritizationFeeLamports: 100000, // 0.0001 SOL
+      }),
     });
     
     if (!swapResponse.ok) {
@@ -433,37 +361,17 @@ export async function swapUsd1ToSol(
     
     const { swapTransaction } = await swapResponse.json();
     
-    // Sign and send - skip preflight to avoid simulation failures on fast-moving markets
+    // Sign and send
     const txBuffer = Buffer.from(swapTransaction, 'base64');
     const tx = VersionedTransaction.deserialize(txBuffer);
     tx.sign([walletKeypair]);
     
     const signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true, // Skip simulation to avoid stale data issues
-      maxRetries: 5,
-      preflightCommitment: 'processed',
+      skipPreflight: false,
+      maxRetries: 3,
     });
     
-    console.log(`[JUPITER] Transaction sent: ${signature}`);
-    
-    // Confirm with timeout and CHECK FOR ERRORS
-    const latestBlockhash = await connection.getLatestBlockhash();
-    const confirmation = await connection.confirmTransaction({
-      signature,
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-    }, 'confirmed');
-    
-    // Check if transaction failed on-chain
-    if (confirmation.value.err) {
-      const errStr = JSON.stringify(confirmation.value.err);
-      console.error(`[JUPITER] Transaction failed on-chain: ${errStr}`);
-      // Check for slippage error (0x1788 = 6024)
-      if (errStr.includes('0x1788') || errStr.includes('6024')) {
-        throw new Error('Slippage exceeded - price moved during transaction. Try again with higher slippage.');
-      }
-      throw new Error(`Transaction failed on-chain: ${errStr}`);
-    }
+    await connection.confirmTransaction(signature, 'confirmed');
     
     const outputAmount = parseInt(quote.outAmount) / LAMPORTS_PER_SOL;
     console.log(`[JUPITER] ✅ Swapped ${usd1Amount} USD1 -> ${outputAmount.toFixed(6)} SOL (using ${USE_NEW_API ? 'Metis' : 'v6'} API)`);
