@@ -52,16 +52,17 @@ export async function GET(request: NextRequest) {
     const adminClient = getAdminClient();
 
     // Build query
-    let query = adminClient
-      .from('token22_parameters')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    let query = (adminClient
+      .from('token22_parameters') as any)
       .select('*');
 
     if (tokenId) {
       query = query.eq('token_id', tokenId);
     } else if (mintAddress) {
       // Join with tokens table to find by mint address
-      const { data: token } = await adminClient
-        .from('tokens')
+      const { data: token } = await (adminClient
+        .from('tokens') as any)
         .select('id')
         .eq('mint_address', mintAddress)
         .single();
@@ -169,8 +170,8 @@ export async function POST(request: NextRequest) {
     let resolvedTokenId = tokenId;
     
     if (!tokenId && mintAddress) {
-      const { data: token } = await adminClient
-        .from('tokens')
+      const { data: token } = await (adminClient
+        .from('tokens') as any)
         .select('id, creator_wallet')
         .eq('mint_address', mintAddress)
         .single();
@@ -207,8 +208,8 @@ export async function POST(request: NextRequest) {
       updates.feeToCreatorPercent !== undefined
     ) {
       // Get current values for any not being updated
-      const { data: current } = await adminClient
-        .from('token22_parameters')
+      const { data: current } = await (adminClient
+        .from('token22_parameters') as any)
         .select('fee_to_liquidity_percent, fee_to_burn_percent, fee_to_creator_percent')
         .eq('token_id', resolvedTokenId)
         .single();
@@ -240,8 +241,8 @@ export async function POST(request: NextRequest) {
     if (updates.burnOnHarvestPercent !== undefined) updateData.burn_on_harvest_percent = updates.burnOnHarvestPercent;
 
     // Upsert parameters
-    const { data, error } = await adminClient
-      .from('token22_parameters')
+    const { data, error } = await (adminClient
+      .from('token22_parameters') as any)
       .upsert({
         token_id: resolvedTokenId,
         dev_wallet_address: walletAddress,

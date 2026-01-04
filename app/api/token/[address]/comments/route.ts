@@ -138,8 +138,9 @@ export async function POST(
     const adminClient = getAdminClient();
     
     // Get token ID
-    const { data: token } = await adminClient
-      .from('tokens')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: token } = await (adminClient
+      .from('tokens') as any)
       .select('id')
       .eq('mint_address', address)
       .single();
@@ -153,8 +154,8 @@ export async function POST(
     
     // Verify parent exists if replying
     if (parentId) {
-      const { data: parent } = await adminClient
-        .from('token_comments')
+      const { data: parent } = await (adminClient
+        .from('token_comments') as any)
         .select('id')
         .eq('id', parentId)
         .eq('token_id', token.id)
@@ -169,8 +170,8 @@ export async function POST(
     }
     
     // Insert comment
-    const { data: comment, error } = await adminClient
-      .from('token_comments')
+    const { data: comment, error } = await (adminClient
+      .from('token_comments') as any)
       .insert({
         token_id: token.id,
         user_id: userId,

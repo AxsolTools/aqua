@@ -70,8 +70,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's wallet keypair
-    const { data: wallet, error: walletError } = await adminClient
-      .from('wallets')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: wallet, error: walletError } = await (adminClient
+      .from('wallets') as any)
       .select('encrypted_private_key')
       .eq('session_id', sessionId)
       .eq('public_key', walletAddress)
@@ -135,15 +136,15 @@ export async function POST(request: NextRequest) {
     if (mintAddress) {
       try {
         // Find the token record
-        const { data: token } = await adminClient
-          .from('tokens')
+        const { data: token } = await (adminClient
+          .from('tokens') as any)
           .select('id')
           .eq('mint_address', mintAddress)
           .single();
 
         if (token) {
           // Log the claim
-          await adminClient.from('jupiter_fee_claims').insert({
+          await (adminClient.from('jupiter_fee_claims') as any).insert({
             token_id: token.id,
             mint_address: mintAddress,
             pool_address: resolvedPoolAddress,

@@ -77,8 +77,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ========== GET WALLET KEYPAIR ==========
-    const { data: wallet, error: walletError } = await adminClient
-      .from('wallets')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: wallet, error: walletError } = await (adminClient
+      .from('wallets') as any)
       .select('encrypted_private_key')
       .eq('session_id', sessionId)
       .eq('public_key', walletAddress)
@@ -167,8 +168,8 @@ export async function POST(request: NextRequest) {
 
     // ========== UPDATE DATABASE ==========
     // Update token record with pool info
-    const { error: updateError } = await adminClient
-      .from('tokens')
+    const { error: updateError } = await (adminClient
+      .from('tokens') as any)
       .update({
         stage: 'live',
         current_liquidity: solAmountNum,
@@ -182,7 +183,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log platform fee
-    await adminClient.from('platform_fees').insert({
+    await (adminClient.from('platform_fees') as any).insert({
       user_id: userId,
       wallet_address: walletAddress,
       source_tx_signature: poolResult.txSignature,

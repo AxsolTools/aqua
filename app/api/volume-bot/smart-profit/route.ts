@@ -111,34 +111,32 @@ export async function POST(request: NextRequest) {
         }
 
         // Load or create settings
-        let settings = await loadSmartProfitSettings(sessionId, tokenMint);
+        const loadedSettings = await loadSmartProfitSettings(sessionId, tokenMint);
         
-        if (!settings) {
+        let settings: SmartProfitSettings = loadedSettings || {
           // Create default settings
-          settings = {
-            enabled: true,
-            tokenMint,
-            userId: sessionId,
-            sessionId,
-            walletIds: newSettings?.walletIds || [],
-            walletAddresses: newSettings?.walletAddresses || [],
-            averageEntryPrice: newSettings?.averageEntryPrice || 0,
-            totalTokensHeld: newSettings?.totalTokensHeld || 0,
-            totalSolInvested: newSettings?.totalSolInvested || 0,
-            takeProfitEnabled: true,
-            takeProfitPercent: 50,
-            takeProfitSellPercent: 50,
-            stopLossEnabled: true,
-            stopLossPercent: 20,
-            trailingStopEnabled: false,
-            trailingStopPercent: 10,
-            trailingStopActivationPercent: 20,
-            emergencyStopEnabled: true,
-            emergencyStopLossPercent: 50,
-            slippageBps: 500,
-            platform: 'jupiter'
-          };
-        }
+          enabled: true,
+          tokenMint,
+          userId: sessionId,
+          sessionId,
+          walletIds: newSettings?.walletIds || [],
+          walletAddresses: newSettings?.walletAddresses || [],
+          averageEntryPrice: newSettings?.averageEntryPrice || 0,
+          totalTokensHeld: newSettings?.totalTokensHeld || 0,
+          totalSolInvested: newSettings?.totalSolInvested || 0,
+          takeProfitEnabled: true,
+          takeProfitPercent: 50,
+          takeProfitSellPercent: 50,
+          stopLossEnabled: true,
+          stopLossPercent: 20,
+          trailingStopEnabled: false,
+          trailingStopPercent: 10,
+          trailingStopActivationPercent: 20,
+          emergencyStopEnabled: true,
+          emergencyStopLossPercent: 50,
+          slippageBps: 500,
+          platform: 'jupiter'
+        };
 
         // Merge with any new settings provided
         if (newSettings) {

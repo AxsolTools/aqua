@@ -28,8 +28,9 @@ export async function POST(
     const adminClient = getAdminClient();
     
     // Verify comment exists
-    const { data: comment } = await adminClient
-      .from('token_comments')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: comment } = await (adminClient
+      .from('token_comments') as any)
       .select('id, likes_count')
       .eq('id', commentId)
       .single();
@@ -42,8 +43,8 @@ export async function POST(
     }
     
     // Check if already liked
-    const { data: existingLike } = await adminClient
-      .from('comment_likes')
+    const { data: existingLike } = await (adminClient
+      .from('comment_likes') as any)
       .select('id')
       .eq('comment_id', commentId)
       .eq('wallet_address', walletAddress)
@@ -57,8 +58,8 @@ export async function POST(
     }
     
     // Insert like
-    const { error } = await adminClient
-      .from('comment_likes')
+    const { error } = await (adminClient
+      .from('comment_likes') as any)
       .insert({
         comment_id: commentId,
         user_id: userId,
@@ -105,15 +106,15 @@ export async function DELETE(
     const adminClient = getAdminClient();
     
     // Get current like count
-    const { data: comment } = await adminClient
-      .from('token_comments')
+    const { data: comment } = await (adminClient
+      .from('token_comments') as any)
       .select('likes_count')
       .eq('id', commentId)
       .single();
     
     // Delete like
-    const { error } = await adminClient
-      .from('comment_likes')
+    const { error } = await (adminClient
+      .from('comment_likes') as any)
       .delete()
       .eq('comment_id', commentId)
       .eq('wallet_address', walletAddress);

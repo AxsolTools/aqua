@@ -131,18 +131,19 @@ export async function POST(request: NextRequest) {
     
     // Log activity for the ticker/feed
     try {
-      const assetInfo = EARN_ASSETS[asset as keyof typeof EARN_ASSETS];
+      const assetMint = EARN_ASSETS[asset.toUpperCase() as keyof typeof EARN_ASSETS];
       const userId = request.headers.get('x-user-id');
       
       // Get approximate USD value (you could fetch live price here)
       const usdValue = asset === 'USDC' ? amount : amount * 200; // Rough SOL price estimate
       
-      await adminClient.from('earn_activity').insert({
+      // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+      await (adminClient.from('earn_activity') as any).insert({
         user_id: userId || null,
         wallet_address: walletAddress,
         activity_type: 'deposit',
-        vault_symbol: assetInfo?.vaultSymbol || `jl${asset}`,
-        vault_address: assetInfo?.vaultAddress || null,
+        vault_symbol: `jl${asset.toUpperCase()}`,
+        vault_address: assetMint || null,
         asset_symbol: asset,
         propel_amount: 0, // Direct deposit, no PROPEL swap
         underlying_amount: amount,

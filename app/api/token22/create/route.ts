@@ -136,8 +136,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ========== GET WALLET KEYPAIR ==========
-    const { data: wallet, error: walletError } = await adminClient
-      .from('wallets')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: wallet, error: walletError } = await (adminClient
+      .from('wallets') as any)
       .select('encrypted_private_key')
       .eq('session_id', sessionId)
       .eq('public_key', walletAddress)
@@ -257,8 +258,8 @@ export async function POST(request: NextRequest) {
     let referrerWallet;
 
     if (referrerUserId) {
-      const { data: referrerData } = await adminClient
-        .from('users')
+      const { data: referrerData } = await (adminClient
+        .from('users') as any)
         .select('main_wallet_address')
         .eq('id', referrerUserId)
         .single();
@@ -289,10 +290,10 @@ export async function POST(request: NextRequest) {
     // ========== CREATE DATABASE RECORDS ==========
     
     // Ensure user exists in users table
-    let finalUserId = userId;
+    let finalUserId: string | null = userId || null;
     if (userId) {
-      const { data: existingUserById } = await adminClient
-        .from('users')
+      const { data: existingUserById } = await (adminClient
+        .from('users') as any)
         .select('id')
         .eq('id', userId)
         .single();
@@ -300,8 +301,8 @@ export async function POST(request: NextRequest) {
       if (existingUserById) {
         finalUserId = existingUserById.id;
       } else {
-        const { data: existingUserByWallet } = await adminClient
-          .from('users')
+        const { data: existingUserByWallet } = await (adminClient
+          .from('users') as any)
           .select('id')
           .eq('main_wallet_address', walletAddress)
           .single();
@@ -309,8 +310,8 @@ export async function POST(request: NextRequest) {
         if (existingUserByWallet) {
           finalUserId = existingUserByWallet.id;
         } else {
-          const { data: newUser, error: userError } = await adminClient
-            .from('users')
+          const { data: newUser, error: userError } = await (adminClient
+            .from('users') as any)
             .insert({
               id: userId,
               main_wallet_address: walletAddress,
@@ -331,8 +332,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Create token record with token_standard = 'token22'
-    const { data: token, error: insertError } = await adminClient
-      .from('tokens')
+    const { data: token, error: insertError } = await (adminClient
+      .from('tokens') as any)
       .insert({
         creator_id: finalUserId,
         creator_wallet: walletAddress,
@@ -382,7 +383,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Log platform fee
-    await adminClient.from('platform_fees').insert({
+    await (adminClient.from('platform_fees') as any).insert({
       user_id: userId,
       wallet_address: walletAddress,
       source_tx_signature: createResult.txSignature,
@@ -410,15 +411,15 @@ export async function POST(request: NextRequest) {
         const currentSlot = await connection.getSlot('confirmed');
         
         // Get all user wallet addresses for ignore list
-        const { data: userWallets } = await adminClient
-          .from('wallets')
+        const { data: userWallets } = await (adminClient
+          .from('wallets') as any)
           .select('public_key')
           .eq('session_id', sessionId);
         
-        const userWalletAddresses = (userWallets || []).map(w => w.public_key);
+        const userWalletAddresses = (userWallets || []).map((w: any) => w.public_key);
         
         // Store anti-sniper config in database
-        await adminClient.from('anti_sniper_monitors').insert({
+        await (adminClient.from('anti_sniper_monitors') as any).insert({
           token_mint: createResult.mintAddress,
           session_id: sessionId,
           config: antiSniper,

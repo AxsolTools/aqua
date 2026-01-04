@@ -33,8 +33,9 @@ export async function GET(request: NextRequest) {
     const adminClient = getAdminClient()
 
     // Fetch events for this token
-    const { data: events, error } = await adminClient
-      .from('anti_sniper_events')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: events, error } = await (adminClient
+      .from('anti_sniper_events') as any)
       .select('*')
       .eq('token_mint', tokenMint)
       .eq('session_id', sessionId)
@@ -50,7 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform to frontend format
-    const transformedEvents = (events || []).map(event => ({
+    const transformedEvents = (events || []).map((event: any) => ({
       id: event.id,
       tokenMint: event.token_mint,
       eventType: event.event_type,

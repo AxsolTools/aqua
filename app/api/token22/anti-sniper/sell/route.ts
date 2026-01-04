@@ -109,8 +109,9 @@ export async function POST(request: NextRequest) {
     const serviceSalt = await getOrCreateServiceSalt(adminClient)
 
     // Get wallet details from database
-    const { data: wallets, error: walletsError } = await adminClient
-      .from('wallets')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: wallets, error: walletsError } = await (adminClient
+      .from('wallets') as any)
       .select('id, public_key, encrypted_private_key, label')
       .eq('session_id', sessionId)
       .in('id', walletIds)
@@ -183,7 +184,7 @@ export async function POST(request: NextRequest) {
         })
 
         // Log the trade
-        await adminClient.from('trades').insert({
+        await (adminClient.from('trades') as any).insert({
           wallet_address: wallet.public_key,
           token_address: tokenMint,
           trade_type: 'sell',
@@ -227,7 +228,7 @@ export async function POST(request: NextRequest) {
     })
 
     // Log anti-sniper event
-    await adminClient.from('anti_sniper_events').insert({
+    await (adminClient.from('anti_sniper_events') as any).insert({
       token_mint: tokenMint,
       session_id: sessionId,
       event_type: reason,

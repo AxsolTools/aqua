@@ -25,8 +25,9 @@ export async function POST(request: NextRequest) {
     const connection = new Connection(HELIUS_RPC_URL, 'confirmed');
 
     // Check if token already exists
-    const { data: existingToken } = await adminClient
-      .from('tokens')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: existingToken } = await (adminClient
+      .from('tokens') as any)
       .select('id, mint_address')
       .eq('mint_address', mintAddress)
       .single();
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest) {
         // For pump.fun tokens, decimals are always 6
         mintInfo = {
           decimals: 6,
-          supply: null, // Will use default
+          supply: undefined, // Will use default
         };
       }
     } catch (error) {
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
         const tx = await connection.getTransaction(txSignature, {
           maxSupportedTransactionVersion: 0,
         });
-        if (tx?.transaction?.message?.staticAccountKeys?.length > 0) {
+        if (tx?.transaction?.message?.staticAccountKeys && tx.transaction.message.staticAccountKeys.length > 0) {
           // The first signer is usually the creator/fee payer
           finalCreatorWallet = tx.transaction.message.staticAccountKeys[0]?.toBase58() || null;
           console.log('[RECOVER] Extracted creator wallet from transaction:', finalCreatorWallet?.slice(0, 8) + '...');
@@ -76,8 +77,8 @@ export async function POST(request: NextRequest) {
     // Get or create user
     let creatorId = null;
     if (finalCreatorWallet) {
-      const { data: existingUser } = await adminClient
-        .from('users')
+      const { data: existingUser } = await (adminClient
+        .from('users') as any)
         .select('id')
         .eq('main_wallet_address', finalCreatorWallet)
         .single();
@@ -86,8 +87,8 @@ export async function POST(request: NextRequest) {
         creatorId = existingUser.id;
       } else {
         // Create user if doesn't exist
-        const { data: newUser } = await adminClient
-          .from('users')
+        const { data: newUser } = await (adminClient
+          .from('users') as any)
           .insert({
             main_wallet_address: finalCreatorWallet,
           })
@@ -101,8 +102,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert token record
-    const { data: token, error: insertError } = await adminClient
-      .from('tokens')
+    const { data: token, error: insertError } = await (adminClient
+      .from('tokens') as any)
       .insert({
         creator_id: creatorId,
         creator_wallet: finalCreatorWallet || null,
@@ -140,7 +141,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create default token parameters
-    await adminClient.from('token_parameters').insert({
+    await (adminClient.from('token_parameters') as any).insert({
       token_id: token.id,
       creator_wallet: creatorWallet || null,
       pour_enabled: true,

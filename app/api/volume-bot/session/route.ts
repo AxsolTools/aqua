@@ -39,15 +39,17 @@ async function getAuthFromHeaders(request: NextRequest): Promise<{ sessionId: st
 // Get user wallets from database
 async function getUserWallets(sessionId: string): Promise<Array<{
   wallet_id: string;
+  user_id: string;
   session_id: string;
   wallet_address: string;
   name?: string;
 }>> {
   const adminClient = getAdminClient();
   
-  const { data, error } = await adminClient
-    .from('wallets')
-    .select('id, session_id, public_key, label, is_primary')
+  // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+  const { data, error } = await (adminClient
+    .from('wallets') as any)
+    .select('id, session_id, public_key, label, is_primary, user_id')
     .eq('session_id', sessionId);
   
   if (error) {
@@ -55,8 +57,9 @@ async function getUserWallets(sessionId: string): Promise<Array<{
     return [];
   }
   
-  return (data || []).map(w => ({
+  return (data || []).map((w: any) => ({
     wallet_id: w.id,
+    user_id: w.user_id || sessionId,
     session_id: w.session_id,
     wallet_address: w.public_key,
     name: w.label

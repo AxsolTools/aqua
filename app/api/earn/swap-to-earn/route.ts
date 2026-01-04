@@ -188,10 +188,11 @@ export async function POST(request: NextRequest) {
       const vaultSymbol = normalizedTargetAsset === 'SOL' ? 'jlSOL' : 'jlUSDC';
       
       // Get estimated USD value from the result details if available
-      const estimatedUsd = result.details?.estimatedOutputUsd || 
+      const estimatedUsd = (result.details as any)?.estimatedOutputUsd || 
         (normalizedTargetAsset === 'SOL' ? amount * 200 : amount);
       
-      await adminClient.from('earn_activity').insert({
+      // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+      await (adminClient.from('earn_activity') as any).insert({
         user_id: userId || null,
         wallet_address: walletAddress,
         activity_type: 'deposit',
@@ -199,7 +200,7 @@ export async function POST(request: NextRequest) {
         vault_address: null,
         asset_symbol: normalizedTargetAsset,
         propel_amount: amount, // PROPEL tokens being swapped
-        underlying_amount: result.details?.estimatedOutput || amount,
+        underlying_amount: (result.details as any)?.estimatedOutput || amount,
         shares_amount: 0,
         usd_value: estimatedUsd,
         tx_signature: signature,

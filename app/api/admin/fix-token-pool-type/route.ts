@@ -36,8 +36,9 @@ export async function POST(request: NextRequest) {
     const adminClient = getAdminClient()
 
     // Get current token data
-    const { data: currentToken, error: fetchError } = await adminClient
-      .from("tokens")
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: currentToken, error: fetchError } = await (adminClient
+      .from("tokens") as any)
       .select("mint_address, name, symbol, pool_type, dbc_pool_address, creator_wallet")
       .eq("mint_address", tokenMint)
       .single()
@@ -70,8 +71,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch updated token to confirm
-    const { data: updatedToken } = await adminClient
-      .from("tokens")
+    const { data: updatedToken } = await (adminClient
+      .from("tokens") as any)
       .select("mint_address, name, symbol, pool_type, dbc_pool_address, creator_wallet")
       .eq("mint_address", tokenMint)
       .single()
@@ -132,8 +133,9 @@ export async function GET(request: NextRequest) {
 
     const adminClient = getAdminClient()
 
-    const { data: tokens, error } = await adminClient
-      .from("tokens")
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: tokens, error } = await (adminClient
+      .from("tokens") as any)
       .select("mint_address, name, symbol, pool_type, dbc_pool_address, creator_wallet, stage")
       .eq("creator_wallet", creatorWallet)
       .order("created_at", { ascending: false })

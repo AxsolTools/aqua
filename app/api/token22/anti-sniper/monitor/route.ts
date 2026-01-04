@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
 
     // Store in database for persistence across restarts
     const adminClient = getAdminClient()
-    await adminClient.from('anti_sniper_monitors').upsert({
+    await (adminClient.from('anti_sniper_monitors') as any).upsert({
       token_mint: tokenMint,
       session_id: sessionId,
       config: { ...config, monitorBlocksWindow: effectiveWindowBlocks },
@@ -309,7 +309,7 @@ async function startTradeMonitoring(tokenMint: string): Promise<void> {
               
               // Update database
               const adminClient = getAdminClient()
-              await adminClient.from('anti_sniper_monitors').update({
+              await (adminClient.from('anti_sniper_monitors') as any).update({
                 status: 'triggered',
                 triggered: true,
                 trigger_trade: tradeEvent,
@@ -396,7 +396,7 @@ async function startPollingFallback(
               await triggerAutoSell(tokenMint, tradeEvent, currentMonitor)
               
               const adminClient = getAdminClient()
-              await adminClient.from('anti_sniper_monitors').update({
+              await (adminClient.from('anti_sniper_monitors') as any).update({
                 status: 'triggered',
                 triggered: true,
                 trigger_trade: tradeEvent,
@@ -539,7 +539,7 @@ async function cleanupMonitor(tokenMint: string, reason: string): Promise<void> 
   }
   
   const adminClient = getAdminClient()
-  await adminClient.from('anti_sniper_monitors').update({
+  await (adminClient.from('anti_sniper_monitors') as any).update({
     status: reason,
     ended_at: new Date().toISOString(),
   }).eq('token_mint', tokenMint)
@@ -586,8 +586,8 @@ export async function GET(request: NextRequest) {
 
     // Check database
     const adminClient = getAdminClient()
-    const { data: dbMonitor } = await adminClient
-      .from('anti_sniper_monitors')
+    const { data: dbMonitor } = await (adminClient
+      .from('anti_sniper_monitors') as any)
       .select('*')
       .eq('token_mint', tokenMint)
       .single()

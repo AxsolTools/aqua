@@ -283,6 +283,8 @@ export interface TideHarvest {
   last_accumulation_at: string | null;
   created_at: string;
   updated_at: string;
+  // Pool type for different reward sources
+  poolType?: 'pump' | 'bonk' | 'jupiter' | 'pumpswap' | null;
 }
 
 // ========== CHAT & COMMENTS ==========

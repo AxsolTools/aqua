@@ -134,8 +134,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's wallet keypair
-    const { data: wallet, error: walletError } = await adminClient
-      .from('wallets')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: wallet, error: walletError } = await (adminClient
+      .from('wallets') as any)
       .select('encrypted_private_key')
       .eq('session_id', sessionId)
       .eq('public_key', walletAddress)
@@ -286,8 +287,8 @@ export async function POST(request: NextRequest) {
     let referrerWallet;
 
     if (referrerUserId) {
-      const { data: referrerData } = await adminClient
-        .from('users')
+      const { data: referrerData } = await (adminClient
+        .from('users') as any)
         .select('main_wallet_address')
         .eq('id', referrerUserId)
         .single();
@@ -320,11 +321,11 @@ export async function POST(request: NextRequest) {
     // ========== CREATE DATABASE RECORDS ==========
     
     // Ensure user exists in users table (upsert by wallet address)
-    let finalUserId = userId;
+    let finalUserId: string | null = userId || null;
     if (userId) {
       // First check if user exists by ID
-      const { data: existingUserById } = await adminClient
-        .from('users')
+      const { data: existingUserById } = await (adminClient
+        .from('users') as any)
         .select('id')
         .eq('id', userId)
         .single();
@@ -333,8 +334,8 @@ export async function POST(request: NextRequest) {
         finalUserId = existingUserById.id;
       } else {
         // User doesn't exist by ID, check by wallet address
-        const { data: existingUserByWallet } = await adminClient
-          .from('users')
+        const { data: existingUserByWallet } = await (adminClient
+          .from('users') as any)
           .select('id')
           .eq('main_wallet_address', walletAddress)
           .single();
@@ -344,8 +345,8 @@ export async function POST(request: NextRequest) {
           finalUserId = existingUserByWallet.id;
         } else {
           // Create new user with the provided userId
-          const { data: newUser, error: userError } = await adminClient
-            .from('users')
+          const { data: newUser, error: userError } = await (adminClient
+            .from('users') as any)
             .insert({
               id: userId,
               main_wallet_address: walletAddress,
@@ -355,8 +356,8 @@ export async function POST(request: NextRequest) {
           
           if (userError || !newUser) {
             // If insert fails (e.g., duplicate wallet), try to get existing user
-            const { data: existingUser } = await adminClient
-              .from('users')
+            const { data: existingUser } = await (adminClient
+              .from('users') as any)
               .select('id')
               .eq('main_wallet_address', walletAddress)
               .single();
@@ -377,8 +378,8 @@ export async function POST(request: NextRequest) {
     }
     
     // Create token record
-    const { data: token, error: insertError } = await adminClient
-      .from('tokens')
+    const { data: token, error: insertError } = await (adminClient
+      .from('tokens') as any)
       .insert({
         creator_id: finalUserId, // Use finalUserId which may be null
         creator_wallet: walletAddress,
@@ -434,7 +435,7 @@ export async function POST(request: NextRequest) {
     const claimIntervalSeconds = claimInterval === 'hourly' ? 3600 : claimInterval === 'daily' ? 86400 : 604800; // 1 hour, 1 day, or 1 week
 
     // Create token parameters with AQUA settings
-    await adminClient.from('token_parameters').insert({
+    await (adminClient.from('token_parameters') as any).insert({
       token_id: token.id,
       creator_wallet: walletAddress,
       
@@ -470,7 +471,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Create tide harvest record
-    await adminClient.from('tide_harvest_logs').insert({
+    await (adminClient.from('tide_harvest_logs') as any).insert({
       token_id: token.id,
       creator_id: userId,
       amount_sol: 0,
@@ -479,13 +480,13 @@ export async function POST(request: NextRequest) {
     });
 
     // Log platform fee
-    await adminClient.from('platform_fees').insert({
+    await (adminClient.from('platform_fees') as any).insert({
       user_id: userId,
       wallet_address: walletAddress,
       source_tx_signature: createResult.txSignature,
       operation_type: 'token_create',
       transaction_amount_lamports: Number(solToLamports(feeBaseSol)),
-      fee_amount_lamports: Number(platformFeeLamports),
+      fee_amount_lamports: Number(totalFeeLamports),
       fee_percentage: 2,
       referral_split_lamports: feeResult.referralShare ? Number(feeResult.referralShare) : 0,
       referrer_id: referrerUserId,
@@ -503,7 +504,7 @@ export async function POST(request: NextRequest) {
         mintAddress: createResult.mintAddress,
         metadataUri: createResult.metadataUri,
         txSignature: createResult.txSignature,
-        platformFee: lamportsToSol(platformFeeLamports),
+        platformFee: lamportsToSol(totalFeeLamports),
         // Pool info
         pool: poolType,
         quoteMint: quoteType,

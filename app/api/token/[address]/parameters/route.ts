@@ -131,8 +131,9 @@ export async function PATCH(
     const adminClient = getAdminClient();
     
     // Verify token exists and user is creator
-    const { data: token, error: tokenError } = await adminClient
-      .from('tokens')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: token, error: tokenError } = await (adminClient
+      .from('tokens') as any)
       .select('id, creator_wallet')
       .eq('mint_address', address)
       .single();
@@ -164,8 +165,8 @@ export async function PATCH(
     }
     
     // Get current parameters for optimistic locking
-    const { data: currentParams } = await adminClient
-      .from('token_parameters')
+    const { data: currentParams } = await (adminClient
+      .from('token_parameters') as any)
       .select('version')
       .eq('token_id', token.id)
       .single();
@@ -197,8 +198,8 @@ export async function PATCH(
     }
     
     // Update parameters
-    const { data: updated, error: updateError } = await adminClient
-      .from('token_parameters')
+    const { data: updated, error: updateError } = await (adminClient
+      .from('token_parameters') as any)
       .update(updateData)
       .eq('token_id', token.id)
       .select()

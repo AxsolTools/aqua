@@ -28,8 +28,9 @@ export async function POST(request: NextRequest) {
     const entryPrices: Record<string, number> = {}
 
     // Batch fetch trades for all wallets
-    const { data: trades, error } = await adminClient
-      .from("trades")
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: trades, error } = await (adminClient
+      .from("trades") as any)
       .select("wallet_address, trade_type, amount_sol, token_amount")
       .in("wallet_address", addresses)
       .eq("token_address", tokenMint)

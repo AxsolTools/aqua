@@ -199,8 +199,9 @@ async function fetchPriceAndMarketCap(
   if (marketCap === 0 && priceUsd > 0) {
     try {
       const adminClient = getAdminClient();
-      const { data: token } = await adminClient
-        .from('tokens')
+      // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+      const { data: token } = await (adminClient
+        .from('tokens') as any)
         .select('total_supply, decimals')
         .eq('mint_address', mintAddress)
         .single();
@@ -282,23 +283,24 @@ async function fetchPourRateData(
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
     // Get total pour amount
-    const { data: totalData } = await adminClient
-      .from('liquidity_history')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: totalData } = await (adminClient
+      .from('liquidity_history') as any)
       .select('liquidity_sol')
       .eq('token_id', tokenId)
       .eq('source', 'pour');
 
-    const total = totalData?.reduce((sum, row) => sum + (row.liquidity_sol || 0), 0) || 0;
+    const total = totalData?.reduce((sum: number, row: any) => sum + (row.liquidity_sol || 0), 0) || 0;
 
     // Get last 24h pour amount
-    const { data: recentData } = await adminClient
-      .from('liquidity_history')
+    const { data: recentData } = await (adminClient
+      .from('liquidity_history') as any)
       .select('liquidity_sol')
       .eq('token_id', tokenId)
       .eq('source', 'pour')
       .gte('timestamp', yesterday.toISOString());
 
-    const last24h = recentData?.reduce((sum, row) => sum + (row.liquidity_sol || 0), 0) || 0;
+    const last24h = recentData?.reduce((sum: number, row: any) => sum + (row.liquidity_sol || 0), 0) || 0;
 
     return { total, last24h };
   } catch (error) {
@@ -331,8 +333,9 @@ export async function GET(
     const adminClient = getAdminClient();
 
     // Get token from database
-    const { data: token, error: tokenError } = await adminClient
-      .from('tokens')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data: token, error: tokenError } = await (adminClient
+      .from('tokens') as any)
       .select('*')
       .eq('mint_address', address)
       .single();
@@ -405,8 +408,8 @@ export async function GET(
     setCachedMetrics(address, metrics);
 
     // Update database with fresh values (async, don't wait)
-    adminClient
-      .from('tokens')
+    (adminClient
+      .from('tokens') as any)
       .update({
         water_level: waterLevel,
         constellation_strength: constellationStrength,
@@ -421,7 +424,7 @@ export async function GET(
       .then(() => {
         console.log(`[METRICS] Updated DB for ${token.symbol}: $${priceData.price.toFixed(8)}, ${priceData.priceSol.toFixed(8)} SOL, MC: $${priceData.marketCap.toFixed(2)}`);
       })
-      .catch((err) => {
+      .catch((err: any) => {
         console.warn('[METRICS] DB update failed:', err);
       });
 

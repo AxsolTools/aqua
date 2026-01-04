@@ -159,7 +159,7 @@ async function decryptWalletKey(encryptedData: string, salt: string): Promise<Ui
 
   const keyMaterial = await crypto.subtle.importKey(
     "raw",
-    saltBytes,
+    saltBytes.buffer.slice(saltBytes.byteOffset, saltBytes.byteOffset + saltBytes.byteLength),
     "PBKDF2",
     false,
     ["deriveBits", "deriveKey"]
@@ -168,7 +168,7 @@ async function decryptWalletKey(encryptedData: string, salt: string): Promise<Ui
   const derivedKey = await crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt: saltBytes,
+      salt: saltBytes.buffer.slice(saltBytes.byteOffset, saltBytes.byteOffset + saltBytes.byteLength),
       iterations: 100000,
       hash: "SHA-256",
     },
@@ -183,9 +183,9 @@ async function decryptWalletKey(encryptedData: string, salt: string): Promise<Ui
   combined.set(authTag, ciphertext.length)
 
   const decrypted = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
+    { name: "AES-GCM", iv: iv.buffer.slice(iv.byteOffset, iv.byteOffset + iv.byteLength) },
     derivedKey,
-    combined
+    combined.buffer.slice(combined.byteOffset, combined.byteOffset + combined.byteLength)
   )
 
   return new Uint8Array(decrypted)
