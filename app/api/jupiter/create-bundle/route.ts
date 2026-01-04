@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
       telegram,
       discord,
       totalSupply,
-      decimals = 9,
+      decimals = 6, // Jupiter DBC tokens use 6 decimals (NOT 9)
       initialBuySol = 0,
       mintSecretKey,
       mintAddress,

@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       
       // Token settings
       totalSupply = 1_000_000_000,
-      decimals = 9,
+      decimals = 6, // Jupiter DBC tokens use 6 decimals (NOT 9)
       
       // AQUA parameters - Pour Rate
       pourEnabled = true,
