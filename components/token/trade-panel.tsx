@@ -9,6 +9,7 @@ import { useBalance, useTokenBalance } from "@/hooks/use-balance"
 import { useMultiWalletPNL, formatPnlPercent, formatTokenBalance, formatSolBalance } from "@/hooks/use-multi-wallet-pnl"
 import { cn } from "@/lib/utils"
 import { EarnShortcut } from "@/components/earn/earn-shortcut"
+import { VolumeBotQuickControls } from "@/components/token/volume-bot-quick-controls"
 
 interface TradePanelProps {
   token: Token
@@ -93,7 +94,18 @@ export function TradePanel({ token }: TradePanelProps) {
   
   const [mode, setMode] = useState<"buy" | "sell">("buy")
   const [amount, setAmount] = useState("")
-  const [slippage, setSlippage] = useState("1")
+  const [slippage, setSlippage] = useState(() => {
+    // Load from localStorage on init
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('aqua_slippage')
+      if (saved && !isNaN(parseFloat(saved)) && parseFloat(saved) > 0 && parseFloat(saved) <= 50) {
+        return saved
+      }
+    }
+    return "1"
+  })
+  const [customSlippage, setCustomSlippage] = useState("")
+  const [showCustomSlippage, setShowCustomSlippage] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -182,6 +194,22 @@ export function TradePanel({ token }: TradePanelProps) {
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
+
+  // Save slippage to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined' && slippage) {
+      localStorage.setItem('aqua_slippage', slippage)
+    }
+  }, [slippage])
+
+  // Handle custom slippage input
+  const handleCustomSlippageSubmit = () => {
+    const value = parseFloat(customSlippage)
+    if (!isNaN(value) && value > 0 && value <= 50) {
+      setSlippage(value.toString())
+      setShowCustomSlippage(false)
+    }
+  }
 
   const handleTrade = async () => {
     // Validate prerequisites
@@ -602,6 +630,17 @@ export function TradePanel({ token }: TradePanelProps) {
         </div>
       )}
 
+      {/* Volume Bot Quick Controls */}
+      {isAuthenticated && token.mint_address && (
+        <div className="mb-4">
+          <VolumeBotQuickControls 
+            tokenMint={token.mint_address} 
+            tokenSymbol={token.symbol || 'TOKEN'}
+            currentPrice={effectivePriceSol}
+          />
+        </div>
+      )}
+
       {/* Header */}
       <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Swap {token.symbol}</h3>
 
@@ -718,10 +757,13 @@ export function TradePanel({ token }: TradePanelProps) {
           {["0.5", "1", "2", "5"].map((s) => (
             <button
               key={s}
-              onClick={() => setSlippage(s)}
+              onClick={() => {
+                setSlippage(s)
+                setShowCustomSlippage(false)
+              }}
               className={cn(
                 "flex-1 py-1.5 rounded text-xs font-medium border transition-all",
-                slippage === s
+                slippage === s && !showCustomSlippage
                   ? "border-[var(--aqua-primary)] bg-[var(--aqua-bg)] text-[var(--aqua-primary)]"
                   : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-default)]",
               )}
@@ -729,7 +771,57 @@ export function TradePanel({ token }: TradePanelProps) {
               {s}%
             </button>
           ))}
+          {/* Custom button */}
+          <button
+            onClick={() => {
+              setShowCustomSlippage(true)
+              setCustomSlippage(slippage)
+            }}
+            className={cn(
+              "flex-1 py-1.5 rounded text-xs font-medium border transition-all",
+              showCustomSlippage || !["0.5", "1", "2", "5"].includes(slippage)
+                ? "border-[var(--aqua-primary)] bg-[var(--aqua-bg)] text-[var(--aqua-primary)]"
+                : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:border-[var(--border-default)]",
+            )}
+          >
+            {!["0.5", "1", "2", "5"].includes(slippage) ? `${slippage}%` : "Custom"}
+          </button>
         </div>
+        
+        {/* Custom slippage input */}
+        {showCustomSlippage && (
+          <div className="mt-2 flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="number"
+                value={customSlippage}
+                onChange={(e) => setCustomSlippage(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCustomSlippageSubmit()}
+                placeholder="Enter slippage %"
+                min="0.1"
+                max="50"
+                step="0.1"
+                className="w-full h-9 px-3 pr-8 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--aqua-primary)]"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[var(--text-muted)]">%</span>
+            </div>
+            <button
+              onClick={handleCustomSlippageSubmit}
+              className="px-4 h-9 rounded-lg bg-[var(--aqua-primary)] text-white text-xs font-semibold hover:bg-[var(--aqua-secondary)] transition-colors"
+            >
+              Set
+            </button>
+          </div>
+        )}
+        
+        {/* Slippage warning for high values */}
+        {parseFloat(slippage) >= 10 && (
+          <div className="mt-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+            <p className="text-[10px] text-amber-400">
+              ⚠️ High slippage ({slippage}%) - You may receive significantly less than expected
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Insufficient Balance Warning */}

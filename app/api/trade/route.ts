@@ -209,9 +209,9 @@ export async function POST(request: NextRequest) {
       // Use Jupiter swap API for Jupiter DBC tokens
       console.log('[TRADE] ========== JUPITER SWAP START ==========');
       
-      // Jupiter DBC tokens often have lower liquidity - use minimum 2% slippage (200 bps)
-      // For sells, use higher slippage since price impact is typically higher
-      const minSlippageForJupiter = action === 'sell' ? 300 : 200; // 3% for sells, 2% for buys
+      // Jupiter DBC tokens often have lower liquidity - use higher minimum slippage
+      // For sells, use much higher slippage since price impact and multi-hop routing causes issues
+      const minSlippageForJupiter = action === 'sell' ? 1000 : 300; // 10% for sells, 3% for buys
       const effectiveSlippageBps = Math.max(slippageBps, minSlippageForJupiter);
       
       console.log('[TRADE] Jupiter token detected:', {
