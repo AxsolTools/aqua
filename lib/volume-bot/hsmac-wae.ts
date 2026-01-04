@@ -183,7 +183,7 @@ function buildDbpmPlan(wallets: WalletRecord[], totalVolume: number): Allocation
   return randomized.map((wallet, idx) => ({
     walletId: wallet.wallet_id,
     publicKey: wallet.wallet_address,
-    role: (idx % 2 === 0 ? 'entry' : 'exit') as const,
+    role: (idx % 2 === 0 ? 'entry' : 'exit') as 'entry' | 'exit',
     amount: slices[idx] || 0,
     concurrency: false
   }));
@@ -223,7 +223,7 @@ function buildCmwaPlan(wallets: WalletRecord[], totalVolume: number): Allocation
   return wallets.map((wallet, idx) => ({
     walletId: wallet.wallet_id,
     publicKey: wallet.wallet_address,
-    role: (idx % 2 === 0 ? 'arbitrage_buy' : 'arbitrage_sell') as const,
+    role: (idx % 2 === 0 ? 'arbitrage_buy' : 'arbitrage_sell') as 'arbitrage_buy' | 'arbitrage_sell',
     amount: slices[idx] || 0,
     concurrency: true
   }));

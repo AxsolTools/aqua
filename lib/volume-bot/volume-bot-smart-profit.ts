@@ -473,7 +473,8 @@ export class SmartProfitManager extends EventEmitter {
     try {
       const adminClient = getAdminClient();
       
-      await adminClient.from('volume_bot_executions').insert({
+      // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+      await (adminClient.from('volume_bot_executions') as any).insert({
         user_id: this.settings.userId,
         session_id: this.settings.sessionId,
         token_mint: this.settings.tokenMint,
@@ -561,8 +562,9 @@ export async function loadSmartProfitSettings(
   try {
     const adminClient = getAdminClient();
     
-    const { data, error } = await adminClient
-      .from('volume_bot_settings')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    const { data, error } = await (adminClient
+      .from('volume_bot_settings') as any)
       .select('*')
       .eq('user_id', userId)
       .eq('token_mint', tokenMint)
@@ -611,8 +613,9 @@ export async function saveSmartProfitSettings(
   try {
     const adminClient = getAdminClient();
     
-    await adminClient
-      .from('volume_bot_settings')
+    // Cast to any to bypass strict Supabase typing (table schema not in generated types)
+    await (adminClient
+      .from('volume_bot_settings') as any)
       .upsert({
         user_id: settings.userId,
         token_mint: settings.tokenMint,

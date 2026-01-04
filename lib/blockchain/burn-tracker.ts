@@ -56,7 +56,7 @@ interface HeliusTransaction {
  */
 export async function getBurnedTokens(mintAddress: string): Promise<BurnData> {
   const result: BurnData = {
-    totalBurned: 0n,
+    totalBurned: BigInt(0),
     burnCount: 0,
     lastBurnTimestamp: null,
     lastBurnSignature: null,
@@ -86,7 +86,7 @@ export async function getBurnedTokens(mintAddress: string): Promise<BurnData> {
  */
 async function getBurnedTokensHelius(mintAddress: string): Promise<BurnData | null> {
   const result: BurnData = {
-    totalBurned: 0n,
+    totalBurned: BigInt(0),
     burnCount: 0,
     lastBurnTimestamp: null,
     lastBurnSignature: null,
@@ -145,7 +145,7 @@ async function getBurnedTokensHelius(mintAddress: string): Promise<BurnData | nu
  */
 async function getBurnedTokensRPC(mintAddress: string): Promise<BurnData> {
   const result: BurnData = {
-    totalBurned: 0n,
+    totalBurned: BigInt(0),
     burnCount: 0,
     lastBurnTimestamp: null,
     lastBurnSignature: null,
@@ -235,7 +235,7 @@ export async function getBurnRate(
     const mintPubkey = new PublicKey(mintAddress);
     const cutoffTime = Math.floor(Date.now() / 1000) - (periodHours * 3600);
 
-    let burnedInPeriod = 0n;
+    let burnedInPeriod = BigInt(0);
 
     // Get recent signatures
     const signatures = await connection.getSignaturesForAddress(mintPubkey, {
@@ -276,7 +276,7 @@ export async function getBurnRate(
   } catch (error) {
     console.error('[BURN-TRACKER] Error calculating burn rate:', error);
     return {
-      burnedInPeriod: 0n,
+      burnedInPeriod: BigInt(0),
       burnRatePerHour: 0,
     };
   }
@@ -290,10 +290,10 @@ export function calculateEvaporationRate(
   totalSupply: bigint,
   decimals: number = 9
 ): number {
-  if (totalSupply === 0n) return 0;
+  if (totalSupply === BigInt(0)) return 0;
   
   // Calculate percentage with precision
-  const burnedScaled = totalBurned * 10000n; // For 2 decimal places
+  const burnedScaled = totalBurned * BigInt(10000); // For 2 decimal places
   const percentage = Number(burnedScaled / totalSupply) / 100;
   
   return Math.min(100, Math.max(0, percentage));

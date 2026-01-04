@@ -435,6 +435,7 @@ async function executeSessionCycle(
     // Execute transactions
     const executions = await executeTransactions(planResult, {
       userId: settings.userId,
+      sessionId,
       tokenMint,
       platform: platform || 'jupiter',
       currentPrice: currentPrice || undefined
