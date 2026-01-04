@@ -1218,13 +1218,24 @@ export async function executeJupiterSwap(
     console.log('[JUPITER-SWAP] ===== QUOTE DEBUG =====');
     console.log('[JUPITER-SWAP] Full quote response:', JSON.stringify(quoteData, null, 2));
     console.log('[JUPITER-SWAP] ===== END QUOTE DEBUG =====');
-    
+
+    // Summarize route to quickly inspect AMMs/hops
+    const routePlanSummary = (quoteData.routePlan || []).map((hop: any, idx: number) => ({
+      hop: idx,
+      label: hop.swapInfo?.label,
+      inAmount: hop.swapInfo?.inAmount,
+      outAmount: hop.swapInfo?.outAmount,
+      percent: hop.percent,
+    }));
+
     console.log('[JUPITER-SWAP] Quote received:', {
       inAmount: quoteData.inAmount,
       outAmount: quoteData.outAmount,
       priceImpactPct: quoteData.priceImpactPct,
       routePlanLength: quoteData.routePlan?.length,
+      otherAmountThreshold: quoteData.otherAmountThreshold,
     });
+    console.log('[JUPITER-SWAP] Route plan summary:', routePlanSummary);
 
     // -------------------------------
     // Build swap transaction
@@ -1244,6 +1255,13 @@ export async function executeJupiterSwap(
         },
       },
     };
+
+    console.log('[JUPITER-SWAP] Swap body (without quoteResponse):', {
+      userPublicKey: swapBody.userPublicKey,
+      wrapAndUnwrapSol: swapBody.wrapAndUnwrapSol,
+      dynamicComputeUnitLimit: swapBody.dynamicComputeUnitLimit,
+      prioritizationFeeLamports: swapBody.prioritizationFeeLamports,
+    });
 
     // Use appropriate swap endpoint
     const swapUrl = usedEndpoint === 'metis' ? METIS_SWAP_URL : LEGACY_SWAP_URL;
