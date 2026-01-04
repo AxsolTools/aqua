@@ -22,7 +22,7 @@ import { decryptPrivateKey, getOrCreateServiceSalt } from '@/lib/crypto';
 import { validateBalanceForTransaction, collectPlatformFee, getEstimatedFeesForDisplay } from '@/lib/fees';
 import { getReferrer, addReferralEarnings, calculateReferrerShare } from '@/lib/referral';
 import { solToLamports, lamportsToSol, calculatePlatformFee } from '@/lib/precision';
-import { buyOnBondingCurve, sellOnBondingCurve } from '@/lib/blockchain';
+import { buyOnBondingCurve, sellOnBondingCurve, swapSolToUsd1, swapUsd1ToSol, QUOTE_MINTS, POOL_TYPES } from '@/lib/blockchain';
 
 // ============================================================================
 // CONFIGURATION
@@ -59,9 +59,32 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { action, tokenMint, amount, slippageBps = 500, tokenDecimals = 6 } = body;
+    const { 
+      action, 
+      tokenMint, 
+      amount, 
+      slippageBps = 500, 
+      tokenDecimals = 6,
+      // Bonk pool USD1 support
+      pool = 'pump',
+      quoteMint = QUOTE_MINTS.WSOL,
+      autoConvertUsd1 = false,
+    } = body;
     
-    console.log('[TRADE] Request body:', { action, tokenMint: tokenMint?.slice(0, 8), amount, slippageBps, tokenDecimals });
+    // Determine if this is a Bonk USD1 trade
+    const isBonkPool = pool === 'bonk' || pool === POOL_TYPES.BONK;
+    const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
+    
+    console.log('[TRADE] Request body:', { 
+      action, 
+      tokenMint: tokenMint?.slice(0, 8), 
+      amount, 
+      slippageBps, 
+      tokenDecimals,
+      pool,
+      isUsd1Quote,
+      autoConvertUsd1,
+    });
 
     // Validate action
     if (!['buy', 'sell'].includes(action)) {
@@ -274,19 +297,63 @@ export async function POST(request: NextRequest) {
       });
       console.log('[TRADE] ========== JUPITER SWAP END ==========');
     } else {
-      // Use Pump.fun for standard bonding curve tokens
-      console.log('[TRADE] Using Pump.fun bonding curve...');
+      // Use Pump.fun/Bonk.fun for bonding curve tokens
+      const poolLabel = isBonkPool ? 'Bonk.fun' : 'Pump.fun';
+      console.log(`[TRADE] Using ${poolLabel} bonding curve...`);
+      
+      // ========== BONK USD1 AUTO-CONVERSION ==========
+      let actualTradeAmount = amount;
+      let usd1SwapTxSignature: string | undefined;
+      
+      if (isBonkPool && isUsd1Quote && autoConvertUsd1) {
+        console.log('[TRADE] ========== BONK USD1 CONVERSION START ==========');
+        
+        if (action === 'buy') {
+          // BUY: Convert SOL to USD1 first, then buy on bonding curve
+          console.log(`[TRADE] Converting ${amount} SOL -> USD1 before buy...`);
+          const swapResult = await swapSolToUsd1(connection, userKeypair, amount);
+          
+          if (!swapResult.success) {
+            return NextResponse.json({
+              success: false,
+              error: { code: 4001, message: `SOL to USD1 conversion failed: ${swapResult.error}` },
+            }, { status: 500 });
+          }
+          
+          actualTradeAmount = swapResult.outputAmount;
+          usd1SwapTxSignature = swapResult.txSignature;
+          console.log(`[TRADE] ✅ Converted ${amount} SOL -> ${actualTradeAmount.toFixed(2)} USD1`);
+        }
+        // Note: For sells on USD1 pairs, we first sell to get USD1, then convert USD1 back to SOL
+        // This is handled after the trade execution below
+        
+        console.log('[TRADE] ========== BONK USD1 CONVERSION END ==========');
+      }
+      
       if (action === 'buy') {
-        console.log('[TRADE] Executing buy on bonding curve:', { tokenMint: tokenMint.slice(0, 12), amountSol: amount });
+        console.log('[TRADE] Executing buy on bonding curve:', { 
+          tokenMint: tokenMint.slice(0, 12), 
+          amountSol: actualTradeAmount,
+          pool: isBonkPool ? 'bonk' : 'pump',
+          quoteMint: isUsd1Quote ? 'USD1' : 'SOL',
+        });
         tradeResult = await buyOnBondingCurve(connection, {
           tokenMint,
           walletKeypair: userKeypair,
-          amountSol: amount,
+          amountSol: actualTradeAmount,
           slippageBps,
+          // Pass pool info for Bonk
+          pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
+          quoteMint: isUsd1Quote ? QUOTE_MINTS.USD1 : QUOTE_MINTS.WSOL,
         });
       } else {
         // For sells, amount is in tokens
-        console.log('[TRADE] Executing sell on bonding curve:', { tokenMint: tokenMint.slice(0, 12), amountTokens: amount });
+        console.log('[TRADE] Executing sell on bonding curve:', { 
+          tokenMint: tokenMint.slice(0, 12), 
+          amountTokens: amount,
+          pool: isBonkPool ? 'bonk' : 'pump',
+          quoteMint: isUsd1Quote ? 'USD1' : 'SOL',
+        });
         tradeResult = await sellOnBondingCurve(connection, {
           tokenMint,
           walletKeypair: userKeypair,
@@ -294,9 +361,42 @@ export async function POST(request: NextRequest) {
           amountTokens: amount,
           slippageBps,
           tokenDecimals,
+          // Pass pool info for Bonk
+          pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
+          quoteMint: isUsd1Quote ? QUOTE_MINTS.USD1 : QUOTE_MINTS.WSOL,
         });
+        
+        // ========== BONK USD1 POST-SELL CONVERSION ==========
+        // After selling on USD1 pair, convert USD1 proceeds back to SOL
+        if (tradeResult.success && isBonkPool && isUsd1Quote && autoConvertUsd1) {
+          console.log('[TRADE] ========== POST-SELL USD1->SOL CONVERSION ==========');
+          const usd1Proceeds = tradeResult.amountSol || 0; // This is actually USD1 for USD1 pairs
+          
+          if (usd1Proceeds > 0) {
+            console.log(`[TRADE] Converting ${usd1Proceeds.toFixed(2)} USD1 -> SOL...`);
+            const swapResult = await swapUsd1ToSol(connection, userKeypair, usd1Proceeds);
+            
+            if (swapResult.success) {
+              console.log(`[TRADE] ✅ Converted ${usd1Proceeds.toFixed(2)} USD1 -> ${swapResult.outputAmount.toFixed(6)} SOL`);
+              // Update trade result with SOL amount
+              tradeResult.amountSol = swapResult.outputAmount;
+              usd1SwapTxSignature = swapResult.txSignature;
+            } else {
+              console.warn(`[TRADE] ⚠️ USD1->SOL conversion failed: ${swapResult.error}`);
+              // Trade succeeded but conversion failed - user still has USD1
+              tradeResult.error = `Sell succeeded (${usd1Proceeds.toFixed(2)} USD1) but SOL conversion failed: ${swapResult.error}`;
+            }
+          }
+          console.log('[TRADE] ========== POST-SELL CONVERSION END ==========');
+        }
       }
+      
       console.log('[TRADE] Bonding curve trade result:', tradeResult);
+      
+      // Add swap signature to result for Bonk USD1 trades
+      if (usd1SwapTxSignature && tradeResult.success) {
+        (tradeResult as any).usd1SwapTxSignature = usd1SwapTxSignature;
+      }
     }
 
     if (!tradeResult.success) {

@@ -139,6 +139,7 @@ export interface Token {
   
   // Pool type for different token creation methods
   pool_type: 'pump' | 'jupiter' | 'token22' | 'bonk' | null;
+  quote_mint: string | null; // Quote currency mint (WSOL or USD1 for bonk)
   dbc_pool_address: string | null; // Jupiter DBC pool address
   is_platform_token: boolean; // True if created on PROPEL platform
   website: string | null;

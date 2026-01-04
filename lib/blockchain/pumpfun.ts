@@ -103,6 +103,7 @@ export interface TradeParams {
   priorityFee?: number;
   tokenDecimals?: number;
   pool?: PoolType; // 'pump' or 'bonk' - defaults to 'pump'
+  quoteMint?: QuoteMint; // WSOL or USD1 (for bonk) - defaults to WSOL
 }
 
 export interface TradeResult {
@@ -532,30 +533,36 @@ export async function buyOnBondingCurve(
   connection: Connection,
   params: TradeParams
 ): Promise<TradeResult> {
-  const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001, pool = POOL_TYPES.PUMP } = params;
+  const { tokenMint, walletKeypair, amountSol, slippageBps = 500, priorityFee = 0.0001, pool = POOL_TYPES.PUMP, quoteMint } = params;
   
   // Format the amount properly (matching working implementation)
   const formattedAmount = formatSolAmount(amountSol);
   // Convert slippageBps to percentage (500 bps = 5%)
   const slippagePercent = slippageBps / 100;
   const logPrefix = pool === POOL_TYPES.BONK ? '[BONK]' : '[PUMP]';
+  const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
   
   // Try PumpPortal API first
   try {
-    console.log(`${logPrefix} Buying ${formattedAmount} SOL worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`${logPrefix} Buying ${formattedAmount} ${isUsd1Quote ? 'USD1' : 'SOL'} worth of ${tokenMint.slice(0, 8)}... via PumpPortal`);
 
-    const requestBody = {
+    const requestBody: Record<string, any> = {
       publicKey: walletKeypair.publicKey.toBase58(),
       action: 'buy',
       mint: tokenMint,
       amount: formattedAmount,
-      denominatedInSol: 'true',
+      denominatedInSol: 'true', // Always denominated in quote currency
       slippage: slippagePercent,
       priorityFee: priorityFee,
       pool: pool,
       jitoOnly: 'true',
       skipPreflight: 'false',
     };
+    
+    // Add quoteMint for Bonk USD1 pairs
+    if (pool === POOL_TYPES.BONK && quoteMint) {
+      requestBody.quoteMint = quoteMint;
+    }
     
     console.log(`${logPrefix} Buy request body:`, JSON.stringify(requestBody, null, 2));
 
@@ -689,13 +696,14 @@ export async function sellOnBondingCurve(
   connection: Connection,
   params: TradeParams & { amountTokens: number; tokenDecimals?: number }
 ): Promise<TradeResult> {
-  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001, tokenDecimals = 6, pool = POOL_TYPES.PUMP } = params;
+  const { tokenMint, walletKeypair, amountTokens, slippageBps = 500, priorityFee = 0.0001, tokenDecimals = 6, pool = POOL_TYPES.PUMP, quoteMint } = params;
 
   // Format the amount properly (Pump.fun uses 6 decimals)
   const formattedAmount = formatTokenAmount(amountTokens, tokenDecimals);
   // Convert slippageBps to percentage (500 bps = 5%)
   const slippagePercent = slippageBps / 100;
   const logPrefix = pool === POOL_TYPES.BONK ? '[BONK]' : '[PUMP]';
+  const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
   
   // Get the token account address (required for sells)
   const tokenAccountAddress = await getTokenAccountAddress(
@@ -713,9 +721,9 @@ export async function sellOnBondingCurve(
 
   // Try PumpPortal API first
   try {
-    console.log(`${logPrefix} Selling ${formattedAmount} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal`);
+    console.log(`${logPrefix} Selling ${formattedAmount} tokens of ${tokenMint.slice(0, 8)}... via PumpPortal (quote: ${isUsd1Quote ? 'USD1' : 'SOL'})`);
 
-    const requestBody = {
+    const requestBody: Record<string, any> = {
       publicKey: walletKeypair.publicKey.toBase58(),
       action: 'sell',
       mint: tokenMint,
@@ -728,6 +736,11 @@ export async function sellOnBondingCurve(
       skipPreflight: 'false',
       jitoOnly: 'false',
     };
+    
+    // Add quoteMint for Bonk USD1 pairs
+    if (pool === POOL_TYPES.BONK && quoteMint) {
+      requestBody.quoteMint = quoteMint;
+    }
     
     console.log(`${logPrefix} Sell request body:`, JSON.stringify(requestBody, null, 2));
 

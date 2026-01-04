@@ -12,6 +12,7 @@ import bs58 from "bs58"
 import { getAdminClient } from "@/lib/supabase/admin"
 import { decryptPrivateKey, getOrCreateServiceSalt } from "@/lib/crypto"
 import { executeBundle, executeSequentialFallback } from "@/lib/blockchain/jito-bundles"
+import { swapSolToUsd1, swapUsd1ToSol, QUOTE_MINTS, POOL_TYPES } from "@/lib/blockchain"
 
 // ============================================================================
 // CONFIGURATION
@@ -33,6 +34,10 @@ interface BatchTradeRequest {
   amountPerWallet: number
   slippageBps: number
   tokenDecimals?: number
+  // Bonk pool USD1 support
+  pool?: string
+  quoteMint?: string
+  autoConvertUsd1?: boolean
 }
 
 interface WalletTradeResult {
@@ -70,7 +75,15 @@ export async function POST(request: NextRequest) {
       amountPerWallet,
       slippageBps = 500,
       tokenDecimals = 6,
+      // Bonk pool USD1 support
+      pool = 'pump',
+      quoteMint = QUOTE_MINTS.WSOL,
+      autoConvertUsd1 = false,
     } = body
+    
+    // Detect Bonk USD1 mode
+    const isBonkPool = pool === 'bonk' || pool === POOL_TYPES.BONK
+    const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1
 
     // Validate request
     if (!walletAddresses || !Array.isArray(walletAddresses) || walletAddresses.length === 0) {
@@ -107,6 +120,10 @@ export async function POST(request: NextRequest) {
       tokenMint: tokenMint.slice(0, 8),
       amountPerWallet,
       slippageBps,
+      pool,
+      isBonkPool,
+      isUsd1Quote,
+      autoConvertUsd1,
     })
 
     const adminClient = getAdminClient()
@@ -354,16 +371,42 @@ export async function POST(request: NextRequest) {
     }
     
     // ============================================================================
-    // PUMP.FUN PATH - Build transactions for Jito bundle
+    // PUMP.FUN / BONK.FUN PATH - Build transactions for Jito bundle
     // ============================================================================
+    const poolLabel = isBonkPool ? 'Bonk.fun' : 'Pump.fun'
+    console.log(`[BATCH-TRADE] Using ${poolLabel} for trades...`)
+    
     const transactions: VersionedTransaction[] = []
     const walletToTxIndex: Map<string, number> = new Map()
     const walletActualAmounts: Map<string, number> = new Map()
+    
+    // Track USD1 conversion results for post-sell conversion
+    const walletUsd1Proceeds: Map<string, number> = new Map()
 
     for (const [address, keypair] of walletKeypairs) {
       try {
         // For sells, use actual wallet balance. For buys, use the requested amount.
         let actualAmount = amountPerWallet
+        
+        // ========== BONK USD1 PRE-BUY CONVERSION ==========
+        // Convert SOL to USD1 before buying on USD1 bonding curve
+        if (action === "buy" && isBonkPool && isUsd1Quote && autoConvertUsd1) {
+          console.log(`[BATCH-TRADE] Converting ${amountPerWallet} SOL -> USD1 for ${address.slice(0, 8)}...`)
+          const swapResult = await swapSolToUsd1(connection, keypair, amountPerWallet)
+          
+          if (!swapResult.success) {
+            console.error(`[BATCH-TRADE] SOL->USD1 conversion failed for ${address.slice(0, 8)}: ${swapResult.error}`)
+            walletErrors.push({
+              walletAddress: address,
+              success: false,
+              error: `SOL to USD1 conversion failed: ${swapResult.error}`,
+            })
+            continue
+          }
+          
+          actualAmount = swapResult.outputAmount
+          console.log(`[BATCH-TRADE] ✅ Converted ${amountPerWallet} SOL -> ${actualAmount.toFixed(2)} USD1 for ${address.slice(0, 8)}`)
+        }
         
         if (action === "sell") {
           const walletBalance = walletTokenBalances.get(address) || 0
@@ -392,7 +435,12 @@ export async function POST(request: NextRequest) {
           amount: actualAmount,
           slippage: slippageBps / 100, // Convert to percentage
           priorityFee: transactions.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays tip
-          pool: "pump",
+          pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
+        }
+        
+        // Add quoteMint for Bonk USD1 pairs
+        if (isBonkPool && quoteMint) {
+          tradeBody.quoteMint = quoteMint
         }
         
         // For sells, include tokenAccount (use the ATA we already found during balance fetch)
@@ -526,6 +574,48 @@ export async function POST(request: NextRequest) {
           await new Promise((resolve) => setTimeout(resolve, 500))
         }
       }
+    }
+
+    // ========== BONK USD1 POST-SELL CONVERSION ==========
+    // After selling on USD1 pairs, convert USD1 proceeds back to SOL for each successful wallet
+    if (action === "sell" && isBonkPool && isUsd1Quote && autoConvertUsd1) {
+      console.log("[BATCH-TRADE] ========== POST-SELL USD1->SOL CONVERSIONS ==========")
+      
+      for (const result of results.filter(r => r.success)) {
+        try {
+          const keypair = walletKeypairs.get(result.walletAddress)
+          if (!keypair) continue
+          
+          // Get wallet's USD1 balance (proceeds from the sell)
+          const usd1Mint = new PublicKey(QUOTE_MINTS.USD1)
+          const walletPubkey = new PublicKey(result.walletAddress)
+          
+          try {
+            const ata = await getAssociatedTokenAddress(usd1Mint, walletPubkey, false, TOKEN_PROGRAM_ID)
+            const account = await getAccount(connection, ata, "confirmed", TOKEN_PROGRAM_ID)
+            const usd1Balance = Number(account.amount) / 1e6 // USD1 has 6 decimals
+            
+            if (usd1Balance > 0.01) { // Only convert if meaningful amount
+              console.log(`[BATCH-TRADE] Converting ${usd1Balance.toFixed(2)} USD1 -> SOL for ${result.walletAddress.slice(0, 8)}...`)
+              const swapResult = await swapUsd1ToSol(connection, keypair, usd1Balance)
+              
+              if (swapResult.success) {
+                console.log(`[BATCH-TRADE] ✅ Converted ${usd1Balance.toFixed(2)} USD1 -> ${swapResult.outputAmount.toFixed(6)} SOL`)
+              } else {
+                console.warn(`[BATCH-TRADE] ⚠️ USD1->SOL conversion failed for ${result.walletAddress.slice(0, 8)}: ${swapResult.error}`)
+                // Note: Trade still succeeded, just the USD1 conversion failed
+              }
+            }
+          } catch (balanceError) {
+            // No USD1 balance to convert
+            console.log(`[BATCH-TRADE] No USD1 balance to convert for ${result.walletAddress.slice(0, 8)}`)
+          }
+        } catch (conversionError) {
+          console.error(`[BATCH-TRADE] Post-sell conversion error for ${result.walletAddress}:`, conversionError)
+        }
+      }
+      
+      console.log("[BATCH-TRADE] ========== POST-SELL CONVERSIONS COMPLETE ==========")
     }
 
     const successCount = results.filter((r) => r.success).length

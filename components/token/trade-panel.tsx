@@ -11,6 +11,11 @@ import { cn } from "@/lib/utils"
 import { EarnShortcut } from "@/components/earn/earn-shortcut"
 import { VolumeBotQuickControls } from "@/components/token/volume-bot-quick-controls"
 import { tradeEvents } from "@/lib/events/trade-events"
+import { DollarSign } from "lucide-react"
+
+// USD1 mint address for Bonk pools
+const USD1_MINT = 'USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB'
+const WSOL_MINT = 'So11111111111111111111111111111111111111112'
 
 interface TradePanelProps {
   token: Token
@@ -97,6 +102,19 @@ export function TradePanel({ token }: TradePanelProps) {
   
   const [mode, setMode] = useState<"buy" | "sell">("buy")
   const [amount, setAmount] = useState("")
+  
+  // Bonk pool quote currency toggle (USD1 vs SOL)
+  const isBonkPool = (token as any).pool_type === 'bonk'
+  const tokenQuoteMint = (token as any).quote_mint
+  // Auto-detect: if token was created with USD1, default to USD1; otherwise SOL
+  const [quoteCurrency, setQuoteCurrency] = useState<'USD1' | 'SOL'>(() => {
+    if (isBonkPool && tokenQuoteMint === USD1_MINT) {
+      return 'USD1'
+    }
+    return 'SOL'
+  })
+  const isUsd1Mode = isBonkPool && quoteCurrency === 'USD1'
+  
   const [slippage, setSlippage] = useState(() => {
     // Load from localStorage on init
     if (typeof window !== 'undefined') {
@@ -274,6 +292,10 @@ export function TradePanel({ token }: TradePanelProps) {
             amountPerWallet: parseFloat(amount),
             slippageBps: parseFloat(slippage) * 100,
             tokenDecimals: token.decimals || 6,
+            // Bonk pool USD1 support
+            pool: (token as any).pool_type || 'pump',
+            quoteMint: isUsd1Mode ? USD1_MINT : WSOL_MINT,
+            autoConvertUsd1: isUsd1Mode,
           }),
         })
 
@@ -374,6 +396,10 @@ export function TradePanel({ token }: TradePanelProps) {
           amount: parseFloat(amount),
           slippageBps: parseFloat(slippage) * 100,
           tokenDecimals: token.decimals || 6,
+          // Bonk pool USD1 support
+          pool: (token as any).pool_type || 'pump',
+          quoteMint: isUsd1Mode ? USD1_MINT : WSOL_MINT,
+          autoConvertUsd1: isUsd1Mode,
         }),
       })
 
@@ -683,6 +709,58 @@ export function TradePanel({ token }: TradePanelProps) {
 
       {/* Header */}
       <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Swap {token.symbol}</h3>
+
+      {/* Bonk Pool: USD1/SOL Quote Currency Toggle */}
+      {isBonkPool && (
+        <div className="mb-4 p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <DollarSign className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div>
+                <span className="text-xs font-medium text-[var(--text-primary)]">Quote Currency</span>
+                {tokenQuoteMint === USD1_MINT && (
+                  <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400">Token Default: USD1</span>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-1 bg-[var(--bg-secondary)] p-0.5 rounded-lg border border-[var(--border-subtle)]">
+              <button
+                onClick={() => setQuoteCurrency('SOL')}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-medium transition-all",
+                  quoteCurrency === 'SOL'
+                    ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                SOL
+              </button>
+              <button
+                onClick={() => setQuoteCurrency('USD1')}
+                className={cn(
+                  "px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1",
+                  quoteCurrency === 'USD1'
+                    ? "bg-gradient-to-r from-amber-500 to-yellow-500 text-white shadow-sm"
+                    : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                )}
+              >
+                <DollarSign className="w-3 h-3" />
+                USD1
+              </button>
+            </div>
+          </div>
+          {isUsd1Mode && (
+            <p className="text-[10px] text-amber-400/80 mt-2">
+              {mode === 'buy' 
+                ? '💱 Your SOL will be auto-converted to USD1 before buying'
+                : '💱 Proceeds will be in USD1, then auto-converted to SOL'
+              }
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-2 mb-6 bg-[var(--bg-secondary)] p-1 rounded-lg border border-[var(--border-subtle)]">
         <button

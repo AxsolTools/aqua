@@ -309,7 +309,14 @@ export function LaunchWizard({
               transition={{ duration: 0.2 }}
             >
               {currentStep === 1 && (
-                <StepBasics formData={formData} updateFormData={updateFormData} onNext={nextStep} />
+                <StepBasics 
+                  formData={formData} 
+                  updateFormData={updateFormData} 
+                  onNext={nextStep}
+                  creatorWallet={creatorWallet}
+                  pool={pool}
+                  isUsd1Quote={isUsd1Quote}
+                />
               )}
               {currentStep === 2 && (
                 <StepAquaSettings
