@@ -368,12 +368,14 @@ export async function POST(request: NextRequest) {
     for (const result of results.filter((r) => r.success)) {
       try {
         const actualAmount = walletActualAmounts.get(result.walletAddress) || amountPerWallet
+        // For buys: actualAmount is SOL, need to estimate tokens
+        // For sells: actualAmount is tokens, need to estimate SOL (from Jito bundle we don't have exact)
         await adminClient.from("trades").insert({
           wallet_address: result.walletAddress,
           token_address: tokenMint,
           trade_type: action,
-          amount_sol: action === "buy" ? actualAmount : 0,
-          token_amount: action === "sell" ? actualAmount : 0,
+          amount_sol: actualAmount, // For buys it's SOL spent, for sells we'll update later
+          token_amount: actualAmount, // For sells it's tokens sold, for buys we'll update later
           tx_signature: result.txSignature,
           status: "confirmed",
           source: "batch_trade",

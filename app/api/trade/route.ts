@@ -431,6 +431,7 @@ export async function POST(request: NextRequest) {
         try {
           await adminClient.from('trades').insert({
             token_id: (token as any).id,
+            token_address: tokenMint, // Required for entry-price/PNL calculations
             user_id: userId,
             wallet_address: walletAddress,
             trade_type: action,
