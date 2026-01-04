@@ -240,6 +240,7 @@ export async function uploadToIPFS(metadata: TokenMetadata): Promise<{
 /**
  * Upload token metadata and image to Bonk IPFS (for bonk.fun tokens)
  * Uses different endpoints than pump.fun
+ * Based on PumpPortal official documentation format
  */
 export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
   success: boolean;
@@ -283,26 +284,41 @@ export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
       };
     }
 
-    // Step 1: Upload image to Bonk IPFS
+    // Step 1: Upload image to Bonk IPFS using native fetch (per PumpPortal docs)
     console.log('[BONK-IPFS] Uploading image...');
-    const imageForm = new FormDataLib();
-    imageForm.append('image', imageBuffer, {
-      filename: 'image.png',
-      contentType: 'image/png'
-    });
+    
+    // Create a Blob from the buffer for native FormData compatibility
+    // Convert Buffer to Uint8Array to satisfy BlobPart type
+    const imageBlob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/png' });
+    const formData = new FormData();
+    formData.append('image', imageBlob, 'image.png');
 
-    const imgResponse = await axios.post(BONK_IPFS_IMAGE, imageForm, {
-      headers: { ...imageForm.getHeaders() },
-      timeout: 30000,
-    });
+    let imageUri: string;
+    try {
+      const imgResponse = await fetch(BONK_IPFS_IMAGE, {
+        method: 'POST',
+        body: formData,
+      });
 
-    const imageUri = imgResponse.data;
-    if (!imageUri || typeof imageUri !== 'string') {
-      throw new Error('Failed to get image URI from Bonk IPFS');
+      if (!imgResponse.ok) {
+        const errorText = await imgResponse.text();
+        throw new Error(`HTTP ${imgResponse.status}: ${errorText || imgResponse.statusText}`);
+      }
+
+      // Bonk IPFS returns plain text URI
+      imageUri = await imgResponse.text();
+      
+      if (!imageUri || typeof imageUri !== 'string' || imageUri.length < 10) {
+        throw new Error(`Invalid image URI response: ${imageUri}`);
+      }
+      console.log(`[BONK-IPFS] ✅ Image uploaded: ${imageUri}`);
+    } catch (imgError: any) {
+      const errorMessage = imgError?.message || 'Unknown error';
+      console.error(`[BONK-IPFS] Image upload failed:`, errorMessage);
+      throw new Error(`Bonk IPFS image upload failed: ${errorMessage}`);
     }
-    console.log(`[BONK-IPFS] ✅ Image uploaded: ${imageUri}`);
 
-    // Step 2: Upload metadata to Bonk IPFS
+    // Step 2: Upload metadata to Bonk IPFS using native fetch
     console.log('[BONK-IPFS] Uploading metadata...');
     const metadataPayload = {
       createdOn: 'https://bonk.fun',
@@ -311,20 +327,35 @@ export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
       name: metadata.name,
       symbol: metadata.symbol,
       website: metadata.website || '',
-      twitter: metadata.twitter || '',
-      telegram: metadata.telegram || '',
     };
 
-    const metaResponse = await axios.post(BONK_IPFS_META, metadataPayload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 30000,
-    });
+    let metadataUri: string;
+    try {
+      const metaResponse = await fetch(BONK_IPFS_META, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(metadataPayload),
+      });
 
-    const metadataUri = metaResponse.data;
-    if (!metadataUri || typeof metadataUri !== 'string') {
-      throw new Error('Failed to get metadata URI from Bonk IPFS');
+      if (!metaResponse.ok) {
+        const errorText = await metaResponse.text();
+        throw new Error(`HTTP ${metaResponse.status}: ${errorText || metaResponse.statusText}`);
+      }
+
+      // Bonk IPFS returns plain text URI
+      metadataUri = await metaResponse.text();
+
+      if (!metadataUri || typeof metadataUri !== 'string' || metadataUri.length < 10) {
+        throw new Error(`Invalid metadata URI response: ${metadataUri}`);
+      }
+      console.log(`[BONK-IPFS] ✅ Metadata uploaded: ${metadataUri}`);
+    } catch (metaError: any) {
+      const errorMessage = metaError?.message || 'Unknown error';
+      console.error(`[BONK-IPFS] Metadata upload failed:`, errorMessage);
+      throw new Error(`Bonk IPFS metadata upload failed: ${errorMessage}`);
     }
-    console.log(`[BONK-IPFS] ✅ Metadata uploaded: ${metadataUri}`);
 
     return {
       success: true,
@@ -332,11 +363,14 @@ export async function uploadToBonkIPFS(metadata: TokenMetadata): Promise<{
       imageUri,
     };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('[BONK-IPFS] Upload error:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : 'Bonk IPFS upload failed';
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Bonk IPFS upload failed',
+      error: errorMessage,
     };
   }
 }
@@ -961,8 +995,5 @@ export {
   PUMP_PROGRAM_ID,
   PUMP_GLOBAL_ACCOUNT,
   PUMP_FEE_RECIPIENT,
-  POOL_TYPES,
-  QUOTE_MINTS,
-  uploadToBonkIPFS,
 };
 

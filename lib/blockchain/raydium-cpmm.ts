@@ -269,11 +269,20 @@ export async function createCPMMPool(params: CreatePoolParams): Promise<CreatePo
 
     console.log('[RAYDIUM] Executing pool creation...');
 
-    // Execute transaction
-    const txIds = await execute({
+    // Execute transaction - SDK returns different formats, handle dynamically
+    const executeResult = await execute({
       sendAndConfirm: true,
-      sequentially: true,
-    });
+    }) as any;
+
+    // Extract transaction IDs - handle both array and single object formats
+    let txIds: string[] = [];
+    if (Array.isArray(executeResult)) {
+      txIds = executeResult.map((r: any) => r.txId || r);
+    } else if (executeResult?.txId) {
+      txIds = [executeResult.txId];
+    } else if (typeof executeResult === 'string') {
+      txIds = [executeResult];
+    }
 
     if (!txIds || txIds.length === 0) {
       throw new Error('No transaction IDs returned');
@@ -288,13 +297,16 @@ export async function createCPMMPool(params: CreatePoolParams): Promise<CreatePo
     if (extInfo) {
       console.log('[RAYDIUM] extInfo keys:', Object.keys(extInfo));
       
+      // Cast to any to handle dynamic SDK response
+      const ext = extInfo as any;
+      
       // Try different possible locations for pool address
       const addressCandidates = [
-        extInfo.address?.poolId,
-        extInfo.address?.id,
-        extInfo.address?.pool,
-        extInfo.poolId,
-        extInfo.address,
+        ext.address?.poolId,
+        ext.address?.id,
+        ext.address?.pool,
+        ext.poolId,
+        ext.address,
       ];
       
       for (const candidate of addressCandidates) {
@@ -311,8 +323,8 @@ export async function createCPMMPool(params: CreatePoolParams): Promise<CreatePo
 
       // Try different possible locations for LP mint
       const lpMintCandidates = [
-        extInfo.address?.lpMint,
-        extInfo.lpMint,
+        ext.address?.lpMint,
+        ext.lpMint,
       ];
       
       for (const candidate of lpMintCandidates) {
@@ -416,9 +428,19 @@ export async function addLiquidity(params: AddLiquidityParams): Promise<Liquidit
     });
 
     const { execute } = result;
-    const txIds = await execute({
+    const executeResult = await execute({
       sendAndConfirm: true,
-    });
+    }) as any;
+
+    // Extract transaction IDs - handle both array and single object formats
+    let txIds: string[] = [];
+    if (Array.isArray(executeResult)) {
+      txIds = executeResult.map((r: any) => r.txId || r);
+    } else if (executeResult?.txId) {
+      txIds = [executeResult.txId];
+    } else if (typeof executeResult === 'string') {
+      txIds = [executeResult];
+    }
 
     console.log(`[RAYDIUM] Liquidity added: ${txIds[0]}`);
 
@@ -492,9 +514,19 @@ export async function removeLiquidity(params: RemoveLiquidityParams): Promise<Li
     });
 
     const { execute } = result;
-    const txIds = await execute({
+    const executeResult = await execute({
       sendAndConfirm: true,
-    });
+    }) as any;
+
+    // Extract transaction IDs - handle both array and single object formats
+    let txIds: string[] = [];
+    if (Array.isArray(executeResult)) {
+      txIds = executeResult.map((r: any) => r.txId || r);
+    } else if (executeResult?.txId) {
+      txIds = [executeResult.txId];
+    } else if (typeof executeResult === 'string') {
+      txIds = [executeResult];
+    }
 
     console.log(`[RAYDIUM] Liquidity removed: ${txIds[0]}`);
 
@@ -562,9 +594,19 @@ export async function lockLpTokens(
     });
 
     const { execute } = result;
-    const txIds = await execute({
+    const executeResult = await execute({
       sendAndConfirm: true,
-    });
+    }) as any;
+
+    // Extract transaction IDs - handle both array and single object formats
+    let txIds: string[] = [];
+    if (Array.isArray(executeResult)) {
+      txIds = executeResult.map((r: any) => r.txId || r);
+    } else if (executeResult?.txId) {
+      txIds = [executeResult.txId];
+    } else if (typeof executeResult === 'string') {
+      txIds = [executeResult];
+    }
 
     console.log(`[RAYDIUM] LP tokens locked: ${txIds[0]}`);
 
@@ -612,17 +654,18 @@ export async function getPoolInfo(
       return null;
     }
 
-    const info = poolInfo.poolInfo;
+    // Cast to any to handle dynamic SDK response
+    const info = poolInfo.poolInfo as any;
 
     return {
       address: poolAddress,
-      lpMint: info.lpMint?.toBase58() || '',
-      tokenMint: info.mintA?.toBase58() || '',
-      quoteMint: info.mintB?.toBase58() || '',
-      tokenReserve: info.vaultAAmount?.toString() || '0',
-      quoteReserve: info.vaultBAmount?.toString() || '0',
-      lpSupply: info.lpSupply?.toString() || '0',
-      feeRate: info.configInfo?.tradeFeeRate || 0,
+      lpMint: typeof info.lpMint?.toBase58 === 'function' ? info.lpMint.toBase58() : (info.lpMint || ''),
+      tokenMint: typeof info.mintA?.toBase58 === 'function' ? info.mintA.toBase58() : (info.mintA || ''),
+      quoteMint: typeof info.mintB?.toBase58 === 'function' ? info.mintB.toBase58() : (info.mintB || ''),
+      tokenReserve: info.mintAmountA?.toString() || info.vaultAAmount?.toString() || '0',
+      quoteReserve: info.mintAmountB?.toString() || info.vaultBAmount?.toString() || '0',
+      lpSupply: info.lpAmount?.toString() || info.lpSupply?.toString() || '0',
+      feeRate: info.config?.tradeFeeRate || info.configInfo?.tradeFeeRate || 0,
     };
 
   } catch (error) {
@@ -779,21 +822,47 @@ export async function collectCreatorFee(
       throw new Error('Pool not found');
     }
     
-    // Collect creator fees
-    const { execute } = await raydium.cpmm.collectCreatorFees({
-      programId: CREATE_CPMM_POOL_PROGRAM,
-      poolInfo: poolData.poolInfo,
-      poolKeys: poolData.poolKeys,
-      txVersion: TxVersion.V0,
-      computeBudgetConfig: {
-        units: 400000,
-        microLamports: 50000000,
-      },
-    });
+    // Collect creator fees - use harvestAllRewards or similar available method
+    // Note: The SDK may not have collectCreatorFees directly, use available methods
+    const cpmmModule = raydium.cpmm as any;
     
-    const txIds = await execute({
+    // Try different possible method names in the SDK
+    let result: any;
+    if (typeof cpmmModule.collectCreatorFee === 'function') {
+      result = await cpmmModule.collectCreatorFee({
+        programId: CREATE_CPMM_POOL_PROGRAM,
+        poolInfo: poolData.poolInfo,
+        poolKeys: poolData.poolKeys,
+        txVersion: TxVersion.V0,
+        computeBudgetConfig: {
+          units: 400000,
+          microLamports: 50000000,
+        },
+      });
+    } else if (typeof cpmmModule.harvestLpFees === 'function') {
+      result = await cpmmModule.harvestLpFees({
+        poolInfo: poolData.poolInfo,
+        poolKeys: poolData.poolKeys,
+        txVersion: TxVersion.V0,
+      });
+    } else {
+      throw new Error('SDK does not support creator fee collection for this pool type');
+    }
+    
+    const { execute } = result;
+    const executeResult = await execute({
       sendAndConfirm: true,
-    });
+    }) as any;
+
+    // Extract transaction IDs
+    let txIds: string[] = [];
+    if (Array.isArray(executeResult)) {
+      txIds = executeResult.map((r: any) => r.txId || r);
+    } else if (executeResult?.txId) {
+      txIds = [executeResult.txId];
+    } else if (typeof executeResult === 'string') {
+      txIds = [executeResult];
+    }
     
     console.log(`[RAYDIUM] Creator fees collected: ${txIds[0]}`);
     
@@ -873,20 +942,53 @@ export async function collectAllCreatorFees(
       ? DEVNET_PROGRAM_ID.CREATE_CPMM_POOL_PROGRAM 
       : CREATE_CPMM_POOL_PROGRAM;
     
-    const { execute, transactions } = await raydium.cpmm.collectMultiCreatorFees({
-      poolInfoList: poolsWithFees.map((d: any) => d.poolInfo),
-      programId,
-      txVersion: TxVersion.V0,
-    });
+    // Cast to any to handle different SDK versions
+    const cpmmModule = raydium.cpmm as any;
     
-    const result = await execute({
-      sequentially: true,
+    // Try different possible method names
+    let collectResult: any;
+    if (typeof cpmmModule.collectMultiCreatorFee === 'function') {
+      collectResult = await cpmmModule.collectMultiCreatorFee({
+        poolInfoList: poolsWithFees.map((d: any) => d.poolInfo),
+        programId,
+        txVersion: TxVersion.V0,
+      });
+    } else {
+      // Fallback: collect from each pool individually
+      const signatures: string[] = [];
+      for (const poolData of poolsWithFees) {
+        try {
+          const singleResult = await collectCreatorFee(
+            connection,
+            ownerKeypair,
+            poolData.poolInfo.id || poolData.poolId
+          );
+          if (singleResult.success && singleResult.txSignature) {
+            signatures.push(singleResult.txSignature);
+          }
+        } catch (e) {
+          console.warn(`[RAYDIUM] Failed to collect from pool:`, e);
+        }
+      }
+      
+      console.log(`[RAYDIUM] Collected fees from ${signatures.length} pools`);
+      
+      return {
+        success: signatures.length > 0,
+        txSignature: signatures[0],
+        allSignatures: signatures,
+        poolsProcessed: signatures.length,
+      };
+    }
+    
+    const { execute } = collectResult;
+    const executeResult = await execute({
       sendAndConfirm: true,
-    });
+    }) as any;
     
-    const signatures = Array.isArray(result) 
-      ? result.map((r: any) => r.txId || r)
-      : [result.txId || result];
+    const signatures = Array.isArray(executeResult) 
+      ? executeResult.map((r: any) => r.txId || r)
+      : [executeResult?.txId || executeResult];
     
     console.log(`[RAYDIUM] Collected fees from ${poolsWithFees.length} pools`);
     

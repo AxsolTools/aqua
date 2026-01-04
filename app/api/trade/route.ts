@@ -149,8 +149,9 @@ export async function POST(request: NextRequest) {
     // Determine if this is a Jupiter DBC token
     const isJupiterToken = (token as any)?.pool_type === 'jupiter';
     
-    // Use token decimals from DB if available, otherwise use request value
-    const effectiveDecimals = (token as any)?.decimals ?? tokenDecimals;
+    // Jupiter DBC tokens ALWAYS use 6 decimals, regardless of DB value
+    // This fixes the issue where DB incorrectly stored 9 decimals
+    const effectiveDecimals = isJupiterToken ? 6 : ((token as any)?.decimals ?? tokenDecimals);
     
     if (isJupiterToken) {
       console.log('[TRADE] Detected Jupiter DBC token, using Jupiter swap API');
