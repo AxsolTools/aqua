@@ -649,13 +649,13 @@ async function performJupiterBuy(
       
       console.log(`[JUPITER-INITIAL-BUY] Attempt ${attempt}/${maxRetries}: Getting quote for ${amountSol} SOL -> ${mintAddress.slice(0, 12)}...`);
       
-      // Build quote URL with parameters
+      // Build quote URL with parameters per Jupiter docs
       const quoteParams = new URLSearchParams({
         inputMint: SOL_MINT,
         outputMint: mintAddress,
         amount: amountLamports.toString(),
         slippageBps: slippageBps.toString(),
-        restrictIntermediateTokens: 'true',
+        swapMode: 'ExactIn',
       });
       
       let quoteData: any = null;
@@ -746,7 +746,7 @@ async function performJupiterBuy(
         userPublicKey: buyerKeypair.publicKey.toBase58(),
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
-        dynamicSlippage: true,
+        // dynamicSlippage removed - deprecated per Jupiter docs, overrides explicit slippage
         prioritizationFeeLamports: {
           priorityLevelWithMaxLamports: {
             maxLamports: 1000000,
@@ -1107,20 +1107,14 @@ export async function executeJupiterSwap(
     let quoteData: any = null;
     let usedEndpoint: string = '';
 
-    // Build quote URL with parameters
-    // For sells, don't restrict intermediate tokens - allows more routing options
-    // For buys, restrict to avoid complex routes
+    // Build quote URL with parameters per Jupiter docs
     const quoteParams = new URLSearchParams({
       inputMint,
       outputMint,
       amount: amountRaw.toString(),
       slippageBps: slippageBps.toString(),
+      swapMode: 'ExactIn', // We always use ExactIn mode
     });
-    
-    // Only restrict intermediate tokens for buys (sells need more flexibility for DBC tokens)
-    if (action === 'buy') {
-      quoteParams.set('restrictIntermediateTokens', 'true');
-    }
     
     console.log('[JUPITER-SWAP] Quote params:', Object.fromEntries(quoteParams));
 
