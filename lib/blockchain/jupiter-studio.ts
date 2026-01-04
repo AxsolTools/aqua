@@ -1115,7 +1115,14 @@ export async function executeJupiterSwap(
       slippageBps: slippageBps.toString(),
       swapMode: 'ExactIn', // We always use ExactIn mode
     });
-    
+
+    // Let sells explore more routes; keep buys constrained
+    if (action === 'sell') {
+      quoteParams.set('restrictIntermediateTokens', 'false');
+    } else {
+      quoteParams.set('restrictIntermediateTokens', 'true');
+    }
+
     console.log('[JUPITER-SWAP] Quote params:', Object.fromEntries(quoteParams));
 
     // Try Metis API first (if we have API key)
