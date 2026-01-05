@@ -447,28 +447,23 @@ export async function createToken(
       slippagePercent = 10;
     }
 
-    // Bonk pool requires Lightning API with API key (server-side signing)
-    // Pump pool uses trade-local (client-side signing)
+    // Both BONK and PUMP pools use trade-local API (client-side signing)
+    // This allows the user's wallet to be used for trades (especially important for USD1 pairs)
     if (pool === POOL_TYPES.BONK) {
-      // ========== BONK POOL: Use Lightning API ==========
-      if (!PUMP_PORTAL_API_KEY) {
-        throw new Error('PUMPPORTAL_API_KEY environment variable is required for Bonk pool token creation');
-      }
-
-      // For BONK pools with USD1 quote mint:
-      // - User must have USD1 in their wallet (we swap SOL→USD1 before calling this)
-      // - denominatedInSol: 'false' means amount is in quote tokens (USD1)
-      // - denominatedInSol: 'true' means amount is in SOL
+      // ========== BONK POOL: Use trade-local API ==========
+      // For USD1 pairs: user must have USD1 in their wallet (swapped before calling this)
+      // Lightning API would use PumpPortal's wallet, not the user's wallet
       const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
       
       const createParams: Record<string, any> = {
+        publicKey: creatorKeypair.publicKey.toBase58(), // User's wallet (has the USD1)
         action: 'create',
         tokenMetadata: {
           name: metadata.name,
           symbol: metadata.symbol,
           uri: ipfsResult.metadataUri,
         },
-        mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
+        mint: mintKeypair.publicKey.toBase58(), // trade-local uses PUBLIC key
         denominatedInSol: isUsd1Quote ? 'false' : 'true', // false for USD1 (amount is in USD1), true for SOL
         slippage: slippagePercent,
         priorityFee: priorityFee,
@@ -481,13 +476,10 @@ export async function createToken(
         createParams.amount = initialBuySol;
       }
 
-      console.log(`${logPrefix} Using Lightning API (server-signed)...`);
-      console.log(`${logPrefix} Request params:`, JSON.stringify({
-        ...createParams,
-        mint: '[SECRET_KEY_HIDDEN]', // Don't log the secret key
-      }, null, 2));
+      console.log(`${logPrefix} Using trade-local API (client-signed)...`);
+      console.log(`${logPrefix} Request params:`, JSON.stringify(createParams, null, 2));
       
-      const response = await fetch(`${PUMP_PORTAL_API}/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
+      const response = await fetch(`${PUMP_PORTAL_API}/trade-local`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(createParams),
@@ -498,16 +490,24 @@ export async function createToken(
         throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
       }
 
-      // Lightning API returns JSON with signature (already sent)
-      const result = await response.json();
-      console.log(`${logPrefix} PumpPortal response:`, JSON.stringify(result, null, 2));
+      // trade-local returns raw transaction bytes to sign
+      const txData = await response.arrayBuffer();
+      const tx = VersionedTransaction.deserialize(new Uint8Array(txData));
       
-      const signature = result.signature;
+      // Sign with both creator and mint keypairs
+      tx.sign([creatorKeypair, mintKeypair]);
 
-      if (!signature) {
-        // Log the full response for debugging
-        console.error(`${logPrefix} No signature in response. Full response:`, result);
-        throw new Error(`PumpPortal did not return a transaction signature. Response: ${JSON.stringify(result)}`);
+      const signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      // Confirm transaction
+      console.log(`${logPrefix} Confirming transaction: ${signature}`);
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
       }
 
       console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
