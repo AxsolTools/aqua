@@ -186,33 +186,87 @@ export async function POST(request: NextRequest) {
     }
 
     // ========== BALANCE VALIDATION ==========
-    const operationLamports = action === 'buy' ? solToLamports(amount) : BigInt(0);
     const priorityFeeLamports = solToLamports(0.0001); // Small priority fee
 
     if (action === 'buy') {
-      const validation = await validateBalanceForTransaction(
-        connection,
-        walletAddress,
-        operationLamports,
-        priorityFeeLamports
-      );
-
-      if (!validation.sufficient) {
-        return NextResponse.json(
-          {
+      // For USD1 mode without auto-convert: validate USD1 balance
+      // For SOL mode or USD1 with auto-convert: validate SOL balance
+      if (isBonkPool && isUsd1Quote && !autoConvertUsd1) {
+        // USD1 direct mode: check if wallet has enough USD1 tokens
+        const usd1Mint = new PublicKey(QUOTE_MINTS.USD1);
+        const userPubkey = new PublicKey(walletAddress);
+        
+        try {
+          const { getAssociatedTokenAddress, getAccount } = await import('@solana/spl-token');
+          const usd1Ata = await getAssociatedTokenAddress(usd1Mint, userPubkey);
+          const usd1Account = await getAccount(connection, usd1Ata);
+          const usd1Balance = Number(usd1Account.amount) / 1e6; // USD1 has 6 decimals
+          
+          if (usd1Balance < amount) {
+            return NextResponse.json({
+              success: false,
+              error: {
+                code: 2001,
+                message: `Insufficient USD1 balance. You have ${usd1Balance.toFixed(2)} USD1, need ${amount.toFixed(2)} USD1.`,
+                breakdown: {
+                  currentBalance: usd1Balance.toFixed(6),
+                  required: amount.toFixed(6),
+                  shortfall: (amount - usd1Balance).toFixed(6),
+                },
+              },
+            }, { status: 400 });
+          }
+          
+          // Also need some SOL for transaction fees
+          const solBalance = await connection.getBalance(userPubkey);
+          if (solBalance < Number(priorityFeeLamports) + 5000) { // 5000 lamports buffer
+            return NextResponse.json({
+              success: false,
+              error: {
+                code: 2001,
+                message: `Insufficient SOL for transaction fees. You need ~0.01 SOL for fees.`,
+              },
+            }, { status: 400 });
+          }
+          
+          console.log('[TRADE] USD1 balance validated:', { usd1Balance, required: amount });
+        } catch (err: any) {
+          // Token account doesn't exist or other error
+          return NextResponse.json({
             success: false,
             error: {
               code: 2001,
-              message: validation.error || 'Insufficient balance',
-              breakdown: {
-                currentBalance: lamportsToSol(validation.currentBalance).toFixed(9),
-                required: lamportsToSol(validation.requiredTotal).toFixed(9),
-                shortfall: validation.shortfall ? lamportsToSol(validation.shortfall).toFixed(9) : undefined,
+              message: `No USD1 balance found. Please ensure you have USD1 tokens.`,
+            },
+          }, { status: 400 });
+        }
+      } else {
+        // SOL mode or USD1 with auto-convert: validate SOL balance
+        const operationLamports = solToLamports(amount);
+        const validation = await validateBalanceForTransaction(
+          connection,
+          walletAddress,
+          operationLamports,
+          priorityFeeLamports
+        );
+
+        if (!validation.sufficient) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 2001,
+                message: validation.error || 'Insufficient balance',
+                breakdown: {
+                  currentBalance: lamportsToSol(validation.currentBalance).toFixed(9),
+                  required: lamportsToSol(validation.requiredTotal).toFixed(9),
+                  shortfall: validation.shortfall ? lamportsToSol(validation.shortfall).toFixed(9) : undefined,
+                },
               },
             },
-          },
-          { status: 400 }
-        );
+            { status: 400 }
+          );
+        }
       }
     }
 

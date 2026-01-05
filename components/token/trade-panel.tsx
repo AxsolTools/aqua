@@ -168,6 +168,17 @@ export function TradePanel({ token }: TradePanelProps) {
     { refreshInterval: 15000, enabled: !!activeWallet }
   )
   
+  // Fetch USD1 balance for Bonk USD1 mode
+  const { 
+    balance: usd1Balance, 
+    isLoading: usd1BalanceLoading, 
+    refresh: refreshUsd1Balance 
+  } = useTokenBalance(
+    activeWallet?.public_key || null,
+    USD1_MINT,
+    { refreshInterval: 15000, enabled: !!activeWallet && isUsd1Mode }
+  )
+  
   // Fetch token balance for sell mode
   const { 
     balance: tokenBalance, 
@@ -203,7 +214,12 @@ export function TradePanel({ token }: TradePanelProps) {
   
   // Check if user has sufficient balance for buy
   const parsedAmount = parseFloat(amount) || 0
-  const insufficientBalance = mode === "buy" && parsedAmount > 0 && balanceSol < parsedAmount + 0.01 // 0.01 SOL buffer for fees
+  // For USD1 mode: check USD1 balance; for SOL mode: check SOL balance with fee buffer
+  const insufficientBalance = mode === "buy" && parsedAmount > 0 && (
+    isUsd1Mode 
+      ? (usd1Balance || 0) < parsedAmount // USD1 mode: check USD1 balance (no fee buffer since fees are in SOL)
+      : balanceSol < parsedAmount + 0.01 // SOL mode: 0.01 SOL buffer for fees
+  )
 
   // Close wallet selector when clicking outside
   useEffect(() => {
@@ -295,7 +311,9 @@ export function TradePanel({ token }: TradePanelProps) {
             // Bonk pool USD1 support
             pool: (token as any).pool_type || 'pump',
             quoteMint: isUsd1Mode ? USD1_MINT : WSOL_MINT,
-            autoConvertUsd1: isUsd1Mode,
+            // When isUsd1Mode is true, user is paying with USD1 directly (no conversion needed)
+            // autoConvertUsd1 would be for converting SOL->USD1, which we don't want when user has USD1
+            autoConvertUsd1: false,
           }),
         })
 
@@ -360,9 +378,25 @@ export function TradePanel({ token }: TradePanelProps) {
     }
 
     // Check balance for buy mode
-    if (mode === "buy" && (balanceSol || 0) < parseFloat(amount) + 0.01) {
-      setError(`Insufficient balance. You have ${(balanceSol || 0).toFixed(4)} SOL.`)
-      return
+    if (mode === "buy") {
+      if (isUsd1Mode) {
+        // USD1 mode: check USD1 balance (fees still paid in SOL separately)
+        if ((usd1Balance || 0) < parseFloat(amount)) {
+          setError(`Insufficient USD1 balance. You have ${(usd1Balance || 0).toFixed(2)} USD1.`)
+          return
+        }
+        // Also need some SOL for transaction fees
+        if ((balanceSol || 0) < 0.01) {
+          setError(`Insufficient SOL for fees. You have ${(balanceSol || 0).toFixed(4)} SOL, need ~0.01 SOL.`)
+          return
+        }
+      } else {
+        // SOL mode: check SOL balance with fee buffer
+        if ((balanceSol || 0) < parseFloat(amount) + 0.01) {
+          setError(`Insufficient balance. You have ${(balanceSol || 0).toFixed(4)} SOL.`)
+          return
+        }
+      }
     }
 
     setIsLoading(true)
@@ -399,7 +433,9 @@ export function TradePanel({ token }: TradePanelProps) {
           // Bonk pool USD1 support
           pool: (token as any).pool_type || 'pump',
           quoteMint: isUsd1Mode ? USD1_MINT : WSOL_MINT,
-          autoConvertUsd1: isUsd1Mode,
+          // When isUsd1Mode is true, user is paying with USD1 directly (no conversion needed)
+          // autoConvertUsd1 would be for converting SOL->USD1, which we don't want when user has USD1
+          autoConvertUsd1: false,
         }),
       })
 
@@ -952,7 +988,11 @@ export function TradePanel({ token }: TradePanelProps) {
             <div className="text-amber-400 text-sm">
               <p className="font-medium">Insufficient balance</p>
               <p className="text-xs opacity-80">
-                You have {(balanceSol || 0).toFixed(4)} SOL, need ~{((parsedAmount || 0) + 0.01).toFixed(4)} SOL (incl. fees)
+                {isUsd1Mode ? (
+                  <>You have {(usd1Balance || 0).toFixed(2)} USD1, need {(parsedAmount || 0).toFixed(2)} USD1</>
+                ) : (
+                  <>You have {(balanceSol || 0).toFixed(4)} SOL, need ~{((parsedAmount || 0) + 0.01).toFixed(4)} SOL (incl. fees)</>
+                )}
               </p>
             </div>
           </div>
