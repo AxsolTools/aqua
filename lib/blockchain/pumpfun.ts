@@ -455,9 +455,11 @@ export async function createToken(
         throw new Error('PUMPPORTAL_API_KEY environment variable is required for Bonk pool token creation');
       }
 
-      // For BONK pools with USD1 quote mint, PumpPortal handles the SOL->USD1 conversion internally
-      // Always pass the amount in SOL terms with denominatedInSol: 'true'
-      // PumpPortal will swap to USD1 automatically when quoteMint is USD1
+      // For BONK pools with USD1 quote mint:
+      // - User must have USD1 in their wallet (we swap SOL→USD1 before calling this)
+      // - denominatedInSol: 'false' means amount is in quote tokens (USD1)
+      // - denominatedInSol: 'true' means amount is in SOL
+      const isUsd1Quote = quoteMint === QUOTE_MINTS.USD1;
       
       const createParams: Record<string, any> = {
         action: 'create',
@@ -467,11 +469,11 @@ export async function createToken(
           uri: ipfsResult.metadataUri,
         },
         mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
-        denominatedInSol: 'true', // Always true - amount is in SOL, PumpPortal handles USD1 conversion
+        denominatedInSol: isUsd1Quote ? 'false' : 'true', // false for USD1 (amount is in USD1), true for SOL
         slippage: slippagePercent,
         priorityFee: priorityFee,
         pool: 'bonk',
-        quoteMint: quoteMint, // USD1 or WSOL - PumpPortal handles conversion if USD1
+        quoteMint: quoteMint, // USD1 or WSOL
       };
 
       // Add initial buy if specified

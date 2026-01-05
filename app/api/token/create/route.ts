@@ -26,6 +26,8 @@ import {
   type QuoteMint,
   POOL_TYPES,
   QUOTE_MINTS,
+  swapSolToUsd1,
+  solToUsd1Amount,
 } from '@/lib/blockchain';
 import { getReferrer, addReferralEarnings } from '@/lib/referral';
 
@@ -111,7 +113,8 @@ export async function POST(request: NextRequest) {
       
       // Pool selection (pump or bonk)
       pool = 'pump',
-      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools - PumpPortal handles conversion internally
+      quoteMint = QUOTE_MINTS.WSOL, // WSOL or USD1 for bonk pools
+      autoConvertToUsd1 = false, // Auto-swap SOL to USD1 before creation (for USD1 pairs)
     } = body;
 
     // Validate required fields
@@ -203,8 +206,38 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // NOTE: For BONK USD1 pairs, PumpPortal handles the SOL→USD1 conversion internally
-    // We pass the SOL amount directly with denominatedInSol: 'true' and PumpPortal swaps it
+    // ========== AUTO-SWAP SOL TO USD1 (for Bonk USD1 pairs) ==========
+    let actualInitialBuy = initialBuySol;
+    let swapTxSignature: string | undefined;
+    
+    if (poolType === POOL_TYPES.BONK && quoteType === QUOTE_MINTS.USD1 && autoConvertToUsd1 && initialBuySol > 0) {
+      console.log(`[TOKEN] Auto-converting ${initialBuySol} SOL to USD1 for initial buy...`);
+      
+      const swapResult = await swapSolToUsd1(connection, creatorKeypair, initialBuySol);
+      
+      if (!swapResult.success) {
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: { 
+              code: 4001, 
+              message: `SOL to USD1 conversion failed: ${swapResult.error}` 
+            } 
+          },
+          { status: 500 }
+        );
+      }
+      
+      // For USD1 pairs, the initial buy amount is now in USD1 terms
+      actualInitialBuy = swapResult.outputAmount;
+      swapTxSignature = swapResult.txSignature;
+      console.log(`[TOKEN] ✅ Converted to ${actualInitialBuy.toFixed(2)} USD1`);
+      
+      // Wait for swap to confirm before proceeding (the USD1 needs to be in the wallet)
+      console.log(`[TOKEN] Waiting for swap confirmation...`);
+      await connection.confirmTransaction(swapTxSignature, 'confirmed');
+      console.log(`[TOKEN] ✅ Swap confirmed, proceeding with token creation`);
+    }
 
     // Prepare metadata
     const metadata: TokenMetadata = {
@@ -219,11 +252,11 @@ export async function POST(request: NextRequest) {
     };
 
     // Create token via PumpPortal (supports pump and bonk pools)
-    // For BONK USD1 pairs, pass SOL amount - PumpPortal handles conversion internally
+    // For BONK USD1 pairs, actualInitialBuy is in USD1 terms (after swap)
     const createResult = await createToken(connection, {
       metadata,
       creatorKeypair,
-      initialBuySol,
+      initialBuySol: actualInitialBuy, // USD1 amount for USD1 pairs, SOL amount otherwise
       slippageBps,
       priorityFee: 0.001,
       mintKeypair,
@@ -480,6 +513,11 @@ export async function POST(request: NextRequest) {
         // Pool info
         pool: poolType,
         quoteMint: quoteType,
+        // USD1 swap info (if applicable)
+        ...(swapTxSignature && {
+          swapTxSignature,
+          convertedUsd1Amount: actualInitialBuy,
+        }),
       },
     });
 
