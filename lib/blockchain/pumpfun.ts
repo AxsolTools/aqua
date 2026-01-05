@@ -637,66 +637,242 @@ export async function createToken(
       };
 
     } else if (pool === POOL_TYPES.BONK) {
-      // ========== BONK POOL WSOL: Use PumpPortal Lightning API ==========
-      if (!PUMP_PORTAL_API_KEY) {
-        throw new Error('PUMPPORTAL_API_KEY environment variable is required for Bonk pool token creation');
-      }
+      // ========== BONK POOL WSOL: Try PumpPortal Lightning API, fallback to Raydium LaunchLab ==========
+      let pumpPortalError: string | null = null;
       
-      const createParams: Record<string, any> = {
-        action: 'create',
-        tokenMetadata: {
-          name: metadata.name,
-          symbol: metadata.symbol,
-          uri: ipfsResult.metadataUri,
-        },
-        mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
-        denominatedInSol: 'true',
-        slippage: slippagePercent,
-        priorityFee: priorityFee,
-        pool: 'bonk',
-      };
+      // Try PumpPortal Lightning API first (if API key is available)
+      if (PUMP_PORTAL_API_KEY) {
+        try {
+          const createParams: Record<string, any> = {
+            action: 'create',
+            tokenMetadata: {
+              name: metadata.name,
+              symbol: metadata.symbol,
+              uri: ipfsResult.metadataUri,
+            },
+            mint: bs58.encode(mintKeypair.secretKey), // Lightning API requires SECRET key
+            denominatedInSol: 'true',
+            slippage: slippagePercent,
+            priorityFee: priorityFee,
+            pool: 'bonk',
+          };
 
-      // Add initial buy if specified (in SOL terms)
-      if (initialBuySol > 0) {
-        createParams.amount = initialBuySol;
+          // Add initial buy if specified (in SOL terms)
+          if (initialBuySol > 0) {
+            createParams.amount = initialBuySol;
+          }
+
+          console.log(`${logPrefix} Trying PumpPortal Lightning API (server-signed)...`);
+          console.log(`${logPrefix} Request params:`, JSON.stringify({
+            ...createParams,
+            mint: '[SECRET_KEY_HIDDEN]',
+          }, null, 2));
+          
+          const response = await fetch(`${PUMP_PORTAL_API}/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(createParams),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            pumpPortalError = `PumpPortal API error: ${response.status} - ${errorText}`;
+            console.warn(`${logPrefix} PumpPortal failed, will try Raydium LaunchLab:`, pumpPortalError);
+          } else {
+            // Lightning API returns JSON with signature (transaction already sent by PumpPortal)
+            const result = await response.json();
+            console.log(`${logPrefix} PumpPortal response:`, JSON.stringify(result, null, 2));
+            
+            const signature = result.signature;
+
+            if (!signature) {
+              pumpPortalError = `PumpPortal did not return a transaction signature. Response: ${JSON.stringify(result)}`;
+              console.warn(`${logPrefix} PumpPortal failed, will try Raydium LaunchLab:`, pumpPortalError);
+            } else {
+              console.log(`${logPrefix} Token created successfully via PumpPortal: ${mintKeypair.publicKey.toBase58()}`);
+              console.log(`${logPrefix} Transaction: ${signature}`);
+
+              return {
+                success: true,
+                mintAddress: mintKeypair.publicKey.toBase58(),
+                metadataUri: ipfsResult.metadataUri,
+                txSignature: signature,
+                pool,
+                quoteMint,
+              };
+            }
+          }
+        } catch (e) {
+          pumpPortalError = e instanceof Error ? e.message : 'PumpPortal request failed';
+          console.warn(`${logPrefix} PumpPortal exception, will try Raydium LaunchLab:`, pumpPortalError);
+        }
+      } else {
+        console.log(`${logPrefix} No PumpPortal API key, using Raydium LaunchLab directly...`);
       }
 
-      console.log(`${logPrefix} Using PumpPortal Lightning API (server-signed)...`);
-      console.log(`${logPrefix} Request params:`, JSON.stringify({
-        ...createParams,
-        mint: '[SECRET_KEY_HIDDEN]',
-      }, null, 2));
+      // Fallback to Raydium LaunchLab API (client-signed)
+      console.log(`${logPrefix} Using Raydium LaunchLab API for WSOL pair (fallback)...`);
       
-      const response = await fetch(`${PUMP_PORTAL_API}/trade?api-key=${PUMP_PORTAL_API_KEY}`, {
+      const configId = RAYDIUM_CONFIG_IDS.WSOL;
+      
+      // Prepare form data for Raydium LaunchLab
+      const formData = new FormData();
+      formData.append('wallet', creatorKeypair.publicKey.toBase58());
+      formData.append('name', metadata.name);
+      formData.append('symbol', metadata.symbol);
+      formData.append('description', metadata.description || '');
+      formData.append('configId', configId);
+      formData.append('decimals', '6'); // Standard for LaunchLab tokens
+      formData.append('supply', '1000000000000000'); // 1B tokens with 6 decimals (default)
+      formData.append('totalSellA', '793100000000000'); // Default: 79.31% sold on curve
+      formData.append('totalFundRaisingB', '85000000000'); // 85 SOL (default for WSOL)
+      formData.append('totalLockedAmount', '0'); // No vesting by default
+      formData.append('cliffPeriod', '0');
+      formData.append('unlockPeriod', '0');
+      formData.append('platformId', BONK_PLATFORM_ID);
+      formData.append('migrateType', 'amm'); // Migrate to AMM pool after bonding curve fills
+
+      // Handle image for Raydium LaunchLab
+      let imageBuffer: Buffer | null = null;
+      if (metadata.image instanceof File) {
+        const arrayBuffer = await metadata.image.arrayBuffer();
+        imageBuffer = Buffer.from(arrayBuffer);
+      } else if (typeof metadata.image === 'string') {
+        if (metadata.image.startsWith('http')) {
+          try {
+            const response = await fetch(metadata.image);
+            if (response.ok) {
+              const arrayBuffer = await response.arrayBuffer();
+              imageBuffer = Buffer.from(arrayBuffer);
+            }
+          } catch (e) {
+            console.warn(`${logPrefix} Failed to fetch image from URL`);
+          }
+        } else if (metadata.image.startsWith('data:')) {
+          try {
+            const base64Data = metadata.image.split(',')[1];
+            imageBuffer = Buffer.from(base64Data, 'base64');
+          } catch (e) {
+            console.warn(`${logPrefix} Failed to process base64 image`);
+          }
+        }
+      }
+
+      if (imageBuffer) {
+        const imageBlob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/png' });
+        formData.append('file', imageBlob, 'image.png');
+      }
+
+      console.log(`${logPrefix} Requesting mint from Raydium LaunchLab...`);
+      console.log(`${logPrefix} Config ID: ${configId}`);
+      console.log(`${logPrefix} Platform ID: ${BONK_PLATFORM_ID}`);
+
+      // Step 1: Get random mint address from Raydium
+      const mintResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-random-mint`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createParams),
+        headers: {
+          'ray-token': `token-${Date.now()}`,
+        },
+        body: formData,
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`${logPrefix} PumpPortal error response:`, errorText);
-        throw new Error(`PumpPortal API error: ${response.status} - ${errorText}`);
+      if (!mintResponse.ok) {
+        const errorText = await mintResponse.text();
+        console.error(`${logPrefix} Raydium LaunchLab error:`, errorText);
+        // If both failed, report both errors
+        const combinedError = pumpPortalError 
+          ? `PumpPortal: ${pumpPortalError} | Raydium: ${mintResponse.status} - ${errorText}`
+          : `Raydium LaunchLab API error: ${mintResponse.status} - ${errorText}`;
+        throw new Error(combinedError);
       }
 
-      // Lightning API returns JSON with signature (transaction already sent by PumpPortal)
-      const result = await response.json();
-      console.log(`${logPrefix} PumpPortal response:`, JSON.stringify(result, null, 2));
+      const mintResult = await mintResponse.json();
+      console.log(`${logPrefix} Raydium mint response:`, JSON.stringify(mintResult, null, 2));
+
+      if (!mintResult.success || !mintResult.data?.mint) {
+        throw new Error(`Raydium LaunchLab failed: ${JSON.stringify(mintResult)}`);
+      }
+
+      const raydiumMintAddress = mintResult.data.mint;
+      const metadataLink = mintResult.data.metadataLink;
       
-      const signature = result.signature;
+      console.log(`${logPrefix} Raydium mint address: ${raydiumMintAddress}`);
+      console.log(`${logPrefix} Metadata link: ${metadataLink}`);
 
-      if (!signature) {
-        console.error(`${logPrefix} No signature in response. Full response:`, result);
-        throw new Error(`PumpPortal did not return a transaction signature. Response: ${JSON.stringify(result)}`);
+      // Step 2: Try to get the transaction from Raydium
+      const txFormData = new FormData();
+      txFormData.append('wallet', creatorKeypair.publicKey.toBase58());
+      txFormData.append('mint', raydiumMintAddress);
+      txFormData.append('configId', configId);
+      txFormData.append('platformId', BONK_PLATFORM_ID);
+      txFormData.append('migrateType', 'amm');
+      
+      // Add initial buy amount if specified (in lamports for WSOL)
+      if (initialBuySol > 0) {
+        txFormData.append('amountB', String(Math.floor(initialBuySol * 1e9))); // WSOL has 9 decimals
       }
 
-      console.log(`${logPrefix} Token created successfully: ${mintKeypair.publicKey.toBase58()}`);
+      const txResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-tx`, {
+        method: 'POST',
+        headers: {
+          'ray-token': `token-${Date.now()}`,
+        },
+        body: txFormData,
+      });
+
+      if (!txResponse.ok) {
+        // If we can't get the transaction, return the mint for frontend handling
+        console.warn(`${logPrefix} Could not get transaction from Raydium, returning mint for frontend handling`);
+        return {
+          success: true,
+          mintAddress: raydiumMintAddress,
+          metadataUri: metadataLink || ipfsResult.metadataUri,
+          txSignature: undefined, // Frontend will need to complete the transaction
+          pool,
+          quoteMint,
+        };
+      }
+
+      const txResult = await txResponse.json();
+      
+      if (!txResult.success || !txResult.data?.tx) {
+        console.warn(`${logPrefix} Raydium did not return transaction, returning mint for frontend handling`);
+        return {
+          success: true,
+          mintAddress: raydiumMintAddress,
+          metadataUri: metadataLink || ipfsResult.metadataUri,
+          txSignature: undefined,
+          pool,
+          quoteMint,
+        };
+      }
+
+      // Deserialize and sign the transaction
+      const txBase64 = txResult.data.tx;
+      const txBuffer = Buffer.from(txBase64, 'base64');
+      const tx = VersionedTransaction.deserialize(new Uint8Array(txBuffer));
+      
+      tx.sign([creatorKeypair]);
+
+      const signature = await connection.sendTransaction(tx, {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      console.log(`${logPrefix} Confirming transaction: ${signature}`);
+      const confirmation = await connection.confirmTransaction(signature, 'confirmed');
+
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log(`${logPrefix} Token created successfully via Raydium LaunchLab: ${raydiumMintAddress}`);
       console.log(`${logPrefix} Transaction: ${signature}`);
 
       return {
         success: true,
-        mintAddress: mintKeypair.publicKey.toBase58(),
-        metadataUri: ipfsResult.metadataUri,
+        mintAddress: raydiumMintAddress,
+        metadataUri: metadataLink || ipfsResult.metadataUri,
         txSignature: signature,
         pool,
         quoteMint,
