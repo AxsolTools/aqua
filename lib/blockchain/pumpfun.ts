@@ -27,6 +27,15 @@ import { solToLamports, lamportsToSol } from '@/lib/precision';
 import FormDataLib from 'form-data';
 import axios from 'axios';
 import { buyViaSDK, sellViaSDK, isSDKAvailable } from './pumpfun-sdk';
+import BN from 'bn.js';
+import { 
+  TxVersion, 
+  LaunchpadConfig, 
+  LAUNCHPAD_PROGRAM, 
+  LaunchpadPoolInitParam,
+  txToBase64,
+  Raydium,
+} from '@raydium-io/raydium-sdk-v2';
 
 // ============================================================================
 // CONFIGURATION
@@ -457,33 +466,73 @@ export async function createToken(
       slippagePercent = 10;
     }
 
-    // BONK pool with USD1 uses Raydium LaunchLab API (official Bonk.fun API)
+    // BONK pool with USD1 uses Raydium LaunchLab API + SDK (official Bonk.fun API)
     // BONK pool with WSOL uses PumpPortal Lightning API
     // PUMP pool uses PumpPortal trade-local API (client-side signing)
     if (pool === POOL_TYPES.BONK && quoteMint === QUOTE_MINTS.USD1) {
-      // ========== BONK POOL USD1: Use Raydium LaunchLab API ==========
+      // ========== BONK POOL USD1: Use Raydium LaunchLab API + SDK ==========
       // This is the official API that Bonk.fun uses for USD1 pairs
-      // User signs the transaction (client-side), not server-signed
-      console.log(`${logPrefix} Using Raydium LaunchLab API for USD1 pair...`);
+      // Based on: https://github.com/raydium-io/raydium-sdk-V2-demo/blob/master/src/launchpad/createBonkMintApi.ts
+      console.log(`${logPrefix} Using Raydium LaunchLab API + SDK for USD1 pair...`);
       
-      const configId = RAYDIUM_CONFIG_IDS.USD1;
+      const configIdString = RAYDIUM_CONFIG_IDS.USD1;
+      const configIdPubkey = new PublicKey(configIdString);
+      const platformIdPubkey = new PublicKey(BONK_PLATFORM_ID);
       
-      // Prepare form data for Raydium LaunchLab
+      // Step 1: Fetch config from Raydium API
+      console.log(`${logPrefix} Fetching config from Raydium...`);
+      const configRes = await axios.get(`${RAYDIUM_LAUNCHLAB_API}/main/configs`);
+      
+      // Find the USD1 config
+      const configsData = configRes.data?.data?.data || [];
+      const usd1Config = configsData.find((c: any) => c.key?.pubKey === configIdString);
+      
+      if (!usd1Config) {
+        throw new Error(`USD1 config not found in Raydium LaunchLab. Available configs: ${configsData.map((c: any) => c.key?.pubKey).join(', ')}`);
+      }
+      
+      const configs = usd1Config.key;
+      const mintBInfo = usd1Config.mintInfoB;
+      
+      console.log(`${logPrefix} Found USD1 config: ${configs.name}`);
+      console.log(`${logPrefix} Quote token (mintB): ${configs.mintB}`);
+      
+      // Build configInfo for SDK
+      const configInfo: ReturnType<typeof LaunchpadConfig.decode> = {
+        index: configs.index,
+        mintB: new PublicKey(configs.mintB),
+        tradeFeeRate: new BN(configs.tradeFeeRate),
+        epoch: new BN(configs.epoch),
+        curveType: configs.curveType,
+        migrateFee: new BN(configs.migrateFee),
+        maxShareFeeRate: new BN(configs.maxShareFeeRate),
+        minSupplyA: new BN(configs.minSupplyA),
+        maxLockRate: new BN(configs.maxLockRate),
+        minSellRateA: new BN(configs.minSellRateA),
+        minMigrateRateA: new BN(configs.minMigrateRateA),
+        minFundRaisingB: new BN(configs.minFundRaisingB),
+        protocolFeeOwner: new PublicKey(configs.protocolFeeOwner),
+        migrateFeeOwner: new PublicKey(configs.migrateFeeOwner),
+        migrateToAmmWallet: new PublicKey(configs.migrateToAmmWallet),
+        migrateToCpmmWallet: new PublicKey(configs.migrateToCpmmWallet),
+      };
+      
+      // Step 2: Prepare form data and get random mint from Raydium
       const formData = new FormData();
       formData.append('wallet', creatorKeypair.publicKey.toBase58());
       formData.append('name', metadata.name);
       formData.append('symbol', metadata.symbol);
       formData.append('description', metadata.description || '');
-      formData.append('configId', configId);
-      formData.append('decimals', '6'); // Standard for LaunchLab tokens
-      formData.append('supply', '1000000000000000'); // 1B tokens with 6 decimals (default)
-      formData.append('totalSellA', '793100000000000'); // Default: 79.31% sold on curve
-      formData.append('totalFundRaisingB', '12500000000'); // 12,500 USD1 (default)
-      formData.append('totalLockedAmount', '0'); // No vesting by default
-      formData.append('cliffPeriod', '0');
-      formData.append('unlockPeriod', '0');
+      formData.append('configId', configIdString);
+      formData.append('decimals', String(LaunchpadPoolInitParam.decimals));
+      formData.append('supply', String(LaunchpadPoolInitParam.supply));
+      formData.append('totalSellA', String(LaunchpadPoolInitParam.totalSellA));
+      formData.append('totalFundRaisingB', String(LaunchpadPoolInitParam.totalFundRaisingB));
+      formData.append('totalLockedAmount', String(LaunchpadPoolInitParam.totalLockedAmount));
+      formData.append('cliffPeriod', String(LaunchpadPoolInitParam.cliffPeriod));
+      formData.append('unlockPeriod', String(LaunchpadPoolInitParam.unlockPeriod));
       formData.append('platformId', BONK_PLATFORM_ID);
-      formData.append('migrateType', 'amm'); // Migrate to AMM pool after bonding curve fills
+      formData.append('migrateType', 'amm');
 
       // Handle image for Raydium LaunchLab
       let imageBuffer: Buffer | null = null;
@@ -517,107 +566,89 @@ export async function createToken(
       }
 
       console.log(`${logPrefix} Requesting mint from Raydium LaunchLab...`);
-      console.log(`${logPrefix} Config ID: ${configId}`);
-      console.log(`${logPrefix} Platform ID: ${BONK_PLATFORM_ID}`);
 
-      // Step 1: Get random mint address from Raydium
-      const mintResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-random-mint`, {
-        method: 'POST',
+      const mintResponse = await axios.post(`${RAYDIUM_LAUNCHLAB_API}/create/get-random-mint`, formData, {
         headers: {
+          'Content-Type': 'multipart/form-data',
           'ray-token': `token-${Date.now()}`,
         },
-        body: formData,
       });
 
-      if (!mintResponse.ok) {
-        const errorText = await mintResponse.text();
-        console.error(`${logPrefix} Raydium LaunchLab error:`, errorText);
-        throw new Error(`Raydium LaunchLab API error: ${mintResponse.status} - ${errorText}`);
+      if (!mintResponse.data?.success || !mintResponse.data?.data?.mint) {
+        throw new Error(`Raydium LaunchLab failed: ${JSON.stringify(mintResponse.data)}`);
       }
 
-      const mintResult = await mintResponse.json();
-      console.log(`${logPrefix} Raydium mint response:`, JSON.stringify(mintResult, null, 2));
-
-      if (!mintResult.success || !mintResult.data?.mint) {
-        throw new Error(`Raydium LaunchLab failed: ${JSON.stringify(mintResult)}`);
-      }
-
-      const raydiumMintAddress = mintResult.data.mint;
-      const metadataLink = mintResult.data.metadataLink;
+      const raydiumMintAddress = mintResponse.data.data.mint;
+      const metadataLink = mintResponse.data.data.metadataLink;
+      const mintA = new PublicKey(raydiumMintAddress);
       
       console.log(`${logPrefix} Raydium mint address: ${raydiumMintAddress}`);
       console.log(`${logPrefix} Metadata link: ${metadataLink}`);
 
-      // Step 2: Build the create transaction using Raydium SDK
-      // For now, we'll use the transaction endpoint if available, or return the mint for frontend handling
-      // The Raydium SDK demo shows this requires @raydium-io/raydium-sdk-v2
+      // Step 3: Initialize Raydium SDK and build transaction
+      console.log(`${logPrefix} Initializing Raydium SDK...`);
       
-      // Try to get the transaction from Raydium
-      const txFormData = new FormData();
-      txFormData.append('wallet', creatorKeypair.publicKey.toBase58());
-      txFormData.append('mint', raydiumMintAddress);
-      txFormData.append('configId', configId);
-      txFormData.append('platformId', BONK_PLATFORM_ID);
-      txFormData.append('migrateType', 'amm');
+      const raydium = await Raydium.load({
+        connection,
+        owner: creatorKeypair,
+        disableLoadToken: true,
+      });
       
-      // Add initial buy amount if specified (in USD1 terms)
-      if (initialBuySol > 0) {
-        // For USD1, we need to convert SOL to USD1 amount
-        // Assuming ~$135/SOL, 1 SOL ≈ 135 USD1
-        // But the user should have already converted, so we pass the USD1 amount directly
-        // Actually for initial buy, the user specifies SOL and we need USD1
-        // The swap should happen before this call in the route handler
-        txFormData.append('amountB', String(Math.floor(initialBuySol * 1e6))); // USD1 has 6 decimals
-      }
-
-      const txResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-tx`, {
-        method: 'POST',
-        headers: {
-          'ray-token': `token-${Date.now()}`,
-        },
-        body: txFormData,
+      console.log(`${logPrefix} Building launchpad transaction with SDK...`);
+      
+      const { transactions } = await raydium.launchpad.createLaunchpad({
+        programId: LAUNCHPAD_PROGRAM,
+        mintA,
+        decimals: LaunchpadPoolInitParam.decimals,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        uri: metadataLink,
+        configId: configIdPubkey,
+        configInfo,
+        migrateType: 'amm',
+        mintBDecimals: mintBInfo?.decimals || 6, // USD1 has 6 decimals
+        platformId: platformIdPubkey,
+        txVersion: TxVersion.V0,
+        slippage: new BN(100), // 1%
+        buyAmount: initialBuySol > 0 ? new BN(Math.floor(initialBuySol * 1e6)) : new BN(0), // USD1 amount
+        createOnly: initialBuySol <= 0, // true = create only, false = create and buy
+        supply: LaunchpadPoolInitParam.supply,
+        totalSellA: LaunchpadPoolInitParam.totalSellA,
+        totalFundRaisingB: LaunchpadPoolInitParam.totalFundRaisingB,
+        totalLockedAmount: LaunchpadPoolInitParam.totalLockedAmount,
+        cliffPeriod: LaunchpadPoolInitParam.cliffPeriod,
+        unlockPeriod: LaunchpadPoolInitParam.unlockPeriod,
       });
 
-      if (!txResponse.ok) {
-        // If we can't get the transaction, return the mint for frontend handling
-        console.warn(`${logPrefix} Could not get transaction from Raydium, returning mint for frontend handling`);
-        return {
-          success: true,
-          mintAddress: raydiumMintAddress,
-          metadataUri: metadataLink || ipfsResult.metadataUri,
-          txSignature: undefined, // Frontend will need to complete the transaction
-          pool,
-          quoteMint,
-        };
+      if (!transactions || transactions.length === 0) {
+        throw new Error('Raydium SDK did not return any transactions');
       }
 
-      const txResult = await txResponse.json();
-      
-      if (!txResult.success || !txResult.data?.tx) {
-        console.warn(`${logPrefix} Raydium did not return transaction, returning mint for frontend handling`);
-        return {
-          success: true,
-          mintAddress: raydiumMintAddress,
-          metadataUri: metadataLink || ipfsResult.metadataUri,
-          txSignature: undefined,
-          pool,
-          quoteMint,
-        };
-      }
+      const transaction = transactions[0];
+      console.log(`${logPrefix} Transaction built, sending to Raydium for co-signing...`);
 
-      // Deserialize and sign the transaction
-      const txBase64 = txResult.data.tx;
-      const txBuffer = Buffer.from(txBase64, 'base64');
-      const tx = VersionedTransaction.deserialize(new Uint8Array(txBuffer));
-      
-      tx.sign([creatorKeypair]);
-
-      const signature = await connection.sendTransaction(tx, {
-        skipPreflight: false,
-        maxRetries: 3,
+      // Step 4: Send transaction to Raydium for co-signing
+      const sendTxResponse = await axios.post(`${RAYDIUM_LAUNCHLAB_API}/create/sendTransaction`, {
+        txs: [txToBase64(transaction)],
       });
 
-      console.log(`${logPrefix} Confirming transaction: ${signature}`);
+      if (!sendTxResponse.data?.data?.tx) {
+        throw new Error(`Raydium sendTransaction failed: ${JSON.stringify(sendTxResponse.data)}`);
+      }
+
+      console.log(`${logPrefix} Got co-signed transaction from Raydium`);
+
+      // Step 5: Deserialize and send the co-signed transaction
+      const txBuf = Buffer.from(sendTxResponse.data.data.tx, 'base64');
+      const bothSignedTx = VersionedTransaction.deserialize(new Uint8Array(txBuf));
+      
+      const signature = await connection.sendTransaction(bothSignedTx, {
+        skipPreflight: true,
+      });
+
+      console.log(`${logPrefix} Transaction sent: ${signature}`);
+      console.log(`${logPrefix} Waiting for confirmation...`);
+      
       const confirmation = await connection.confirmTransaction(signature, 'confirmed');
 
       if (confirmation.value.err) {
@@ -630,7 +661,7 @@ export async function createToken(
       return {
         success: true,
         mintAddress: raydiumMintAddress,
-        metadataUri: metadataLink || ipfsResult.metadataUri,
+        metadataUri: metadataLink,
         txSignature: signature,
         pool,
         quoteMint,
@@ -710,27 +741,69 @@ export async function createToken(
         console.log(`${logPrefix} No PumpPortal API key, using Raydium LaunchLab directly...`);
       }
 
-      // Fallback to Raydium LaunchLab API (client-signed)
-      console.log(`${logPrefix} Using Raydium LaunchLab API for WSOL pair (fallback)...`);
+      // Fallback to Raydium LaunchLab API + SDK (client-signed)
+      console.log(`${logPrefix} Using Raydium LaunchLab API + SDK for WSOL pair (fallback)...`);
       
-      const configId = RAYDIUM_CONFIG_IDS.WSOL;
+      const configIdString = RAYDIUM_CONFIG_IDS.WSOL;
+      const configIdPubkey = new PublicKey(configIdString);
+      const platformIdPubkey = new PublicKey(BONK_PLATFORM_ID);
       
-      // Prepare form data for Raydium LaunchLab
+      // Fetch config from Raydium API
+      console.log(`${logPrefix} Fetching config from Raydium...`);
+      const configRes = await axios.get(`${RAYDIUM_LAUNCHLAB_API}/main/configs`);
+      
+      // Find the WSOL config
+      const configsData = configRes.data?.data?.data || [];
+      const wsolConfig = configsData.find((c: any) => c.key?.pubKey === configIdString);
+      
+      if (!wsolConfig) {
+        const combinedError = pumpPortalError 
+          ? `PumpPortal: ${pumpPortalError} | Raydium: WSOL config not found`
+          : `WSOL config not found in Raydium LaunchLab`;
+        throw new Error(combinedError);
+      }
+      
+      const configs = wsolConfig.key;
+      const mintBInfo = wsolConfig.mintInfoB;
+      
+      console.log(`${logPrefix} Found WSOL config: ${configs.name}`);
+      
+      // Build configInfo for SDK
+      const configInfo: ReturnType<typeof LaunchpadConfig.decode> = {
+        index: configs.index,
+        mintB: new PublicKey(configs.mintB),
+        tradeFeeRate: new BN(configs.tradeFeeRate),
+        epoch: new BN(configs.epoch),
+        curveType: configs.curveType,
+        migrateFee: new BN(configs.migrateFee),
+        maxShareFeeRate: new BN(configs.maxShareFeeRate),
+        minSupplyA: new BN(configs.minSupplyA),
+        maxLockRate: new BN(configs.maxLockRate),
+        minSellRateA: new BN(configs.minSellRateA),
+        minMigrateRateA: new BN(configs.minMigrateRateA),
+        minFundRaisingB: new BN(configs.minFundRaisingB),
+        protocolFeeOwner: new PublicKey(configs.protocolFeeOwner),
+        migrateFeeOwner: new PublicKey(configs.migrateFeeOwner),
+        migrateToAmmWallet: new PublicKey(configs.migrateToAmmWallet),
+        migrateToCpmmWallet: new PublicKey(configs.migrateToCpmmWallet),
+      };
+      
+      // Prepare form data and get random mint from Raydium
       const formData = new FormData();
       formData.append('wallet', creatorKeypair.publicKey.toBase58());
       formData.append('name', metadata.name);
       formData.append('symbol', metadata.symbol);
       formData.append('description', metadata.description || '');
-      formData.append('configId', configId);
-      formData.append('decimals', '6'); // Standard for LaunchLab tokens
-      formData.append('supply', '1000000000000000'); // 1B tokens with 6 decimals (default)
-      formData.append('totalSellA', '793100000000000'); // Default: 79.31% sold on curve
-      formData.append('totalFundRaisingB', '85000000000'); // 85 SOL (default for WSOL)
-      formData.append('totalLockedAmount', '0'); // No vesting by default
-      formData.append('cliffPeriod', '0');
-      formData.append('unlockPeriod', '0');
+      formData.append('configId', configIdString);
+      formData.append('decimals', String(LaunchpadPoolInitParam.decimals));
+      formData.append('supply', String(LaunchpadPoolInitParam.supply));
+      formData.append('totalSellA', String(LaunchpadPoolInitParam.totalSellA));
+      formData.append('totalFundRaisingB', String(LaunchpadPoolInitParam.totalFundRaisingB));
+      formData.append('totalLockedAmount', String(LaunchpadPoolInitParam.totalLockedAmount));
+      formData.append('cliffPeriod', String(LaunchpadPoolInitParam.cliffPeriod));
+      formData.append('unlockPeriod', String(LaunchpadPoolInitParam.unlockPeriod));
       formData.append('platformId', BONK_PLATFORM_ID);
-      formData.append('migrateType', 'amm'); // Migrate to AMM pool after bonding curve fills
+      formData.append('migrateType', 'amm');
 
       // Handle image for Raydium LaunchLab
       let imageBuffer: Buffer | null = null;
@@ -764,102 +837,92 @@ export async function createToken(
       }
 
       console.log(`${logPrefix} Requesting mint from Raydium LaunchLab...`);
-      console.log(`${logPrefix} Config ID: ${configId}`);
-      console.log(`${logPrefix} Platform ID: ${BONK_PLATFORM_ID}`);
 
-      // Step 1: Get random mint address from Raydium
-      const mintResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-random-mint`, {
-        method: 'POST',
+      const mintResponse = await axios.post(`${RAYDIUM_LAUNCHLAB_API}/create/get-random-mint`, formData, {
         headers: {
+          'Content-Type': 'multipart/form-data',
           'ray-token': `token-${Date.now()}`,
         },
-        body: formData,
       });
 
-      if (!mintResponse.ok) {
-        const errorText = await mintResponse.text();
-        console.error(`${logPrefix} Raydium LaunchLab error:`, errorText);
-        // If both failed, report both errors
+      if (!mintResponse.data?.success || !mintResponse.data?.data?.mint) {
         const combinedError = pumpPortalError 
-          ? `PumpPortal: ${pumpPortalError} | Raydium: ${mintResponse.status} - ${errorText}`
-          : `Raydium LaunchLab API error: ${mintResponse.status} - ${errorText}`;
+          ? `PumpPortal: ${pumpPortalError} | Raydium: ${JSON.stringify(mintResponse.data)}`
+          : `Raydium LaunchLab failed: ${JSON.stringify(mintResponse.data)}`;
         throw new Error(combinedError);
       }
 
-      const mintResult = await mintResponse.json();
-      console.log(`${logPrefix} Raydium mint response:`, JSON.stringify(mintResult, null, 2));
-
-      if (!mintResult.success || !mintResult.data?.mint) {
-        throw new Error(`Raydium LaunchLab failed: ${JSON.stringify(mintResult)}`);
-      }
-
-      const raydiumMintAddress = mintResult.data.mint;
-      const metadataLink = mintResult.data.metadataLink;
+      const raydiumMintAddress = mintResponse.data.data.mint;
+      const metadataLink = mintResponse.data.data.metadataLink;
+      const mintA = new PublicKey(raydiumMintAddress);
       
       console.log(`${logPrefix} Raydium mint address: ${raydiumMintAddress}`);
       console.log(`${logPrefix} Metadata link: ${metadataLink}`);
 
-      // Step 2: Try to get the transaction from Raydium
-      const txFormData = new FormData();
-      txFormData.append('wallet', creatorKeypair.publicKey.toBase58());
-      txFormData.append('mint', raydiumMintAddress);
-      txFormData.append('configId', configId);
-      txFormData.append('platformId', BONK_PLATFORM_ID);
-      txFormData.append('migrateType', 'amm');
+      // Initialize Raydium SDK and build transaction
+      console.log(`${logPrefix} Initializing Raydium SDK...`);
       
-      // Add initial buy amount if specified (in lamports for WSOL)
-      if (initialBuySol > 0) {
-        txFormData.append('amountB', String(Math.floor(initialBuySol * 1e9))); // WSOL has 9 decimals
-      }
-
-      const txResponse = await fetch(`${RAYDIUM_LAUNCHLAB_API}/create/get-tx`, {
-        method: 'POST',
-        headers: {
-          'ray-token': `token-${Date.now()}`,
-        },
-        body: txFormData,
+      const raydium = await Raydium.load({
+        connection,
+        owner: creatorKeypair,
+        disableLoadToken: true,
+      });
+      
+      console.log(`${logPrefix} Building launchpad transaction with SDK...`);
+      
+      const { transactions } = await raydium.launchpad.createLaunchpad({
+        programId: LAUNCHPAD_PROGRAM,
+        mintA,
+        decimals: LaunchpadPoolInitParam.decimals,
+        name: metadata.name,
+        symbol: metadata.symbol,
+        uri: metadataLink,
+        configId: configIdPubkey,
+        configInfo,
+        migrateType: 'amm',
+        mintBDecimals: mintBInfo?.decimals || 9, // WSOL has 9 decimals
+        platformId: platformIdPubkey,
+        txVersion: TxVersion.V0,
+        slippage: new BN(100), // 1%
+        buyAmount: initialBuySol > 0 ? new BN(Math.floor(initialBuySol * 1e9)) : new BN(0), // SOL amount in lamports
+        createOnly: initialBuySol <= 0,
+        supply: LaunchpadPoolInitParam.supply,
+        totalSellA: LaunchpadPoolInitParam.totalSellA,
+        totalFundRaisingB: LaunchpadPoolInitParam.totalFundRaisingB,
+        totalLockedAmount: LaunchpadPoolInitParam.totalLockedAmount,
+        cliffPeriod: LaunchpadPoolInitParam.cliffPeriod,
+        unlockPeriod: LaunchpadPoolInitParam.unlockPeriod,
       });
 
-      if (!txResponse.ok) {
-        // If we can't get the transaction, return the mint for frontend handling
-        console.warn(`${logPrefix} Could not get transaction from Raydium, returning mint for frontend handling`);
-        return {
-          success: true,
-          mintAddress: raydiumMintAddress,
-          metadataUri: metadataLink || ipfsResult.metadataUri,
-          txSignature: undefined, // Frontend will need to complete the transaction
-          pool,
-          quoteMint,
-        };
+      if (!transactions || transactions.length === 0) {
+        throw new Error('Raydium SDK did not return any transactions');
       }
 
-      const txResult = await txResponse.json();
-      
-      if (!txResult.success || !txResult.data?.tx) {
-        console.warn(`${logPrefix} Raydium did not return transaction, returning mint for frontend handling`);
-        return {
-          success: true,
-          mintAddress: raydiumMintAddress,
-          metadataUri: metadataLink || ipfsResult.metadataUri,
-          txSignature: undefined,
-          pool,
-          quoteMint,
-        };
-      }
+      const transaction = transactions[0];
+      console.log(`${logPrefix} Transaction built, sending to Raydium for co-signing...`);
 
-      // Deserialize and sign the transaction
-      const txBase64 = txResult.data.tx;
-      const txBuffer = Buffer.from(txBase64, 'base64');
-      const tx = VersionedTransaction.deserialize(new Uint8Array(txBuffer));
-      
-      tx.sign([creatorKeypair]);
-
-      const signature = await connection.sendTransaction(tx, {
-        skipPreflight: false,
-        maxRetries: 3,
+      // Send transaction to Raydium for co-signing
+      const sendTxResponse = await axios.post(`${RAYDIUM_LAUNCHLAB_API}/create/sendTransaction`, {
+        txs: [txToBase64(transaction)],
       });
 
-      console.log(`${logPrefix} Confirming transaction: ${signature}`);
+      if (!sendTxResponse.data?.data?.tx) {
+        throw new Error(`Raydium sendTransaction failed: ${JSON.stringify(sendTxResponse.data)}`);
+      }
+
+      console.log(`${logPrefix} Got co-signed transaction from Raydium`);
+
+      // Deserialize and send the co-signed transaction
+      const txBuf = Buffer.from(sendTxResponse.data.data.tx, 'base64');
+      const bothSignedTx = VersionedTransaction.deserialize(new Uint8Array(txBuf));
+      
+      const signature = await connection.sendTransaction(bothSignedTx, {
+        skipPreflight: true,
+      });
+
+      console.log(`${logPrefix} Transaction sent: ${signature}`);
+      console.log(`${logPrefix} Waiting for confirmation...`);
+      
       const confirmation = await connection.confirmTransaction(signature, 'confirmed');
 
       if (confirmation.value.err) {
