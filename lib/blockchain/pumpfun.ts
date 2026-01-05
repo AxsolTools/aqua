@@ -98,7 +98,8 @@ export interface TokenMetadata {
 export interface CreateTokenParams {
   metadata: TokenMetadata;
   creatorKeypair: Keypair;
-  initialBuySol?: number;
+  initialBuySol?: number; // Initial buy in SOL (for PUMP pool or BONK/WSOL)
+  initialBuyQuote?: number; // Initial buy in quote currency (for BONK/USD1 - already converted)
   slippageBps?: number;
   priorityFee?: number;
   mintKeypair?: Keypair; // Optional pre-generated mint keypair from frontend
@@ -420,7 +421,8 @@ export async function createToken(
     const { 
       metadata, 
       creatorKeypair, 
-      initialBuySol = 0, 
+      initialBuySol = 0,
+      initialBuyQuote, // USD1 amount (already converted from SOL via swap)
       slippageBps = 500, 
       priorityFee = 0.001, 
       mintKeypair: providedMintKeypair,
@@ -612,9 +614,13 @@ export async function createToken(
         mintBDecimals: mintBInfo?.decimals || 6, // USD1 has 6 decimals
         platformId: platformIdPubkey,
         txVersion: TxVersion.V0,
-        slippage: new BN(100), // 1%
-        buyAmount: new BN(0), // Create only - initial buy will be done separately if needed
-        createOnly: true, // Create token only, no initial buy in this transaction
+        slippage: new BN(slippageBps), // User's slippage in bps
+        // Use initialBuyQuote (USD1 amount from swap) if provided, otherwise 0
+        // USD1 has 6 decimals, so multiply by 1e6
+        buyAmount: initialBuyQuote && initialBuyQuote > 0 
+          ? new BN(Math.floor(initialBuyQuote * 1e6)) 
+          : new BN(0),
+        createOnly: !initialBuyQuote || initialBuyQuote <= 0, // Only create if no initial buy
         supply: LaunchpadPoolInitParam.supply,
         totalSellA: LaunchpadPoolInitParam.totalSellA,
         totalFundRaisingB: LaunchpadPoolInitParam.totalFundRaisingB,
@@ -622,6 +628,8 @@ export async function createToken(
         cliffPeriod: LaunchpadPoolInitParam.cliffPeriod,
         unlockPeriod: LaunchpadPoolInitParam.unlockPeriod,
       });
+      
+      console.log(`${logPrefix} Initial buy: ${initialBuyQuote ? `${initialBuyQuote.toFixed(2)} USD1 (${Math.floor(initialBuyQuote * 1e6)} raw)` : 'none (create only)'}`);
 
       if (!transactions || transactions.length === 0) {
         throw new Error('Raydium SDK did not return any transactions');

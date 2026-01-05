@@ -380,58 +380,58 @@ export async function POST(request: NextRequest) {
     
     // Build batch array of trade arguments (per official PumpPortal docs)
     const bundledTxArgs: Record<string, unknown>[] = []
-    
+
     for (const [address, keypair] of walletKeypairs) {
-      // For sells, use actual wallet balance. For buys, use the requested amount.
-      let actualAmount = amountPerWallet
-      
-      if (action === "sell") {
-        const walletBalance = walletTokenBalances.get(address) || 0
-        if (walletBalance <= 0) {
-          console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
-          walletErrors.push({
-            walletAddress: address,
-            success: false,
-            error: "No tokens to sell",
-          })
-          continue
+        // For sells, use actual wallet balance. For buys, use the requested amount.
+        let actualAmount = amountPerWallet
+        
+        if (action === "sell") {
+          const walletBalance = walletTokenBalances.get(address) || 0
+          if (walletBalance <= 0) {
+            console.log(`[BATCH-TRADE] Skipping ${address.slice(0, 8)} - no tokens to sell`)
+            walletErrors.push({
+              walletAddress: address,
+              success: false,
+              error: "No tokens to sell",
+            })
+            continue
+          }
+          // Use the wallet's actual balance for sells
+          actualAmount = walletBalance
+          console.log(`[BATCH-TRADE] Will sell ${actualAmount.toFixed(2)} tokens from ${address.slice(0, 8)}`)
         }
-        // Use the wallet's actual balance for sells
-        actualAmount = walletBalance
-        console.log(`[BATCH-TRADE] Will sell ${actualAmount.toFixed(2)} tokens from ${address.slice(0, 8)}`)
-      }
-      
-      walletActualAmounts.set(address, actualAmount)
+        
+        walletActualAmounts.set(address, actualAmount)
       validWalletAddresses.push(address)
 
       // Build trade request for PumpPortal batch array
       const tradeArg: Record<string, unknown> = {
-        publicKey: address,
-        action,
-        mint: tokenMint,
+          publicKey: address,
+          action,
+          mint: tokenMint,
         denominatedInSol: action === "buy" ? "true" : "false", // For buys: SOL amount, for sells: token amount
-        amount: actualAmount,
-        slippage: slippageBps / 100, // Convert to percentage
+          amount: actualAmount,
+          slippage: slippageBps / 100, // Convert to percentage
         priorityFee: bundledTxArgs.length === 0 ? DEFAULT_PRIORITY_FEE : 0, // Only first tx pays Jito tip
-        pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
-      }
-      
+          pool: isBonkPool ? POOL_TYPES.BONK : POOL_TYPES.PUMP,
+        }
+        
       // Add quoteMint for Bonk pools (PumpPortal handles USD1 conversion internally)
-      if (isBonkPool && quoteMint) {
+        if (isBonkPool && quoteMint) {
         tradeArg.quoteMint = quoteMint
-      }
-      
-      // For sells, include tokenAccount (use the ATA we already found during balance fetch)
-      if (action === "sell") {
-        const cachedAta = walletTokenAccount.get(address)
-        if (cachedAta) {
+        }
+        
+        // For sells, include tokenAccount (use the ATA we already found during balance fetch)
+        if (action === "sell") {
+          const cachedAta = walletTokenAccount.get(address)
+          if (cachedAta) {
           tradeArg.tokenAccount = cachedAta
-        } else {
+          } else {
           // Fallback: derive ATA
-          const tokenMintPubkey = new PublicKey(tokenMint)
-          const walletPubkey = new PublicKey(address)
-          const programId = walletTokenProgram.get(address) || TOKEN_PROGRAM_ID
-          const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, programId)
+            const tokenMintPubkey = new PublicKey(tokenMint)
+            const walletPubkey = new PublicKey(address)
+            const programId = walletTokenProgram.get(address) || TOKEN_PROGRAM_ID
+            const ata = await getAssociatedTokenAddress(tokenMintPubkey, walletPubkey, false, programId)
           tradeArg.tokenAccount = ata.toBase58()
         }
       }
@@ -497,7 +497,7 @@ export async function POST(request: NextRequest) {
         const tx = VersionedTransaction.deserialize(new Uint8Array(bs58.decode(txArray[i])))
         tx.sign([keypair])
         transactions.push(tx)
-      }
+          }
       
       console.log(`[BATCH-TRADE] Signed ${transactions.length} transactions (batch method)`)
       
@@ -518,32 +518,32 @@ export async function POST(request: NextRequest) {
         
         try {
           console.log(`[BATCH-TRADE] [Fallback] Requesting tx for ${address.slice(0, 8)}...`)
-          
-          const response = await fetch(PUMPPORTAL_LOCAL_TRADE, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(tradeArg), // Individual request
-          })
 
-          if (!response.ok) {
-            const errorText = await response.text()
-            throw new Error(`PumpPortal error: ${errorText}`)
-          }
+        const response = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tradeArg), // Individual request
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`PumpPortal error: ${errorText}`)
+        }
 
           // Individual request returns raw bytes, batch returns base58 array
-          const txBytes = new Uint8Array(await response.arrayBuffer())
-          const tx = VersionedTransaction.deserialize(txBytes)
-          tx.sign([keypair])
-          transactions.push(tx)
+        const txBytes = new Uint8Array(await response.arrayBuffer())
+        const tx = VersionedTransaction.deserialize(txBytes)
+        tx.sign([keypair])
+        transactions.push(tx)
           
         } catch (individualError) {
           console.error(`[BATCH-TRADE] [Fallback] Failed for ${address.slice(0, 8)}:`, individualError)
-          walletErrors.push({
-            walletAddress: address,
-            success: false,
+        walletErrors.push({
+          walletAddress: address,
+          success: false,
             error: individualError instanceof Error ? individualError.message : "Failed to build transaction",
-          })
-        }
+        })
+      }
       }
       
       console.log(`[BATCH-TRADE] [Fallback] Built ${transactions.length} transactions`)
@@ -591,12 +591,12 @@ export async function POST(request: NextRequest) {
         const address = txWalletAddresses[i]
         if (address) {
           const signature = bundleResult.signatures[i]
-          results.push({
-            walletAddress: address,
-            success: bundleResult.success,
-            txSignature: signature,
-            error: bundleResult.success ? undefined : bundleResult.error,
-          })
+        results.push({
+          walletAddress: address,
+          success: bundleResult.success,
+          txSignature: signature,
+          error: bundleResult.success ? undefined : bundleResult.error,
+        })
         }
       }
     } else {

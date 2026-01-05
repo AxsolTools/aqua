@@ -251,12 +251,16 @@ export async function POST(request: NextRequest) {
       showName: true,
     };
 
-    // Create token via PumpPortal (supports pump and bonk pools)
-    // For BONK USD1 pairs, actualInitialBuy is in USD1 terms (after swap)
+    // Create token via PumpPortal or Raydium LaunchLab
+    // For BONK USD1 pairs, pass initialBuyQuote (USD1 amount after swap)
+    // For all other pools, pass initialBuySol (SOL amount)
+    const isUsd1Pair = poolType === POOL_TYPES.BONK && quoteType === QUOTE_MINTS.USD1;
+    
     const createResult = await createToken(connection, {
       metadata,
       creatorKeypair,
-      initialBuySol: actualInitialBuy, // USD1 amount for USD1 pairs, SOL amount otherwise
+      initialBuySol: isUsd1Pair ? 0 : initialBuySol, // SOL amount for non-USD1 pairs
+      initialBuyQuote: isUsd1Pair ? actualInitialBuy : undefined, // USD1 amount (from swap) for USD1 pairs
       slippageBps,
       priorityFee: 0.001,
       mintKeypair,
