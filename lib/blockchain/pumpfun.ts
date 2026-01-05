@@ -596,6 +596,9 @@ export async function createToken(
       
       console.log(`${logPrefix} Building launchpad transaction with SDK...`);
       
+      // For USD1 pairs, create the token first, then buy separately
+      // The initialBuySol was already swapped to USD1, but we need to handle the buy in a separate transaction
+      // to avoid complexity with the bundled create+buy transaction
       const { transactions } = await raydium.launchpad.createLaunchpad({
         programId: LAUNCHPAD_PROGRAM,
         mintA,
@@ -610,8 +613,8 @@ export async function createToken(
         platformId: platformIdPubkey,
         txVersion: TxVersion.V0,
         slippage: new BN(100), // 1%
-        buyAmount: initialBuySol > 0 ? new BN(Math.floor(initialBuySol * 1e6)) : new BN(0), // USD1 amount
-        createOnly: initialBuySol <= 0, // true = create only, false = create and buy
+        buyAmount: new BN(0), // Create only - initial buy will be done separately if needed
+        createOnly: true, // Create token only, no initial buy in this transaction
         supply: LaunchpadPoolInitParam.supply,
         totalSellA: LaunchpadPoolInitParam.totalSellA,
         totalFundRaisingB: LaunchpadPoolInitParam.totalFundRaisingB,
