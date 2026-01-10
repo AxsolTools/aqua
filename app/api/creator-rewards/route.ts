@@ -546,7 +546,9 @@ export async function POST(request: NextRequest) {
         const meteoraTradeBody = {
           publicKey: walletAddress,
           action: "collectCreatorFee",
+          mint: tokenMint,
           priorityFee: 0.0001,
+          pool: "meteora-dbc",
         }
         
         const meteoraResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
@@ -600,13 +602,15 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Call PumpPortal API for collectCreatorFee
+    // Call PumpPortal API for collectCreatorFee with pool parameter
     console.log(`[CREATOR-REWARDS] Requesting collectCreatorFee transaction for ${poolType} pool...`)
 
     const tradeBody = {
       publicKey: walletAddress,
       action: "collectCreatorFee",
+      mint: tokenMint,
       priorityFee: 0.0001,
+      pool: poolType, // 'pump' or 'bonk'
     }
 
     const pumpResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
@@ -858,7 +862,9 @@ async function getCreatorRewards(
           body: JSON.stringify({
             publicKey: creatorWallet,
             action: "collectCreatorFee",
+            mint: tokenMint,
             priorityFee: 0.00001,
+            pool: poolType,
           }),
           signal: AbortSignal.timeout(10000)
         })
