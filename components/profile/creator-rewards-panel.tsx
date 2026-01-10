@@ -415,7 +415,7 @@ export function CreatorRewardsPanel() {
                   
                   <Button
                     size="sm"
-                    onClick={() => handleClaim(token.tokenMint, token.balance)}
+                    onClick={() => handleClaim(token.tokenMint, token.balance, token.poolType)}
                     disabled={claimingToken === token.tokenMint || !token.canClaim}
                     className="bg-amber-500 text-zinc-900 hover:bg-amber-400 disabled:opacity-50"
                   >
