@@ -40,7 +40,7 @@ const BONK_PROGRAM_ID = RAYDIUM_LAUNCHLAB_PROGRAM_ID
 const PUMPPORTAL_LOCAL_TRADE = "https://pumpportal.fun/api/trade-local"
 
 // Pool types
-type PoolType = 'pump' | 'bonk' | 'jupiter'
+type PoolType = 'pump' | 'bonk' | 'jupiter' | 'meteora'
 
 type TokenRow = {
   id?: string
@@ -116,6 +116,8 @@ export async function GET(request: NextRequest) {
       poolType = 'bonk'
     } else if (!poolTypeOverride && tokenData?.pool_type === 'jupiter') {
       poolType = 'jupiter'
+    } else if (!poolTypeOverride && tokenData?.pool_type === 'meteora') {
+      poolType = 'meteora'
     }
     
     let dbcPoolAddress = dbcPoolOverride || tokenData?.dbc_pool_address
@@ -131,8 +133,28 @@ export async function GET(request: NextRequest) {
 
     console.log(`[CREATOR-REWARDS-GET] ===== FETCHING REWARDS FOR POOL TYPE: ${poolType.toUpperCase()} =====`)
 
+    // Meteora tokens use DBC pool fees (per-token)
+    if (poolType === 'meteora') {
+      console.log(`[CREATOR-REWARDS-GET] [METEORA] Processing Meteora DBC token`)
+      console.log(`[CREATOR-REWARDS-GET] [METEORA] DBC pool address: ${dbcPoolAddress || 'MISSING'}`)
+      
+      if (dbcPoolAddress) {
+        console.log(`[CREATOR-REWARDS-GET] [METEORA] Calling getMeteoraCreatorRewards with pool: ${dbcPoolAddress.slice(0, 12)}...`)
+        rewards = await getMeteoraCreatorRewards(dbcPoolAddress)
+        console.log(`[CREATOR-REWARDS-GET] [METEORA] Result:`, {
+          balance: rewards.balance,
+          vaultAddress: rewards.vaultAddress?.slice(0, 12) + '...' || 'none',
+          hasRewards: rewards.hasRewards,
+        })
+        platformName = 'Propel Curve'
+      } else {
+        console.warn(`[CREATOR-REWARDS-GET] [METEORA] ❌ No DBC pool address available`)
+        rewards = { balance: 0, vaultAddress: '', hasRewards: false }
+        platformName = 'Propel Curve'
+      }
+    }
     // Jupiter tokens use DBC pool fees (per-token) and must NOT fall back to Pump.fun
-    if (poolType === 'jupiter') {
+    else if (poolType === 'jupiter') {
       console.log(`[CREATOR-REWARDS-GET] [JUPITER] Processing Jupiter DBC token`)
       console.log(`[CREATOR-REWARDS-GET] [JUPITER] DBC pool address: ${dbcPoolAddress || 'MISSING'}`)
       
@@ -412,6 +434,8 @@ export async function POST(request: NextRequest) {
       poolType = 'bonk'
     } else if (!poolTypeBody && safeTokenData.pool_type === 'jupiter') {
       poolType = 'jupiter'
+    } else if (!poolTypeBody && safeTokenData.pool_type === 'meteora') {
+      poolType = 'meteora'
     }
     
     console.log(`[CREATOR-REWARDS-POST] ===== POOL TYPE DETERMINATION =====`)
@@ -430,9 +454,93 @@ export async function POST(request: NextRequest) {
     const keypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58))
 
     // ============================================================================
+    // METEORA DBC POOL CLAIM
+    // ============================================================================
+    if (poolType === 'meteora') {
+      console.log(`[CREATOR-REWARDS-POST] ===== METEORA CLAIM FLOW =====`)
+      const dbcPoolAddress = dbcPoolBody || safeTokenData.dbc_pool_address
+      
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] DBC pool address:`, {
+        fromBody: dbcPoolBody?.slice(0, 12) + '...' || 'none',
+        fromDB: safeTokenData.dbc_pool_address?.slice(0, 12) + '...' || 'none',
+        final: dbcPoolAddress?.slice(0, 12) + '...' || 'MISSING',
+      })
+      
+      if (!dbcPoolAddress) {
+        console.log(`[CREATOR-REWARDS-POST] [METEORA] ❌ No DBC pool address available`)
+        return NextResponse.json({
+          success: false,
+          error: "Meteora DBC pool address not found for this token"
+        })
+      }
+
+      // Get current rewards balance
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] Fetching rewards balance...`)
+      const rewardsData = await getMeteoraCreatorRewards(dbcPoolAddress)
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] Rewards data:`, rewardsData)
+
+      if (rewardsData.balance <= 0) {
+        console.log(`[CREATOR-REWARDS-POST] [METEORA] ❌ No fees to claim`)
+        return NextResponse.json({
+          success: false,
+          error: "No Meteora fees available to claim"
+        })
+      }
+
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] Executing claim for ${rewardsData.balance} SOL...`)
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] Using wallet: ${keypair.publicKey.toBase58().slice(0, 12)}...`)
+
+      // Use Meteora claim function
+      const { claimMeteoraFees } = await import('@/lib/blockchain/meteora-dbc-complete')
+      const claimResult = await claimMeteoraFees(connection, keypair, dbcPoolAddress)
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] Claim result:`, claimResult)
+
+      if (!claimResult.success) {
+        console.log(`[CREATOR-REWARDS-POST] [METEORA] ❌ Claim failed:`, claimResult.error)
+        return NextResponse.json({
+          success: false,
+          error: claimResult.error || "Failed to claim Meteora fees",
+          data: {
+            balance: rewardsData.balance,
+            dbcPoolAddress,
+          }
+        })
+      }
+
+      console.log(`[CREATOR-REWARDS-POST] [METEORA] ✅ Claim successful! TX: ${claimResult.txSignature}`)
+
+      // Record the claim in database
+      try {
+        if (safeTokenData.id) {
+          await adminClient.from("tide_harvest_claims").insert({
+            token_id: safeTokenData.id,
+            wallet_address: walletAddress,
+            amount_sol: rewardsData.balance,
+            tx_signature: claimResult.txSignature,
+            claimed_at: new Date().toISOString(),
+          } as any)
+          console.log(`[CREATOR-REWARDS-POST] [METEORA] Recorded claim in database`)
+        }
+      } catch (dbError) {
+        console.warn("[CREATOR-REWARDS-POST] [METEORA] Failed to record claim:", dbError)
+      }
+
+      console.log(`[CREATOR-REWARDS-POST] ========== CLAIM REQUEST END (METEORA SUCCESS) ==========\n`)
+      return NextResponse.json({
+        success: true,
+        data: {
+          signature: claimResult.txSignature,
+          amountClaimed: rewardsData.balance,
+          explorerUrl: `https://solscan.io/tx/${claimResult.txSignature}`,
+          platformName: 'Propel Curve',
+        }
+      })
+    }
+    
+    // ============================================================================
     // JUPITER DBC POOL CLAIM
     // ============================================================================
-    if (poolType === 'jupiter') {
+    else if (poolType === 'jupiter') {
       console.log(`[CREATOR-REWARDS-POST] ===== JUPITER CLAIM FLOW =====`)
       const dbcPoolAddress = dbcPoolBody || safeTokenData.dbc_pool_address
       
@@ -1189,6 +1297,53 @@ async function extractTransferAmount(tx: VersionedTransaction, destination: Publ
   } catch (error) {
     console.error("[CREATOR-REWARDS] Error extracting transfer amount:", error)
     return 0
+  }
+}
+
+/**
+ * Fetch creator rewards from Meteora DBC pool (per-token)
+ * 
+ * Meteora tokens use DBC pool structure similar to Jupiter
+ */
+async function getMeteoraCreatorRewards(
+  dbcPoolAddress: string
+): Promise<{
+  balance: number
+  vaultAddress: string
+  hasRewards: boolean
+}> {
+  const debugPrefix = `[GET-METEORA-REWARDS]`
+  console.log(`${debugPrefix} ========== FUNCTION START ==========`)
+  console.log(`${debugPrefix} DBC Pool Address: ${dbcPoolAddress}`)
+  
+  try {
+    // Import Meteora helpers
+    const { getMeteoraPoolFees } = await import('@/lib/blockchain/meteora-dbc')
+    
+    console.log(`${debugPrefix} Calling getMeteoraPoolFees...`)
+    const feeInfo = await getMeteoraPoolFees(connection, dbcPoolAddress)
+    
+    console.log(`${debugPrefix} Raw fee info:`, {
+      poolAddress: dbcPoolAddress,
+      totalFees: feeInfo.totalFees,
+      unclaimedFees: feeInfo.unclaimedFees,
+    })
+    
+    const unclaimedSol = feeInfo.unclaimedFees / LAMPORTS_PER_SOL
+    
+    console.log(`${debugPrefix} ========== FUNCTION RESULT ==========`)
+    console.log(`${debugPrefix} Unclaimed fees: ${unclaimedSol.toFixed(9)} SOL`)
+    console.log(`${debugPrefix} Has rewards: ${unclaimedSol > 0}`)
+    console.log(`${debugPrefix} ========== FUNCTION END ==========`)
+    
+    return {
+      balance: unclaimedSol,
+      vaultAddress: dbcPoolAddress,
+      hasRewards: unclaimedSol > 0,
+    }
+  } catch (error) {
+    console.error(`${debugPrefix} ❌ EXCEPTION:`, error)
+    return { balance: 0, vaultAddress: dbcPoolAddress, hasRewards: false }
   }
 }
 
