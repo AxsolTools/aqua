@@ -98,53 +98,170 @@ export default function PropelCurvePage() {
           </div>
         </motion.div>
 
-        {/* How It Works Section */}
+        {/* Complete Flow Explanation */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
           className="mb-12"
         >
-          <h2 className="text-2xl font-bold text-white mb-6">How It Works</h2>
+          <h2 className="text-2xl font-bold text-white mb-6">The Complete Flow</h2>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Step 1 */}
-            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
-                  1
-                </div>
-                <h3 className="text-lg font-semibold text-white">Token Identity</h3>
+          {/* Step 1: Basics - EXPANDED */}
+          <div className="mb-6 p-6 rounded-xl bg-white/5 border border-cyan-500/20">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl font-bold text-cyan-400">
+                1
               </div>
-              <p className="text-sm text-white/60 leading-relaxed">
-                Fill in your token details: name, symbol, description, and image. Add social links to build trust.
-              </p>
+              <div>
+                <h3 className="text-xl font-semibold text-white">Token Identity</h3>
+                <p className="text-sm text-cyan-400">Basic information about your token</p>
+              </div>
             </div>
-
-            {/* Step 2 */}
-            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
-                  2
-                </div>
-                <h3 className="text-lg font-semibold text-white">Design Your Curve</h3>
+            
+            <div className="pl-15 space-y-3">
+              <div className="p-4 rounded-lg bg-black/20 border border-white/10">
+                <h4 className="text-sm font-semibold text-white mb-2">What You Fill Out:</h4>
+                <ul className="space-y-1 text-sm text-white/70">
+                  <li>• <span className="text-white">Name:</span> Your token's full name (e.g., "My Cool Token")</li>
+                  <li>• <span className="text-white">Symbol:</span> Ticker symbol (e.g., "COOL")</li>
+                  <li>• <span className="text-white">Description:</span> What's your token about?</li>
+                  <li>• <span className="text-white">Image:</span> Upload your token logo</li>
+                  <li>• <span className="text-white">Social Links:</span> Twitter, Telegram, Website (optional but builds trust)</li>
+                  <li>• <span className="text-white">Total Supply:</span> How many tokens (default: 1 billion)</li>
+                  <li>• <span className="text-white">Initial Buy:</span> How much SOL to buy at launch (creates initial liquidity)</li>
+                </ul>
               </div>
-              <p className="text-sm text-white/60 leading-relaxed">
-                Choose from 4 battle-tested presets or build your own custom curve. Control your token's price action.
-              </p>
+              
+              <div className="p-4 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                <h4 className="text-sm font-semibold text-cyan-400 mb-2">Behind The Scenes:</h4>
+                <ul className="space-y-1 text-sm text-white/60">
+                  <li>• Fetches your wallet balance from Solana blockchain</li>
+                  <li>• Calculates total cost: 0.1 SOL (creation fee) + initial buy + gas (~0.001 SOL)</li>
+                  <li>• Validates you have enough SOL before letting you continue</li>
+                  <li>• Shows you exactly how much you'll spend</li>
+                  <li>• Everything stored in browser memory (not saved to database yet)</li>
+                </ul>
+              </div>
             </div>
+          </div>
 
-            {/* Step 3 */}
-            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
-                  3
-                </div>
-                <h3 className="text-lg font-semibold text-white">Launch & Earn</h3>
+          {/* Step 2: Curve Design - EXPANDED */}
+          <div className="mb-6 p-6 rounded-xl bg-white/5 border border-cyan-500/20">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl font-bold text-cyan-400">
+                2
               </div>
-              <p className="text-sm text-white/60 leading-relaxed">
-                Review and deploy. Your token goes live instantly. Earn fees from every trade automatically.
-              </p>
+              <div>
+                <h3 className="text-xl font-semibold text-white">Design Your Bonding Curve</h3>
+                <p className="text-sm text-cyan-400">This is where the magic happens - control your price action</p>
+              </div>
+            </div>
+            
+            <div className="pl-15 space-y-3">
+              <div className="p-4 rounded-lg bg-black/20 border border-white/10">
+                <h4 className="text-sm font-semibold text-white mb-2">Choose Your Strategy:</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                  <div className="p-3 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                    <p className="text-sm font-medium text-white mb-1">Smooth Operator</p>
+                    <p className="text-xs text-white/60">Even liquidity at all prices = steady, predictable growth</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-orange-500/5 border border-orange-500/20">
+                    <p className="text-sm font-medium text-white mb-1">Rocket Fuel</p>
+                    <p className="text-xs text-white/60">Low liquidity in middle = explosive price jumps</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-blue-500/5 border border-blue-500/20">
+                    <p className="text-sm font-medium text-white mb-1">Whale Trap</p>
+                    <p className="text-xs text-white/60">High liquidity at start, low at end = easy buy, hard sell</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/20">
+                    <p className="text-sm font-medium text-white mb-1">Diamond Hands</p>
+                    <p className="text-xs text-white/60">Low at start, high at top = rewards holders</p>
+                  </div>
+                </div>
+                <p className="text-xs text-white/50 italic">Or build your own custom curve with up to 20 price ranges</p>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-black/20 border border-white/10">
+                <h4 className="text-sm font-semibold text-white mb-2">Configure Settings:</h4>
+                <ul className="space-y-1 text-sm text-white/70">
+                  <li>• <span className="text-white">Quote Token:</span> SOL (traditional) or USDC (stable pricing)</li>
+                  <li>• <span className="text-white">Migration Threshold:</span> How much to raise before graduating (default: 85 SOL)</li>
+                  <li>• <span className="text-white">Trading Fee:</span> Fee per trade (default: 1%)</li>
+                  <li>• <span className="text-white">Creator LP:</span> Your % of liquidity pool after migration (default: 90%)</li>
+                  <li>• <span className="text-white">Locked LP:</span> % that gets locked/vested (default: 0%)</li>
+                </ul>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                <h4 className="text-sm font-semibold text-cyan-400 mb-2">What You See:</h4>
+                <ul className="space-y-1 text-sm text-white/60">
+                  <li>• Live chart preview using Recharts (your existing chart library)</li>
+                  <li>• Visual representation of liquidity distribution</li>
+                  <li>• Each price range shown with its liquidity amount</li>
+                  <li>• Chart updates instantly when you change settings</li>
+                  <li>• Can add/remove ranges if building custom curve</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          {/* Step 3: Launch - EXPANDED */}
+          <div className="p-6 rounded-xl bg-white/5 border border-cyan-500/20">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-lg bg-cyan-500/20 flex items-center justify-center text-xl font-bold text-cyan-400">
+                3
+              </div>
+              <div>
+                <h3 className="text-xl font-semibold text-white">Review & Deploy</h3>
+                <p className="text-sm text-cyan-400">Final check before going live</p>
+              </div>
+            </div>
+            
+            <div className="pl-15 space-y-3">
+              <div className="p-4 rounded-lg bg-black/20 border border-white/10">
+                <h4 className="text-sm font-semibold text-white mb-2">Final Review Shows:</h4>
+                <ul className="space-y-1 text-sm text-white/70">
+                  <li>• All your token details summarized</li>
+                  <li>• Your chosen curve preset and settings</li>
+                  <li>• Pre-generated mint address (can regenerate if you want different address)</li>
+                  <li>• Total cost breakdown (creation fee + initial buy + gas)</li>
+                  <li>• Estimated fees you'll earn from trading</li>
+                </ul>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-cyan-500/5 border border-cyan-500/20">
+                <h4 className="text-sm font-semibold text-cyan-400 mb-2">When You Click "Launch Token":</h4>
+                <div className="space-y-2 text-sm text-white/60">
+                  <p><span className="text-cyan-400">→</span> Frontend sends all data to /api/meteora/create</p>
+                  <p><span className="text-cyan-400">→</span> Backend authenticates your session</p>
+                  <p><span className="text-cyan-400">→</span> Decrypts your wallet private key from encrypted database</p>
+                  <p><span className="text-cyan-400">→</span> Validates your SOL balance on-chain</p>
+                  <p><span className="text-cyan-400">→</span> Uploads image to Arweave (permanent decentralized storage)</p>
+                  <p><span className="text-cyan-400">→</span> Uploads metadata JSON to Arweave</p>
+                  <p><span className="text-cyan-400">→</span> Creates SPL token mint account on Solana</p>
+                  <p><span className="text-cyan-400">→</span> Creates Meteora DBC pool with your custom curve</p>
+                  <p><span className="text-cyan-400">→</span> Performs initial buy via Jupiter aggregator (if you set one)</p>
+                  <p><span className="text-cyan-400">→</span> Collects platform fee (0.1 SOL + 2% of initial buy)</p>
+                  <p><span className="text-cyan-400">→</span> Saves token to database (tokens table, pool_type: 'meteora')</p>
+                  <p><span className="text-cyan-400">→</span> Saves AQUA parameters (pour rate, evaporation, auto-claim)</p>
+                  <p><span className="text-cyan-400">→</span> Records fee payment and referral splits</p>
+                  <p><span className="text-white font-medium">✓</span> <span className="text-green-400">Token is LIVE! Redirects you to token page</span></p>
+                </div>
+              </div>
+              
+              <div className="p-4 rounded-lg bg-green-500/5 border border-green-500/20">
+                <h4 className="text-sm font-semibold text-green-400 mb-2">After Launch:</h4>
+                <ul className="space-y-1 text-sm text-white/60">
+                  <li>• Token immediately tradeable on bonding curve</li>
+                  <li>• Every buy/sell generates trading fees</li>
+                  <li>• You earn your configured % of all fees (default: 80%)</li>
+                  <li>• Fees accumulate in the pool</li>
+                  <li>• Visit your profile anytime to claim fees (one-click withdrawal)</li>
+                  <li>• When threshold hit, Meteora migrates to DAMM (automated)</li>
+                  <li>• After migration, you get LP tokens to claim ongoing fees</li>
+                </ul>
+              </div>
             </div>
           </div>
         </motion.div>
