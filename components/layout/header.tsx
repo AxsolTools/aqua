@@ -35,11 +35,20 @@ const EarnIcon = ({ className }: { className?: string }) => (
   </svg>
 )
 
+// Custom Propel Curve icon (wave with curve)
+const PropelCurveIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 12 Q 6 6, 10 12 T 18 12" />
+    <path d="M4 16 Q 8 10, 12 16 T 20 16" strokeWidth="1.5" opacity="0.6" />
+  </svg>
+)
+
 const navItems = [
   { href: "/", label: "Discover" },
   { href: "/aggregator", label: "Token Aggregator", icon: BarChart3 },
   { href: "/launch", label: "Pump", color: "pump" },
   { href: "/launch-jupiter", label: "JUP", icon: JupiterIcon, color: "orange" },
+  { href: "/launch-propel", label: "Propel Curve", icon: PropelCurveIcon, color: "cyan" },
   { href: "/launch22", label: "TOKEN22", color: "aqua" },
   // { href: "/dice", label: "Dice", icon: Dice6 },
   { href: "/launch-bonk", label: "USD1", icon: DollarSign, color: "amber" },
@@ -77,6 +86,8 @@ export function Header() {
                     ? "!text-amber-400 hover:!text-amber-300" 
                     : item.color === "aqua"
                       ? "!text-[#00D9FF] hover:!text-[#00F0FF]"
+                      : item.color === "cyan"
+                        ? "!text-cyan-400 hover:!text-cyan-300"
                       : item.color === "orange"
                         ? "!text-orange-400 hover:!text-orange-300"
                         : item.color === "pump"
@@ -110,6 +121,18 @@ export function Header() {
                   <ChevronDown className="w-3 h-3" />
                 </button>
                 <div className="absolute top-full right-0 mt-1 w-56 py-1 rounded-lg bg-zinc-900 border border-zinc-700 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                  <Link
+                    href="/launch-propel"
+                    className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors border-b border-zinc-800"
+                  >
+                    <div className="p-1.5 rounded-md bg-gradient-to-br from-cyan-500/20 to-teal-500/20">
+                      <PropelCurveIcon className="w-4 h-4 text-cyan-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-cyan-400">Propel Curve</p>
+                      <p className="text-xs text-zinc-500">Custom bonding curves</p>
+                    </div>
+                  </Link>
                   <Link
                     href="/launch-jupiter"
                     className="flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800 transition-colors border-b border-zinc-800"
