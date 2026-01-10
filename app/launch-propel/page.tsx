@@ -60,10 +60,8 @@ export default function PropelCurvePage() {
           </div>
 
           {/* Title */}
-          <h1 className="text-5xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-cyan-400 via-teal-400 to-cyan-500 bg-clip-text text-transparent">
-              Propel Curve
-            </span>
+          <h1 className="text-5xl font-bold mb-4 text-white">
+            Propel Curve
           </h1>
           
           <p className="text-xl text-white/80 mb-2 max-w-3xl">
@@ -165,7 +163,11 @@ export default function PropelCurvePage() {
             {/* Smooth Operator */}
             <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20 hover:border-cyan-500/40 transition-all">
               <div className="flex items-center gap-3 mb-3">
-                <div className="text-3xl">🌊</div>
+                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">Smooth Operator</h3>
                   <p className="text-xs text-cyan-400">Steady growth with minimal volatility</p>
@@ -201,7 +203,11 @@ export default function PropelCurvePage() {
             {/* Rocket Fuel */}
             <div className="p-5 rounded-xl bg-white/5 border border-orange-500/20 hover:border-orange-500/40 transition-all">
               <div className="flex items-center gap-3 mb-3">
-                <div className="text-3xl">🚀</div>
+                <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-orange-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  </svg>
+                </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">Rocket Fuel</h3>
                   <p className="text-xs text-orange-400">Low middle liquidity = explosive price action</p>
@@ -241,7 +247,11 @@ export default function PropelCurvePage() {
             {/* Whale Trap */}
             <div className="p-5 rounded-xl bg-white/5 border border-blue-500/20 hover:border-blue-500/40 transition-all">
               <div className="flex items-center gap-3 mb-3">
-                <div className="text-3xl">🐋</div>
+                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">Whale Trap</h3>
                   <p className="text-xs text-blue-400">Easy to buy, harder to sell</p>
@@ -279,7 +289,11 @@ export default function PropelCurvePage() {
             {/* Diamond Hands */}
             <div className="p-5 rounded-xl bg-white/5 border border-purple-500/20 hover:border-purple-500/40 transition-all">
               <div className="flex items-center gap-3 mb-3">
-                <div className="text-3xl">💎</div>
+                <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                </div>
                 <div>
                   <h3 className="text-lg font-semibold text-white">Diamond Hands</h3>
                   <p className="text-xs text-purple-400">Rewards long-term holders</p>
@@ -370,7 +384,7 @@ export default function PropelCurvePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Example 1: Rocket Fuel */}
             <div className="p-6 rounded-xl bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/30">
-              <h3 className="text-lg font-semibold text-white mb-4">🚀 Rocket Fuel Example</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">Rocket Fuel Example</h3>
               
               <div className="space-y-3 mb-4">
                 <div className="p-3 rounded-lg bg-black/20 border border-white/10">
@@ -405,13 +419,13 @@ export default function PropelCurvePage() {
               </div>
 
               <p className="text-sm text-white/70">
-                <span className="text-orange-400 font-semibold">Result:</span> Your chart looks like a rocket 🚀 Middle prices explode, creating viral excitement
+                <span className="text-orange-400 font-semibold">Result:</span> Your chart explodes in the middle. Small buys create massive price jumps, generating viral excitement and FOMO.
               </p>
             </div>
 
             {/* Example 2: Whale Trap */}
             <div className="p-6 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30">
-              <h3 className="text-lg font-semibold text-white mb-4">🐋 Whale Trap Example</h3>
+              <h3 className="text-lg font-semibold text-white mb-4">Whale Trap Example</h3>
               
               <div className="space-y-3 mb-4">
                 <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
@@ -446,7 +460,7 @@ export default function PropelCurvePage() {
               </div>
 
               <p className="text-sm text-white/70">
-                <span className="text-blue-400 font-semibold">Result:</span> Whales get trapped, can't dump easily. Encourages diamond hands 💎
+                <span className="text-blue-400 font-semibold">Result:</span> Large holders get trapped at the top. They can't dump easily without massive slippage, encouraging long-term holding.
               </p>
             </div>
           </div>
@@ -463,7 +477,11 @@ export default function PropelCurvePage() {
           
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="text-3xl mb-3">📊</div>
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
+                </svg>
+              </div>
               <h3 className="font-semibold text-white mb-2">Custom Curves</h3>
               <p className="text-sm text-white/60">
                 Design your own price ranges. Up to 20 different liquidity zones.
@@ -471,7 +489,11 @@ export default function PropelCurvePage() {
             </div>
 
             <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="text-3xl mb-3">💰</div>
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
               <h3 className="font-semibold text-white mb-2">Multi-Quote</h3>
               <p className="text-sm text-white/60">
                 Launch with SOL or USDC. Stable pricing or traditional pairs.
@@ -479,7 +501,12 @@ export default function PropelCurvePage() {
             </div>
 
             <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="text-3xl mb-3">🎨</div>
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              </div>
               <h3 className="font-semibold text-white mb-2">Visual Designer</h3>
               <p className="text-sm text-white/60">
                 See your curve in real-time. No coding needed, just click and design.
@@ -487,7 +514,11 @@ export default function PropelCurvePage() {
             </div>
 
             <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
-              <div className="text-3xl mb-3">🔒</div>
+              <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center mb-3">
+                <svg className="w-6 h-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
               <h3 className="font-semibold text-white mb-2">LP Control</h3>
               <p className="text-sm text-white/60">
                 Choose your LP %, lock percentages, and vesting schedule.
