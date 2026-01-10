@@ -637,9 +637,85 @@ export async function POST(request: NextRequest) {
 
     if (!pumpResponse.ok) {
       const errorText = await pumpResponse.text()
-      console.error("[CREATOR-REWARDS] PumpPortal error:", errorText)
+      console.error("[CREATOR-REWARDS] PumpPortal /trade-local error:", errorText)
       
-      // Fallback: Direct user to the appropriate platform
+      // Fallback: Try PumpPortal /api/trade endpoint with API key
+      const apiKey = process.env.PUMPPORTAL_API_KEY
+      
+      if (apiKey) {
+        console.log(`[CREATOR-REWARDS] Trying PumpPortal /api/trade with API key...`)
+        
+        try {
+          // For pump.fun, don't specify mint (claims all fees at once)
+          // For meteora-dbc (migrated), specify mint and pool
+          const tradeApiBody: any = {
+            action: "collectCreatorFee",
+            priorityFee: 0.000001,
+          }
+          
+          // Only add mint/pool for meteora-dbc or if explicitly needed
+          if (safeTokenData.stage === "migrated") {
+            tradeApiBody.mint = tokenMint
+            tradeApiBody.pool = "meteora-dbc"
+            console.log(`[CREATOR-REWARDS] Using meteora-dbc pool for migrated token`)
+          } else if (poolType === 'bonk') {
+            // Bonk.fun might need the pool specified
+            tradeApiBody.pool = "bonk"
+          }
+          
+          const apiResponse = await fetch(`https://pumpportal.fun/api/trade?api-key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tradeApiBody),
+          })
+          
+          if (apiResponse.ok) {
+            const apiData = await apiResponse.json()
+            console.log(`[CREATOR-REWARDS] PumpPortal /api/trade response:`, apiData)
+            
+            if (apiData.signature) {
+              console.log("[CREATOR-REWARDS] Claim successful via /api/trade:", apiData.signature)
+              
+              // Record the claim in database
+              try {
+                if (safeTokenData.id) {
+                  await adminClient.from("tide_harvest_claims").insert({
+                    token_id: safeTokenData.id,
+                    wallet_address: walletAddress,
+                    amount_sol: rewardsData.balance,
+                    tx_signature: apiData.signature,
+                    claimed_at: new Date().toISOString(),
+                  } as any)
+                }
+              } catch (dbError) {
+                console.warn("[CREATOR-REWARDS] Failed to record claim:", dbError)
+              }
+              
+              return NextResponse.json({
+                success: true,
+                data: {
+                  signature: apiData.signature,
+                  amountClaimed: rewardsData.balance,
+                  explorerUrl: `https://solscan.io/tx/${apiData.signature}`,
+                  platformName,
+                  method: 'pumpportal-api-trade',
+                }
+              })
+            } else if (apiData.error) {
+              console.error("[CREATOR-REWARDS] PumpPortal /api/trade error:", apiData.error)
+            }
+          } else {
+            const apiErrorText = await apiResponse.text()
+            console.error("[CREATOR-REWARDS] PumpPortal /api/trade failed:", apiErrorText)
+          }
+        } catch (apiError) {
+          console.error("[CREATOR-REWARDS] PumpPortal /api/trade exception:", apiError)
+        }
+      } else {
+        console.warn("[CREATOR-REWARDS] No PUMPPORTAL_API_KEY available for fallback")
+      }
+      
+      // Final fallback: Direct user to the appropriate platform
       const fallbackUrl = poolType === 'bonk' 
         ? `https://bonk.fun/token/${tokenMint}`
         : `https://pump.fun/coin/${tokenMint}`
