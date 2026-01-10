@@ -1,85 +1,595 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { motion } from "framer-motion"
+import { Header } from "@/components/layout/header"
 import { useAuth } from "@/components/providers/auth-provider"
-import { GlassPanel } from "@/components/ui/glass-panel"
 import { PropelCurveWizard } from "@/components/launch/propel-curve-wizard"
+import Link from "next/link"
 
-export default function LaunchPropelPage() {
+export default function PropelCurvePage() {
   const router = useRouter()
-  const { userId, sessionId, wallets } = useAuth()
-  const [selectedWallet, setSelectedWallet] = useState<string>("")
+  const { isAuthenticated, isLoading, wallets, activeWallet, mainWallet, setIsOnboarding } = useAuth()
+  const [showWizard, setShowWizard] = useState(false)
 
-  // Get first wallet as default
-  const defaultWallet = wallets && wallets.length > 0 ? wallets[0].public_key : ""
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setIsOnboarding(true)
+    }
+  }, [isLoading, isAuthenticated, setIsOnboarding])
 
-  if (!userId || !sessionId) {
+  if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-12">
-        <GlassPanel className="max-w-2xl mx-auto text-center p-12">
-          <h2 className="text-2xl font-bold mb-4">Connect Wallet Required</h2>
-          <p className="text-[var(--text-muted)] mb-6">
-            Please connect your wallet to launch a token on Propel Curve
-          </p>
-          <button
-            onClick={() => router.push("/")}
-            className="px-6 py-3 rounded-lg bg-[var(--aqua-primary)] text-[var(--ocean-deep)] font-semibold hover:bg-[var(--aqua-secondary)] transition-colors"
-          >
-            Go Home
-          </button>
-        </GlassPanel>
-      </div>
+      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-primary)]">
+        <div className="flex items-center gap-3 text-[var(--text-muted)]">
+          <div className="spinner" />
+          <span>Loading...</span>
+        </div>
+      </main>
+    )
+  }
+
+  // If user is authenticated and clicks "Get Started", show wizard
+  if (showWizard && isAuthenticated && (activeWallet || mainWallet)) {
+    return (
+      <main className="min-h-screen bg-[var(--bg-primary)]">
+        <Header />
+        <div className="relative z-10 px-4 lg:px-6 py-6 max-w-[1400px] mx-auto">
+          <PropelCurveWizard creatorWallet={(activeWallet || mainWallet)!.public_key} />
+        </div>
+      </main>
     )
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="mb-8 text-center">
-        <div className="inline-flex items-center gap-2 mb-4">
-          <span className="text-5xl">🌊</span>
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-[var(--aqua-primary)] to-[var(--aqua-secondary)] bg-clip-text text-transparent">
-            Propel Curve
+    <main className="min-h-screen bg-[var(--bg-primary)]">
+      <Header />
+
+      <div className="relative z-10 px-4 lg:px-6 py-8 max-w-[1400px] mx-auto">
+        {/* Hero Section */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }} 
+          className="mb-12"
+        >
+          {/* Protocol Badge */}
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-cyan-500/10 to-teal-500/10 border border-cyan-500/30 w-fit mb-6">
+            <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Meteora DBC</span>
+          </div>
+
+          {/* Title */}
+          <h1 className="text-5xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-cyan-400 via-teal-400 to-cyan-500 bg-clip-text text-transparent">
+              Propel Curve
+            </span>
           </h1>
-        </div>
-        <p className="text-lg text-[var(--text-muted)] max-w-2xl mx-auto">
-          Launch your token with a <span className="text-[var(--aqua-primary)] font-semibold">custom bonding curve</span>.
-          Design your own price action, choose your quote token, and configure advanced features.
-        </p>
-      </div>
+          
+          <p className="text-xl text-white/80 mb-2 max-w-3xl">
+            Launch your token with a <span className="text-cyan-400 font-semibold">custom bonding curve</span>.
+          </p>
+          <p className="text-lg text-white/60 max-w-3xl">
+            Design your own price action, choose your quote token, and control exactly how your token trades.
+          </p>
 
-      {/* Features Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <GlassPanel className="p-4 text-center">
-          <div className="text-3xl mb-2">📊</div>
-          <h3 className="font-semibold mb-1">Custom Curves</h3>
-          <p className="text-sm text-[var(--text-muted)]">Design your own price ranges</p>
-        </GlassPanel>
-        
-        <GlassPanel className="p-4 text-center">
-          <div className="text-3xl mb-2">💰</div>
-          <h3 className="font-semibold mb-1">Multi-Quote</h3>
-          <p className="text-sm text-[var(--text-muted)]">Launch with SOL or USDC</p>
-        </GlassPanel>
-        
-        <GlassPanel className="p-4 text-center">
-          <div className="text-3xl mb-2">🛡️</div>
-          <h3 className="font-semibold mb-1">Anti-Sniper</h3>
-          <p className="text-sm text-[var(--text-muted)]">Built-in protection</p>
-        </GlassPanel>
-        
-        <GlassPanel className="p-4 text-center">
-          <div className="text-3xl mb-2">🔒</div>
-          <h3 className="font-semibold mb-1">LP Locking</h3>
-          <p className="text-sm text-[var(--text-muted)]">Configurable vesting</p>
-        </GlassPanel>
-      </div>
+          {/* CTA Buttons */}
+          <div className="flex items-center gap-4 mt-8">
+            {isAuthenticated ? (
+              <button
+                onClick={() => setShowWizard(true)}
+                className="px-6 py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 text-white font-semibold hover:from-cyan-400 hover:to-teal-400 transition-all shadow-lg shadow-cyan-500/20"
+              >
+                Get Started →
+              </button>
+            ) : (
+              <button
+                onClick={() => setIsOnboarding(true)}
+                className="px-6 py-3 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 text-white font-semibold hover:from-cyan-400 hover:to-teal-400 transition-all shadow-lg shadow-cyan-500/20"
+              >
+                Connect Wallet to Start
+              </button>
+            )}
+            
+            <Link
+              href="/launch-jupiter"
+              className="px-6 py-3 rounded-lg bg-white/5 border border-white/10 text-white/80 font-medium hover:bg-white/10 hover:border-white/20 transition-all"
+            >
+              Compare with Jupiter DBC
+            </Link>
+          </div>
+        </motion.div>
 
-      {/* Wizard */}
-      <PropelCurveWizard 
-        creatorWallet={selectedWallet || defaultWallet}
-      />
-    </div>
+        {/* How It Works Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-6">How It Works</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Step 1 */}
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
+                  1
+                </div>
+                <h3 className="text-lg font-semibold text-white">Token Identity</h3>
+              </div>
+              <p className="text-sm text-white/60 leading-relaxed">
+                Fill in your token details: name, symbol, description, and image. Add social links to build trust.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
+                  2
+                </div>
+                <h3 className="text-lg font-semibold text-white">Design Your Curve</h3>
+              </div>
+              <p className="text-sm text-white/60 leading-relaxed">
+                Choose from 4 battle-tested presets or build your own custom curve. Control your token's price action.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-lg bg-cyan-500/20 flex items-center justify-center text-lg font-bold text-cyan-400">
+                  3
+                </div>
+                <h3 className="text-lg font-semibold text-white">Launch & Earn</h3>
+              </div>
+              <p className="text-sm text-white/60 leading-relaxed">
+                Review and deploy. Your token goes live instantly. Earn fees from every trade automatically.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* The 4 Curve Presets */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-2">The 4 Curve Presets</h2>
+          <p className="text-white/60 mb-6">Battle-tested strategies for different launch goals</p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Smooth Operator */}
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20 hover:border-cyan-500/40 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="text-3xl">🌊</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Smooth Operator</h3>
+                  <p className="text-xs text-cyan-400">Steady growth with minimal volatility</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.00001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-cyan-400">1000 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.0001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-cyan-400">1000 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-cyan-400">1000 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.01</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-cyan-400">1000 liquidity</span>
+                </div>
+              </div>
+              <p className="text-sm text-white/60">
+                <span className="text-white font-medium">Use for:</span> Utility tokens, serious projects
+              </p>
+            </div>
+
+            {/* Rocket Fuel */}
+            <div className="p-5 rounded-xl bg-white/5 border border-orange-500/20 hover:border-orange-500/40 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="text-3xl">🚀</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Rocket Fuel</h3>
+                  <p className="text-xs text-orange-400">Low middle liquidity = explosive price action</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.00001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-orange-400">2000 liquidity</span>
+                  <span className="text-xs text-green-400">HIGH</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.0001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-orange-400">500 liquidity</span>
+                  <span className="text-xs text-red-400">LOW 🚀</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-orange-400">500 liquidity</span>
+                  <span className="text-xs text-red-400">LOW 🚀</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.01</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-orange-400">2000 liquidity</span>
+                  <span className="text-xs text-green-400">HIGH</span>
+                </div>
+              </div>
+              <p className="text-sm text-white/60">
+                <span className="text-white font-medium">Use for:</span> Meme coins, viral launches
+              </p>
+            </div>
+
+            {/* Whale Trap */}
+            <div className="p-5 rounded-xl bg-white/5 border border-blue-500/20 hover:border-blue-500/40 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="text-3xl">🐋</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Whale Trap</h3>
+                  <p className="text-xs text-blue-400">Easy to buy, harder to sell</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.00001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-blue-400">3000 liquidity</span>
+                  <span className="text-xs text-green-400">Easy buy</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.0001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-blue-400">1500 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-blue-400">800 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.01</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-blue-400">500 liquidity</span>
+                  <span className="text-xs text-red-400">Hard sell</span>
+                </div>
+              </div>
+              <p className="text-sm text-white/60">
+                <span className="text-white font-medium">Use for:</span> Community tokens, encourage holding
+              </p>
+            </div>
+
+            {/* Diamond Hands */}
+            <div className="p-5 rounded-xl bg-white/5 border border-purple-500/20 hover:border-purple-500/40 transition-all">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="text-3xl">💎</div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Diamond Hands</h3>
+                  <p className="text-xs text-purple-400">Rewards long-term holders</p>
+                </div>
+              </div>
+              <div className="space-y-2 mb-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.00001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-purple-400">800 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.0001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-purple-400">1200 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.001</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-purple-400">1800 liquidity</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-white/40">$0.01</span>
+                  <span className="text-white/60">→</span>
+                  <span className="text-purple-400">2500 liquidity</span>
+                  <span className="text-xs text-green-400">Stable top</span>
+                </div>
+              </div>
+              <p className="text-sm text-white/60">
+                <span className="text-white font-medium">Use for:</span> Strong fundamentals, long-term projects
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* How Liquidity Works */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-12 p-6 rounded-xl bg-gradient-to-br from-cyan-500/5 to-teal-500/5 border border-cyan-500/20"
+        >
+          <h2 className="text-2xl font-bold text-white mb-4">Understanding Liquidity</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center text-green-400 font-bold">
+                  ↑
+                </div>
+                <h3 className="font-semibold text-white">High Liquidity (3000)</h3>
+              </div>
+              <p className="text-white/70 mb-2">Think of liquidity like <span className="text-cyan-400 font-medium">water in a pool</span>:</p>
+              <ul className="space-y-1 text-sm text-white/60">
+                <li>• Buy 1 SOL → Price moves a little 📈</li>
+                <li>• Smooth, predictable growth</li>
+                <li>• Good for: Building confidence</li>
+              </ul>
+            </div>
+
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-red-500/20 flex items-center justify-center text-red-400 font-bold">
+                  ↓
+                </div>
+                <h3 className="font-semibold text-white">Low Liquidity (500)</h3>
+              </div>
+              <p className="text-white/70 mb-2">Less water = <span className="text-orange-400 font-medium">bigger splashes</span>:</p>
+              <ul className="space-y-1 text-sm text-white/60">
+                <li>• Buy 1 SOL → Price EXPLODES 🚀📈📈📈</li>
+                <li>• Creates excitement and FOMO</li>
+                <li>• Good for: Viral growth</li>
+              </ul>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* The Curve Magic */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-2">The Curve Magic</h2>
+          <p className="text-white/60 mb-6">See how different curves create different price action</p>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Example 1: Rocket Fuel */}
+            <div className="p-6 rounded-xl bg-gradient-to-br from-orange-500/10 to-red-500/10 border border-orange-500/30">
+              <h3 className="text-lg font-semibold text-white mb-4">🚀 Rocket Fuel Example</h3>
+              
+              <div className="space-y-3 mb-4">
+                <div className="p-3 rounded-lg bg-black/20 border border-white/10">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white/60">Stage 1: Early Buyers</span>
+                    <span className="text-xs text-green-400">HIGH LIQUIDITY</span>
+                  </div>
+                  <p className="text-xs text-white/50">
+                    $0.00001 - $0.0001 • Easy to buy, price stable • Builds initial holders
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white font-medium">Stage 2: The Pump Zone</span>
+                    <span className="text-xs text-red-400 font-bold">LOW LIQUIDITY 🚀</span>
+                  </div>
+                  <p className="text-xs text-white/70">
+                    $0.0001 - $0.001 • Small buys = HUGE price jumps • Creates FOMO
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg bg-black/20 border border-white/10">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white/60">Stage 3: The Top</span>
+                    <span className="text-xs text-green-400">HIGH LIQUIDITY</span>
+                  </div>
+                  <p className="text-xs text-white/50">
+                    $0.001 - $0.01 • Stable, handles big trades • Ready for migration
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-sm text-white/70">
+                <span className="text-orange-400 font-semibold">Result:</span> Your chart looks like a rocket 🚀 Middle prices explode, creating viral excitement
+              </p>
+            </div>
+
+            {/* Example 2: Whale Trap */}
+            <div className="p-6 rounded-xl bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-blue-500/30">
+              <h3 className="text-lg font-semibold text-white mb-4">🐋 Whale Trap Example</h3>
+              
+              <div className="space-y-3 mb-4">
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white font-medium">Stage 1: Easy Entry</span>
+                    <span className="text-xs text-green-400 font-bold">VERY HIGH</span>
+                  </div>
+                  <p className="text-xs text-white/70">
+                    $0.00001 - $0.0001 • 3000 liquidity • Everyone can buy easily
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg bg-black/20 border border-white/10">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white/60">Stage 2: Building</span>
+                    <span className="text-xs text-yellow-400">MEDIUM</span>
+                  </div>
+                  <p className="text-xs text-white/50">
+                    $0.0001 - $0.001 • 1500 → 800 liquidity • Getting harder
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-sm text-white font-medium">Stage 3: The Trap</span>
+                    <span className="text-xs text-red-400 font-bold">LOW 🐋</span>
+                  </div>
+                  <p className="text-xs text-white/70">
+                    $0.001 - $0.01 • 500 liquidity • Hard to sell = people hold
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-sm text-white/70">
+                <span className="text-blue-400 font-semibold">Result:</span> Whales get trapped, can't dump easily. Encourages diamond hands 💎
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Features Grid */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-6">Why Propel Curve?</h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="text-3xl mb-3">📊</div>
+              <h3 className="font-semibold text-white mb-2">Custom Curves</h3>
+              <p className="text-sm text-white/60">
+                Design your own price ranges. Up to 20 different liquidity zones.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="text-3xl mb-3">💰</div>
+              <h3 className="font-semibold text-white mb-2">Multi-Quote</h3>
+              <p className="text-sm text-white/60">
+                Launch with SOL or USDC. Stable pricing or traditional pairs.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="text-3xl mb-3">🎨</div>
+              <h3 className="font-semibold text-white mb-2">Visual Designer</h3>
+              <p className="text-sm text-white/60">
+                See your curve in real-time. No coding needed, just click and design.
+              </p>
+            </div>
+
+            <div className="p-5 rounded-xl bg-white/5 border border-cyan-500/20">
+              <div className="text-3xl mb-3">🔒</div>
+              <h3 className="font-semibold text-white mb-2">LP Control</h3>
+              <p className="text-sm text-white/60">
+                Choose your LP %, lock percentages, and vesting schedule.
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Comparison Table */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-6">How It Compares</h2>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-white/80">Feature</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-white/80">Pump.fun</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-white/80">Jupiter DBC</th>
+                  <th className="text-center py-3 px-4 text-sm font-semibold text-cyan-400">Propel Curve</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm">
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4 text-white/70">Custom Curves</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">✓</td>
+                </tr>
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4 text-white/70">Visual Designer</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">✓</td>
+                </tr>
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4 text-white/70">Preset Templates</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-yellow-400">2</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">4</td>
+                </tr>
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4 text-white/70">Multi-Quote</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-green-400">✓</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">✓</td>
+                </tr>
+                <tr className="border-b border-white/5">
+                  <td className="py-3 px-4 text-white/70">LP Locking</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-green-400">✓</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">✓</td>
+                </tr>
+                <tr>
+                  <td className="py-3 px-4 text-white/70">AQUA Features</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-red-400">✗</td>
+                  <td className="py-3 px-4 text-center text-green-400 font-bold">✓</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+
+        {/* Launch CTA */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="text-center p-12 rounded-xl bg-gradient-to-br from-cyan-500/10 to-teal-500/10 border border-cyan-500/30"
+        >
+          <h2 className="text-3xl font-bold text-white mb-3">Ready to Launch?</h2>
+          <p className="text-lg text-white/70 mb-6 max-w-2xl mx-auto">
+            Create your token with a custom bonding curve in 3 simple steps. No coding required.
+          </p>
+          
+          {isAuthenticated ? (
+            <button
+              onClick={() => setShowWizard(true)}
+              className="px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 text-white text-lg font-semibold hover:from-cyan-400 hover:to-teal-400 transition-all shadow-lg shadow-cyan-500/20"
+            >
+              Launch Your Token →
+            </button>
+          ) : (
+            <button
+              onClick={() => setIsOnboarding(true)}
+              className="px-8 py-4 rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 text-white text-lg font-semibold hover:from-cyan-400 hover:to-teal-400 transition-all shadow-lg shadow-cyan-500/20"
+            >
+              Connect Wallet to Start
+            </button>
+          )}
+          
+          <p className="text-sm text-white/50 mt-4">
+            Creation fee: 0.1 SOL + 2% of initial buy
+          </p>
+        </motion.div>
+      </div>
+    </main>
   )
 }
