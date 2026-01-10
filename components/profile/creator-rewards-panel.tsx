@@ -306,7 +306,7 @@ export function CreatorRewardsPanel() {
       </div>
 
       {/* Total Rewards Summary */}
-      <GlassPanel className="p-4" glow="warm">
+      <GlassPanel className="p-4" glowColor="orange">
         <div className="grid grid-cols-4 gap-4">
           <div className="text-center">
             <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wide mb-1">Total Claimable</p>

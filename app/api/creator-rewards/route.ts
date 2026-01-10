@@ -605,7 +605,15 @@ export async function POST(request: NextRequest) {
     // Call PumpPortal API for collectCreatorFee with pool parameter
     console.log(`[CREATOR-REWARDS] Requesting collectCreatorFee transaction for ${poolType} pool...`)
 
-    const tradeBody = {
+    // PumpPortal `collectCreatorFee` is per-creator (not per-token). Some versions of the
+    // API reject extra fields like `mint`/`pool`, so try the minimal payload first.
+    const tradeBodyMinimal = {
+      publicKey: walletAddress,
+      action: "collectCreatorFee",
+      priorityFee: 0.0001,
+    }
+
+    const tradeBodyLegacy = {
       publicKey: walletAddress,
       action: "collectCreatorFee",
       mint: tokenMint,
@@ -613,11 +621,19 @@ export async function POST(request: NextRequest) {
       pool: poolType, // 'pump' or 'bonk'
     }
 
-    const pumpResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+    let pumpResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(tradeBody),
+      body: JSON.stringify(tradeBodyMinimal),
     })
+
+    if (!pumpResponse.ok) {
+      pumpResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tradeBodyLegacy),
+      })
+    }
 
     if (!pumpResponse.ok) {
       const errorText = await pumpResponse.text()
@@ -855,19 +871,38 @@ async function getCreatorRewards(
     if (claimableBalance === 0) {
       try {
         console.log(`[CREATOR-REWARDS] Trying ${platformName} PumpPortal preview...`)
-        
-        const previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+
+        // PumpPortal `collectCreatorFee` is per-creator (not per-token). Some versions of the
+        // API reject extra fields like `mint`/`pool`, so try the minimal payload first.
+        const previewPayloadMinimal = {
+          publicKey: creatorWallet,
+          action: "collectCreatorFee",
+          priorityFee: 0.00001,
+        }
+
+        const previewPayloadLegacy = {
+          publicKey: creatorWallet,
+          action: "collectCreatorFee",
+          mint: tokenMint,
+          priorityFee: 0.00001,
+          pool: poolType,
+        }
+
+        let previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicKey: creatorWallet,
-            action: "collectCreatorFee",
-            mint: tokenMint,
-            priorityFee: 0.00001,
-            pool: poolType,
-          }),
+          body: JSON.stringify(previewPayloadMinimal),
           signal: AbortSignal.timeout(10000)
         })
+
+        if (!previewResponse.ok) {
+          previewResponse = await fetch(PUMPPORTAL_LOCAL_TRADE, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(previewPayloadLegacy),
+            signal: AbortSignal.timeout(10000)
+          })
+        }
 
         if (previewResponse.ok) {
           const contentType = previewResponse.headers.get('content-type')
